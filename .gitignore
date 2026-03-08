@@ -205,3 +205,25 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+test_run.py
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Broad Local Data / SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Build Tools
+.hatch/
+
+# IDE Workspaces (uncommented for safety)
+.vscode/
+.idea/

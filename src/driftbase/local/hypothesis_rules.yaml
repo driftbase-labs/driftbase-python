@@ -1,0 +1,60 @@
+# Default hypothesis rules for drift root-cause analysis.
+# Override with DRIFTBASE_HYPOTHESIS_RULES or replace this file.
+# Condition keys: overall_drift_min/max, decision_drift_min/max, latency_drift_min,
+# error_drift_min, tool_decrease_min_pct, tool_increase_min_pct, tool_increase_name_contains,
+# baseline_runs_min, current_runs_min. Placeholders: {{tool_name}}, {{delta_pct}}.
+
+rules:
+  - id: tool_decrease
+    condition:
+      tool_decrease_min_pct: 20
+      overall_drift_min: 0.05
+    observation: "Tool '{{tool_name}}' usage dropped by {{delta_pct}}% vs baseline."
+    likely_cause: "Prompt or model change may be bypassing or deprioritizing this tool; or fewer tasks require it."
+    recommended_action: "Review recent prompt/agent changes and whether {{tool_name}} should be invoked more. Check for new fallback paths."
+    confidence: "High when tool drop correlates with overall drift."
+
+  - id: tool_increase
+    condition:
+      tool_increase_min_pct: 50
+      overall_drift_min: 0.05
+    observation: "Tool '{{tool_name}}' usage increased by {{delta_pct}}% vs baseline."
+    likely_cause: "Agent may be over-relying on this tool (e.g. escalation or search) or task mix shifted."
+    recommended_action: "Confirm whether increased {{tool_name}} use is intended. If not, tighten instructions or add guardrails."
+    confidence: "High when rise is large and correlates with decision or latency drift."
+
+  - id: decision_drift
+    condition:
+      decision_drift_min: 0.15
+      baseline_runs_min: 20
+    observation: "Decision outcome distribution (resolved / escalated / fallback) shifted significantly."
+    likely_cause: "Prompt changes, model swap, or threshold changes affecting when the agent escalates or resolves."
+    recommended_action: "Compare prompts and system instructions between baseline and current. Check escalation triggers."
+    confidence: "Medium; review alongside tool and error drift."
+
+  - id: error_drift
+    condition:
+      error_drift_min: 0.15
+      baseline_runs_min: 20
+    observation: "Error or retry rate increased vs baseline."
+    likely_cause: "New failures (tool timeouts, validation, API errors) or more aggressive retries."
+    recommended_action: "Inspect error types in runs and logs. Fix or relax validations and timeouts as needed."
+    confidence: "High when error_drift is clearly elevated."
+
+  - id: latency_drift
+    condition:
+      latency_drift_min: 0.15
+      baseline_runs_min: 20
+    observation: "Latency distribution (e.g. p95) increased vs baseline."
+    likely_cause: "More tool calls, slower model or APIs, or heavier reasoning steps."
+    recommended_action: "Profile tool call counts and per-tool latency. Consider caching or simplifying flows."
+    confidence: "Medium; can be confounded by load or infrastructure."
+
+  - id: overall_high
+    condition:
+      overall_drift_min: 0.25
+      baseline_runs_min: 30
+    observation: "Overall behavioral drift score is above typical threshold."
+    likely_cause: "Combination of tool usage changes, decision mix, latency, or errors."
+    recommended_action: "Review dimension breakdown and tool frequency diff. Address top contributing factors first."
+    confidence: "Use dimension scores and hypotheses above to prioritize."

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "driftbase"
+version = "0.1.0"
+description = "Behavioral drift monitoring for AI agents."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+dependencies = [
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0"
+]
+
+[project.optional-dependencies]
+local = [
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "light-embed>=0.1.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0"
+]
+
+[project.scripts]
+driftbase = "driftbase.cli.main:cli"
+
+[tool.setuptools.package-data]
+driftbase = ["**/*.yaml"]
