@@ -1,5 +1,5 @@
 """
-CLI for driftbase: versions, diff, watch, inspect, report.
+CLI for driftbase: versions, diff, watch, inspect, report, push.
 Uses click for parsing and rich for output.
 """
 
@@ -38,10 +38,12 @@ def cli(ctx: click.Context, no_color: bool) -> None:
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_inspect import cmd_inspect
 from driftbase.cli.cli_report import cmd_report
+from driftbase.cli.cli_push import cmd_push
 
 cli.add_command(cmd_diff)
 cli.add_command(cmd_inspect)
 cli.add_command(cmd_report)
+cli.add_command(cmd_push)
 
 
 @cli.command("versions")

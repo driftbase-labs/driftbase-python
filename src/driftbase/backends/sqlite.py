@@ -170,3 +170,14 @@ class SQLiteBackend(StorageBackend):
             if row is None:
                 return None
             return _row_to_run_dict(row)
+
+    def get_all_runs(self) -> list[dict[str, Any]]:
+        """Fetch all runs from the local database for platform ingestion."""
+        with Session(self._engine) as session:
+            stmt = select(AgentRunLocal).order_by(AgentRunLocal.started_at.asc())
+            result = session.execute(stmt)
+            rows = result.scalars().all()
+            return [
+                _row_to_run_dict(r)
+                for r in rows
+            ]
