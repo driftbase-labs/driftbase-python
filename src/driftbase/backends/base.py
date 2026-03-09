@@ -36,6 +36,10 @@ class StorageBackend(ABC):
         """Return (deployment_version, run_count) pairs, ordered by deployment_version."""
         ...
 
+    def delete_runs(self, deployment_version: str) -> int:
+        """Delete all runs for the given deployment_version. Returns number of rows deleted."""
+        raise NotImplementedError("delete_runs not implemented for this backend")
+
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Return a single run by id, or None if not found. Optional for backends."""
         return None

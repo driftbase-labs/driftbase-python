@@ -11,20 +11,24 @@ requires-python = ">=3.9"
 license = {file = "LICENSE"}
 dependencies = [
     "httpx>=0.25.0",
-    "pydantic>=2.0.0"
+    "pydantic>=2.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "PyYAML>=6.0.0",
 ]
 
 [project.optional-dependencies]
+semantic = [
+    "light-embed>=1.0.0",
+]
 local = [
     "click>=8.0.0",
     "rich>=13.0.0",
-    "light-embed>=0.1.0",
-    "numpy>=1.24.0",
-    "scipy>=1.10.0"
+    "light-embed>=1.0.0",
 ]
 
 [project.scripts]
 driftbase = "driftbase.cli.main:cli"
 
 [tool.setuptools.package-data]
-driftbase = ["**/*.yaml"]
+driftbase = ["**/*.yaml", "hypothesis_rules.yaml"]

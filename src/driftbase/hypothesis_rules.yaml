@@ -1,0 +1,67 @@
+# Default hypothesis rules for the drift hypothesis engine.
+# Override with DRIFTBASE_HYPOTHESIS_RULES to use a custom rule set.
+# Condition keys: overall_drift_min/max, decision_drift_min/max, latency_drift_min,
+# error_drift_min, tool_drift_max, tool_decrease_min_pct, tool_increase_min_pct,
+# escalation_rate_delta_min/max, baseline_runs_min, current_runs_min.
+# Placeholders: {{tool_name}}, {{delta_pct}}.
+
+rules:
+  - id: escalation_more
+    condition:
+      decision_drift_min: 0.5
+      escalation_rate_delta_min: 0.08
+    observation: "Agent is escalating significantly more than baseline."
+    likely_cause: "Prompt or threshold changes, or model behaving more cautiously; task mix may favor edge cases."
+    recommended_action: "Review escalation triggers and recent prompt/model changes. Check if higher escalation is acceptable or tighten resolution paths."
+
+  - id: escalation_less
+    condition:
+      decision_drift_min: 0.5
+      escalation_rate_delta_max: -0.03
+    observation: "Agent is escalating significantly less than baseline."
+    likely_cause: "Model or prompt change favoring resolution; possible over-confidence or reduced sensitivity to edge cases."
+    recommended_action: "Confirm that lower escalation is intended. If not, restore or tighten escalation conditions and review resolution quality."
+
+  - id: tool_decrease
+    condition:
+      tool_decrease_min_pct: 40
+    observation: "Tool '{{tool_name}}' is being used much less (down {{delta_pct}}% vs baseline)."
+    likely_cause: "Prompt or model change bypassing this tool; fewer tasks requiring it; or new fallback path."
+    recommended_action: "Review recent changes that might reduce {{tool_name}} usage. Ensure the tool is still invoked when needed."
+
+  - id: tool_increase
+    condition:
+      tool_increase_min_pct: 100
+    observation: "Tool '{{tool_name}}' is being used much more (up {{delta_pct}}% vs baseline)."
+    likely_cause: "Agent over-relying on this tool; task mix shift; or escalation/search behavior increased."
+    recommended_action: "Confirm whether increased {{tool_name}} use is intended. If not, tighten instructions or add guardrails."
+
+  - id: latency_slow
+    condition:
+      latency_drift_min: 0.4
+      tool_drift_max: 0.1
+    observation: "Behavior is similar (tool usage stable) but latency is significantly higher."
+    likely_cause: "Slower model or APIs, more reasoning steps, or infrastructure/load; tool mix unchanged."
+    recommended_action: "Profile per-tool and model latency. Consider caching, simpler flows, or capacity scaling."
+
+  - id: error_drift
+    condition:
+      error_drift_min: 0.3
+    observation: "Error rate has increased significantly vs baseline."
+    likely_cause: "New failures (timeouts, validation, API errors) or more aggressive retries exposing edge cases."
+    recommended_action: "Inspect error types in runs and logs. Fix or relax validations and timeouts as needed."
+
+  - id: decision_only_drift
+    condition:
+      decision_drift_min: 0.3
+      tool_drift_max: 0.1
+    observation: "Decision outcomes (resolved/escalated/fallback) changed but tool usage is stable."
+    likely_cause: "Prompt or model changes affecting when the agent escalates or resolves, without changing tool choice."
+    recommended_action: "Compare prompts and system instructions between baseline and current. Check escalation and resolution thresholds."
+
+  - id: stable
+    condition:
+      overall_drift_max: 0.05
+    observation: "Overall drift is low; behavior is stable."
+    likely_cause: "No significant change in tool usage, decisions, latency, or errors."
+    recommended_action: "No action required. Continue monitoring."

@@ -13,22 +13,60 @@ from typing import Any, Optional
 DriftReportLike = Any
 
 
+def _bundled_rules_path() -> Optional[Path]:
+    """Return path to bundled hypothesis_rules.yaml (for _rules_path fallback)."""
+    try:
+        from importlib.resources import files
+        ref = files("driftbase") / "hypothesis_rules.yaml"
+        try:
+            if ref.is_file():
+                return Path(str(ref))
+        except AttributeError:
+            pass
+        try:
+            ref.read_bytes()
+            return Path(str(ref))
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
 def _rules_path() -> Path:
-    """Path to hypothesis_rules.yaml (package dir or DRIFTBASE_HYPOTHESIS_RULES)."""
+    """Path to hypothesis_rules.yaml (env DRIFTBASE_HYPOTHESIS_RULES or bundled default)."""
     env_path = os.getenv("DRIFTBASE_HYPOTHESIS_RULES")
     if env_path:
         return Path(env_path).resolve()
+    bundled = _bundled_rules_path()
+    if bundled is not None:
+        return bundled
     return Path(__file__).resolve().parent / "hypothesis_rules.yaml"
 
 
 def _load_rules() -> list[dict[str, Any]]:
     import yaml
-    path = _rules_path()
-    if not path.is_file():
+    env_path = os.getenv("DRIFTBASE_HYPOTHESIS_RULES")
+    if env_path:
+        path = Path(env_path).resolve()
+        if path.is_file():
+            with open(path, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            return (data or {}).get("rules") or []
         return []
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return (data or {}).get("rules") or []
+    try:
+        from importlib.resources import files
+        ref = files("driftbase") / "hypothesis_rules.yaml"
+        content = ref.read_text(encoding="utf-8")
+        data = yaml.safe_load(content)
+        return (data or {}).get("rules") or []
+    except Exception:
+        pass
+    path = Path(__file__).resolve().parent / "hypothesis_rules.yaml"
+    if path.is_file():
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return (data or {}).get("rules") or []
+    return []
 
 
 def _compute_tool_deltas(
@@ -111,6 +149,18 @@ def _evaluate_condition(
             if ctx.get("current_n", 0) < val:
                 return False
             continue
+        if key == "tool_drift_max":
+            if ctx.get("tool_drift", 0.0) > val:
+                return False
+            continue
+        if key == "escalation_rate_delta_min":
+            if ctx.get("escalation_rate_delta", 0.0) < val:
+                return False
+            continue
+        if key == "escalation_rate_delta_max":
+            if ctx.get("escalation_rate_delta", 0.0) > val:
+                return False
+            continue
     return True
 
 
@@ -129,11 +179,15 @@ def generate_hypotheses(
     if not rules:
         return []
     drop, rise = _compute_tool_deltas(baseline_tools, current_tools)
+    from driftbase.local.diff import _jensen_shannon_divergence
+    tool_drift = _jensen_shannon_divergence(baseline_tools, current_tools)
     ctx: dict[str, Any] = {
         "overall_drift": getattr(report, "drift_score", 0.0),
         "decision_drift": getattr(report, "decision_drift", 0.0),
         "latency_drift": getattr(report, "latency_drift", 0.0),
         "error_drift": getattr(report, "error_drift", 0.0),
+        "tool_drift": tool_drift,
+        "escalation_rate_delta": getattr(report, "escalation_rate_delta", 0.0),
         "tool_decrease": drop,
         "tool_increase": rise,
         "baseline_n": baseline_n,

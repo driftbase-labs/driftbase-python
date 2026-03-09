@@ -264,40 +264,46 @@ def _capture_langchain(
 ) -> Any:
     """Run with LangChain callback handler to capture tool/agent/llm events."""
     try:
-        from langchain_core.callbacks import BaseCallbackHandler
-        from langchain_core.runnables import Runnable
+        from driftbase.sdk.watcher import DriftbaseCallbackHandler
     except ImportError:
         return _capture_generic(func, args, kwargs, ctx)
 
-    class TrackHandler(BaseCallbackHandler):
-        def __init__(self, run_ctx: RunContext):
-            self.ctx = run_ctx
-            self._tool_start: dict[str, float] = {}
-
-        def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
-            name = serialized.get("name", "unknown")
-            self._tool_start[id(serialized)] = time.perf_counter()
-            self.ctx.tool_calls.append({"name": name, "input_hash": _hash_content(input_str)[:16]})
-
-        def on_tool_end(self, output: str, **kwargs: Any) -> None:
-            pass  # we already have order; could add output_hash per tool here
-
-        def on_agent_action(self, action: Any, **kwargs: Any) -> None:
-            pass
-
-        def on_agent_finish(self, finish: Any, **kwargs: Any) -> None:
-            pass
-
-        def on_llm_start(self, serialized: dict, prompts: list[str], **kwargs: Any) -> None:
-            pass
-
-        def on_llm_end(self, response: Any, **kwargs: Any) -> None:
-            pass
-
-    handler = TrackHandler(ctx)
+    handler = DriftbaseCallbackHandler(run_ctx=ctx)
     ctx.framework = "langchain"
 
     # Only inject callbacks if the function accepts config (e.g. LangChain invoke)
+    sig = inspect.signature(func)
+    params = sig.parameters
+    accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if accepts_config:
+        config = kwargs.get("config") or {}
+        if not isinstance(config, dict):
+            config = {}
+        callbacks = list(config.get("callbacks", []))
+        callbacks.append(handler)
+        kwargs = {**kwargs, "config": {**config, "callbacks": callbacks}}
+
+    return _capture_generic(func, args, kwargs, ctx)
+
+
+def _capture_langgraph(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    ctx: RunContext,
+) -> Any:
+    """Inject Driftbase callback into LangGraph graph config so tool calls inside the graph are captured."""
+    if "langgraph" not in sys.modules:
+        return _capture_generic(func, args, kwargs, ctx)
+
+    try:
+        from driftbase.sdk.watcher import DriftbaseCallbackHandler
+    except ImportError:
+        return _capture_generic(func, args, kwargs, ctx)
+
+    handler = DriftbaseCallbackHandler(run_ctx=ctx)
+    ctx.framework = "langgraph"
+
     sig = inspect.signature(func)
     params = sig.parameters
     accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
@@ -409,8 +415,7 @@ def track(
             ctx.framework = framework
             try:
                 if framework == "langgraph":
-                    result = _capture_langchain(func, args, kwargs, ctx)
-                    ctx.framework = "langgraph"
+                    result = _capture_langgraph(func, args, kwargs, ctx)
                 elif framework == "langchain":
                     result = _capture_langchain(func, args, kwargs, ctx)
                 elif framework == "llamaindex":
@@ -460,8 +465,7 @@ def track(
             start = time.perf_counter()
             try:
                 if framework == "langgraph":
-                    result = await _capture_langchain_async(func, args, kwargs, ctx)
-                    ctx.framework = "langgraph"
+                    result = await _capture_langgraph_async(func, args, kwargs, ctx)
                 elif framework == "langchain":
                     result = await _capture_langchain_async(func, args, kwargs, ctx)
                 elif framework == "llamaindex":
@@ -527,23 +531,48 @@ async def _capture_langchain_async(
     ctx: RunContext,
 ) -> Any:
     try:
-        from langchain_core.callbacks import BaseCallbackHandler
+        from driftbase.sdk.watcher import DriftbaseCallbackHandler
     except ImportError:
         return await _capture_generic_async(func, args, kwargs, ctx)
 
-    class TrackHandler(BaseCallbackHandler):
-        def __init__(self, run_ctx: RunContext):
-            self.ctx = run_ctx
-
-        def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
-            self.ctx.tool_calls.append({"name": serialized.get("name", "unknown")})
-
-    handler = TrackHandler(ctx)
+    handler = DriftbaseCallbackHandler(run_ctx=ctx)
     config = kwargs.get("config") or {}
     if not isinstance(config, dict):
         config = {}
     kwargs = {**kwargs, "config": {**config, "callbacks": list(config.get("callbacks", [])) + [handler]}}
     return await func(*args, **kwargs)
+
+
+async def _capture_langgraph_async(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    ctx: RunContext,
+) -> Any:
+    """Inject Driftbase callback into LangGraph graph config (async)."""
+    if "langgraph" not in sys.modules:
+        return await _capture_generic_async(func, args, kwargs, ctx)
+
+    try:
+        from driftbase.sdk.watcher import DriftbaseCallbackHandler
+    except ImportError:
+        return await _capture_generic_async(func, args, kwargs, ctx)
+
+    handler = DriftbaseCallbackHandler(run_ctx=ctx)
+    ctx.framework = "langgraph"
+
+    sig = inspect.signature(func)
+    params = sig.parameters
+    accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if accepts_config:
+        config = kwargs.get("config") or {}
+        if not isinstance(config, dict):
+            config = {}
+        callbacks = list(config.get("callbacks", []))
+        callbacks.append(handler)
+        kwargs = {**kwargs, "config": {**config, "callbacks": callbacks}}
+
+    return await _capture_generic_async(func, args, kwargs, ctx)
 
 
 async def _capture_llamaindex_async(

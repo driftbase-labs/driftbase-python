@@ -341,7 +341,7 @@ def render_diff_report(
         console.print(seq_table)
 
     # Root cause hypothesis
-    from driftbase.hypothesis_engine import format_hypotheses, generate_hypotheses
+    from driftbase.local.hypothesis_engine import format_hypotheses, generate_hypotheses
 
     hypotheses = generate_hypotheses(
         report, baseline_tools, current_tools, baseline_n, current_n

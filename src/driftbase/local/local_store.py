@@ -75,6 +75,7 @@ class DriftReport:
     error_drift: float = 0.0
     output_drift: float = 0.0
     semantic_drift: float = 0.0
+    escalation_rate_delta: float = 0.0  # current_escalated_frac - baseline_escalated_frac
     summary: str = ""
 
 
@@ -150,6 +151,18 @@ def shutdown_local_store() -> None:
         _write_queue.put_nowait(None)
     except queue.Full:
         pass
+
+
+def drain_local_store(timeout: float = 2.0) -> None:
+    """Signal shutdown and block until the write worker has flushed and exited. Use in tests to avoid time.sleep."""
+    global _worker
+    try:
+        _write_queue.put_nowait(None)
+    except queue.Full:
+        pass
+    if _worker is not None:
+        _worker.join(timeout=timeout)
+        _worker = None
 
 
 atexit.register(shutdown_local_store)

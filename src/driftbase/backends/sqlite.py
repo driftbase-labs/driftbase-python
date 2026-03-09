@@ -149,6 +149,16 @@ class SQLiteBackend(StorageBackend):
             )
             return [(row[0] or "unknown", row[1]) for row in result.fetchall()]
 
+    def delete_runs(self, deployment_version: str) -> int:
+        """Delete all runs for the given deployment_version. Returns number of rows deleted."""
+        with Session(self._engine) as session:
+            result = session.execute(
+                text("DELETE FROM agent_runs_local WHERE deployment_version = :v"),
+                {"v": deployment_version},
+            )
+            session.commit()
+            return result.rowcount
+
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         if not run_id:
             return None

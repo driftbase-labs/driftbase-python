@@ -122,6 +122,9 @@ def compute_drift(
     base_sem = json.loads(getattr(baseline, "semantic_cluster_distribution", "{}") or "{}")
     curr_sem = json.loads(getattr(current, "semantic_cluster_distribution", "{}") or "{}")
     semantic_drift = _jensen_shannon_divergence(base_sem, curr_sem)
+    escalation_base = base_sem.get("escalated", 0.0)
+    escalation_curr = curr_sem.get("escalated", 0.0)
+    escalation_rate_delta = escalation_curr - escalation_base
 
     # Raw deltas for reporting (unchanged)
     base_p95 = max(baseline.p95_latency_ms, 1)
@@ -142,11 +145,12 @@ def compute_drift(
     sigma_errors = _sigmoid_contribution(error_drift, k=4.0, c=0.3)
     sigma_output = _sigmoid_contribution(output_drift, k=3.0, c=0.3)
 
-    # Weights: no single dimension can override. Include semantic (what it says).
-    w_jsd = 0.30
-    w_latency = 0.25
-    w_errors = 0.25
-    w_semantic = 0.15
+    # Weights: decision drift (tool sequence) is the most meaningful behavioral change — ≥50%.
+    # Latency, errors, semantic, output share the remainder.
+    w_jsd = 0.55
+    w_latency = 0.15
+    w_errors = 0.15
+    w_semantic = 0.10
     w_output = 0.05
     sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
     drift_score = (
@@ -157,6 +161,9 @@ def compute_drift(
         + w_output * sigma_output
     )
     drift_score = min(1.0, max(0.0, drift_score))
+    # Floor: if decision drift alone exceeds 0.30, overall score must be at least 0.15.
+    if decision_drift > 0.30:
+        drift_score = max(drift_score, 0.15)
 
     sample_size = min(baseline.sample_count, current.sample_count)
     severity = classify_severity(drift_score, sample_size)
@@ -171,5 +178,6 @@ def compute_drift(
         error_drift=error_drift,
         output_drift=output_drift,
         semantic_drift=semantic_drift,
+        escalation_rate_delta=escalation_rate_delta,
         summary="",  # Filled by generate_report in the API
     )
