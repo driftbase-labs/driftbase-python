@@ -1,7 +1,7 @@
 import json
 import math
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # Load from env, default to 50 for production safety
 MIN_SAMPLES = int(os.getenv("DRIFTBASE_PRODUCTION_MIN_SAMPLES", "50"))
@@ -95,38 +95,19 @@ def classify_severity(drift_score: float, sample_size: int) -> str:
     return _classify_severity(drift_score, threshold_multiplier=multiplier)
 
 
-def compute_drift(
+def _compute_drift_score(
     baseline: "BehavioralFingerprint",
     current: "BehavioralFingerprint",
-) -> "DriftReport":
-    """Compute a drift report between two behavioral fingerprints.
-
-    Total score is a weighted sum so one dimension cannot max out the result:
-        S_total = w1*JSD_tools + w2*sigmoid(Δ_latency) + w3*sigmoid(Δ_errors) + w4*sigmoid(Δ_output)
-    Sigmoids bound extreme outliers (e.g. 500% latency spike contributes at most ~0.3).
-
-    Args:
-        baseline: Baseline fingerprint.
-        current: Current fingerprint to compare.
-
-    Returns:
-        DriftReport with drift_score, severity, and component drifts.
-    """
-    from driftbase.local.local_store import DriftReport
-
+) -> float:
+    """Compute the overall drift score (0–1) between two fingerprints. Used for point estimate and bootstrap."""
     base_dist = json.loads(baseline.tool_sequence_distribution)
     curr_dist = json.loads(current.tool_sequence_distribution)
     decision_drift = _jensen_shannon_divergence(base_dist, curr_dist)
 
-    # Semantic drift: JSD on cluster distributions (what the agent says, not just tools).
     base_sem = json.loads(getattr(baseline, "semantic_cluster_distribution", "{}") or "{}")
     curr_sem = json.loads(getattr(current, "semantic_cluster_distribution", "{}") or "{}")
     semantic_drift = _jensen_shannon_divergence(base_sem, curr_sem)
-    escalation_base = base_sem.get("escalated", 0.0)
-    escalation_curr = curr_sem.get("escalated", 0.0)
-    escalation_rate_delta = escalation_curr - escalation_base
 
-    # Raw deltas for reporting (unchanged)
     base_p95 = max(baseline.p95_latency_ms, 1)
     latency_delta_raw = abs(current.p95_latency_ms - baseline.p95_latency_ms) / base_p95
     latency_drift = min(1.0, latency_delta_raw)
@@ -138,21 +119,16 @@ def compute_drift(
     output_delta_raw = abs(current.avg_output_length - baseline.avg_output_length) / base_out
     output_drift = min(1.0, output_delta_raw)
 
-    # Bounded sigmoid contributions for total score (0 when no change, capped when extreme)
-    # Latency: x = relative delta (0, 1, 2, 5 → 0%, 100%, 200%, 500%). c=1, k=2.
     sigma_latency = _sigmoid_contribution(latency_delta_raw, k=2.0, c=1.0)
-    # Errors: x in [0,1]. c=0.3, k=4.
     sigma_errors = _sigmoid_contribution(error_drift, k=4.0, c=0.3)
     sigma_output = _sigmoid_contribution(output_drift, k=3.0, c=0.3)
+    sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
 
-    # Weights: decision drift (tool sequence) is the most meaningful behavioral change — ≥50%.
-    # Latency, errors, semantic, output share the remainder.
     w_jsd = 0.55
     w_latency = 0.15
     w_errors = 0.15
     w_semantic = 0.10
     w_output = 0.05
-    sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
     drift_score = (
         w_jsd * decision_drift
         + w_latency * sigma_latency
@@ -161,14 +137,84 @@ def compute_drift(
         + w_output * sigma_output
     )
     drift_score = min(1.0, max(0.0, drift_score))
-    # Floor: if decision drift alone exceeds 0.30, overall score must be at least 0.15.
+    if decision_drift > 0.30:
+        drift_score = max(drift_score, 0.15)
+    return drift_score
+
+
+def compute_drift(
+    baseline: "BehavioralFingerprint",
+    current: "BehavioralFingerprint",
+    baseline_runs: list[dict[str, Any]] | None = None,
+    current_runs: list[dict[str, Any]] | None = None,
+) -> "DriftReport":
+    """Compute a drift report between two behavioral fingerprints.
+
+    Total score is a weighted sum so one dimension cannot max out the result.
+    If baseline_runs and current_runs are provided, a 500-iteration bootstrap is run
+    to set drift_score_lower and drift_score_upper (95% CI).
+
+    Args:
+        baseline: Baseline fingerprint.
+        current: Current fingerprint to compare.
+        baseline_runs: Optional list of run dicts for bootstrap (uses full set for point estimate).
+        current_runs: Optional list of run dicts for bootstrap.
+
+    Returns:
+        DriftReport with drift_score, severity, component drifts, and optional CI fields.
+    """
+    import numpy as np
+
+    from driftbase.local.fingerprinter import build_fingerprint_from_runs
+    from driftbase.local.local_store import DriftReport, run_dict_to_agent_run
+
+    base_dist = json.loads(baseline.tool_sequence_distribution)
+    curr_dist = json.loads(current.tool_sequence_distribution)
+    decision_drift = _jensen_shannon_divergence(base_dist, curr_dist)
+
+    base_sem = json.loads(getattr(baseline, "semantic_cluster_distribution", "{}") or "{}")
+    curr_sem = json.loads(getattr(current, "semantic_cluster_distribution", "{}") or "{}")
+    semantic_drift = _jensen_shannon_divergence(base_sem, curr_sem)
+    escalation_base = base_sem.get("escalated", 0.0)
+    escalation_curr = curr_sem.get("escalated", 0.0)
+    escalation_rate_delta = escalation_curr - escalation_base
+
+    base_p95 = max(baseline.p95_latency_ms, 1)
+    latency_delta_raw = abs(current.p95_latency_ms - baseline.p95_latency_ms) / base_p95
+    latency_drift = min(1.0, latency_delta_raw)
+
+    error_delta_raw = abs(current.error_rate - baseline.error_rate)
+    error_drift = min(1.0, error_delta_raw * 2.0)
+
+    base_out = max(baseline.avg_output_length, 1.0)
+    output_delta_raw = abs(current.avg_output_length - baseline.avg_output_length) / base_out
+    output_drift = min(1.0, output_delta_raw)
+
+    sigma_latency = _sigmoid_contribution(latency_delta_raw, k=2.0, c=1.0)
+    sigma_errors = _sigmoid_contribution(error_drift, k=4.0, c=0.3)
+    sigma_output = _sigmoid_contribution(output_drift, k=3.0, c=0.3)
+    sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
+
+    w_jsd = 0.55
+    w_latency = 0.15
+    w_errors = 0.15
+    w_semantic = 0.10
+    w_output = 0.05
+    drift_score = (
+        w_jsd * decision_drift
+        + w_latency * sigma_latency
+        + w_errors * sigma_errors
+        + w_semantic * sigma_semantic
+        + w_output * sigma_output
+    )
+    drift_score = min(1.0, max(0.0, drift_score))
     if decision_drift > 0.30:
         drift_score = max(drift_score, 0.15)
 
     sample_size = min(baseline.sample_count, current.sample_count)
     severity = classify_severity(drift_score, sample_size)
 
-    return DriftReport(
+    report = DriftReport(
         baseline_fingerprint_id=baseline.id,
         current_fingerprint_id=current.id,
         drift_score=drift_score,
@@ -179,5 +225,71 @@ def compute_drift(
         output_drift=output_drift,
         semantic_drift=semantic_drift,
         escalation_rate_delta=escalation_rate_delta,
-        summary="",  # Filled by generate_report in the API
+        summary="",
     )
+
+    # Bootstrap 95% CI when run lists are provided
+    n_bootstrap = 500
+    max_bootstrap_n = 200
+
+    if baseline_runs is not None and current_runs is not None and len(baseline_runs) > 0 and len(current_runs) > 0:
+        report.sample_size_warning = min(len(baseline_runs), len(current_runs)) < 30
+        report.confidence_interval_pct = 95
+        report.bootstrap_iterations = n_bootstrap
+
+        baseline_agents = [run_dict_to_agent_run(d) for d in baseline_runs]
+        current_agents = [run_dict_to_agent_run(d) for d in current_runs]
+
+        # Cap for bootstrap performance
+        if len(baseline_agents) > max_bootstrap_n:
+            rng = np.random.default_rng(42)
+            baseline_agents = list(rng.choice(baseline_agents, size=max_bootstrap_n, replace=False))
+        if len(current_agents) > max_bootstrap_n:
+            rng = np.random.default_rng(43)
+            current_agents = list(rng.choice(current_agents, size=max_bootstrap_n, replace=False))
+
+        n_b, n_c = len(baseline_agents), len(current_agents)
+        all_runs = baseline_agents + current_agents
+        window_start = min(r.started_at for r in all_runs)
+        window_end = max((r.completed_at or r.started_at) for r in all_runs)
+        base_version = baseline.deployment_version or "unknown"
+        curr_version = current.deployment_version or "unknown"
+        base_env = getattr(baseline, "environment", "production") or "production"
+        curr_env = getattr(current, "environment", "production") or "production"
+
+        rng = np.random.default_rng(0)
+        scores: list[float] = []
+        for _ in range(n_bootstrap):
+            idx_b = rng.integers(0, n_b, size=n_b)
+            idx_c = rng.integers(0, n_c, size=n_c)
+            sample_b = [baseline_agents[i] for i in idx_b]
+            sample_c = [current_agents[i] for i in idx_c]
+            fp_b = build_fingerprint_from_runs(
+                sample_b,
+                window_start=window_start,
+                window_end=window_end,
+                deployment_version=base_version,
+                environment=base_env,
+            )
+            fp_c = build_fingerprint_from_runs(
+                sample_c,
+                window_start=window_start,
+                window_end=window_end,
+                deployment_version=curr_version,
+                environment=curr_env,
+            )
+            scores.append(_compute_drift_score(fp_b, fp_c))
+
+        report.drift_score_lower = float(np.percentile(scores, 2.5))
+        report.drift_score_upper = float(np.percentile(scores, 97.5))
+        # Ensure point estimate lies within reported interval (CI can be slightly wider)
+        report.drift_score_lower = min(report.drift_score_lower, report.drift_score)
+        report.drift_score_upper = max(report.drift_score_upper, report.drift_score)
+    else:
+        report.drift_score_lower = report.drift_score
+        report.drift_score_upper = report.drift_score
+        report.sample_size_warning = sample_size < 30
+        report.confidence_interval_pct = 95
+        report.bootstrap_iterations = 0
+
+    return report

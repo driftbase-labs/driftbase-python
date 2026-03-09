@@ -77,6 +77,44 @@ class DriftReport:
     semantic_drift: float = 0.0
     escalation_rate_delta: float = 0.0  # current_escalated_frac - baseline_escalated_frac
     summary: str = ""
+    # Bootstrap confidence interval (95%)
+    drift_score_lower: float = 0.0
+    drift_score_upper: float = 0.0
+    confidence_interval_pct: int = 95
+    sample_size_warning: bool = False
+    bootstrap_iterations: int = 0
+
+
+def _parse_datetime_for_run(v: Any) -> datetime:
+    """Parse started_at/completed_at from run dict for AgentRun."""
+    if v is None:
+        return datetime.utcnow()
+    if isinstance(v, datetime):
+        return v
+    if isinstance(v, str):
+        return datetime.fromisoformat(v.replace("Z", "+00:00"))
+    return datetime.utcnow()
+
+
+def run_dict_to_agent_run(d: dict[str, Any]) -> AgentRun:
+    """Convert a run dict from get_runs() to an AgentRun for fingerprinting."""
+    return AgentRun(
+        id=str(d.get("id", "")),
+        session_id=str(d.get("session_id", "")),
+        deployment_version=str(d.get("deployment_version", "unknown")),
+        environment=str(d.get("environment", "production")),
+        started_at=_parse_datetime_for_run(d.get("started_at")),
+        completed_at=_parse_datetime_for_run(d.get("completed_at")),
+        task_input_hash=str(d.get("task_input_hash", "")),
+        tool_sequence=str(d.get("tool_sequence", "[]")),
+        tool_call_count=int(d.get("tool_call_count", 0)),
+        output_length=int(d.get("output_length", 0)),
+        output_structure_hash=str(d.get("output_structure_hash", "")),
+        latency_ms=int(d.get("latency_ms", 0)),
+        error_count=int(d.get("error_count", 0)),
+        retry_count=int(d.get("retry_count", 0)),
+        semantic_cluster=str(d.get("semantic_cluster", "cluster_none")),
+    )
 
 
 def _log_dir() -> str:

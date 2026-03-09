@@ -21,7 +21,7 @@ from driftbase.local.rootcause import (
     top_sequence_shifts,
     tool_frequency_diff,
 )
-from driftbase.local.local_store import AgentRun, BehavioralFingerprint, DriftReport
+from driftbase.local.local_store import AgentRun, BehavioralFingerprint, DriftReport, run_dict_to_agent_run
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -116,37 +116,6 @@ def cmd_diff(
         console=console,
     )
     ctx.exit(code)
-
-
-def _parse_datetime(v: Any) -> datetime:
-    if v is None:
-        return datetime.utcnow()
-    if isinstance(v, datetime):
-        return v
-    if isinstance(v, str):
-        return datetime.fromisoformat(v.replace("Z", "+00:00"))
-    return datetime.utcnow()
-
-
-def run_dict_to_agent_run(d: dict[str, Any]) -> AgentRun:
-    """Convert a run dict from get_runs() to an AgentRun for fingerprinting."""
-    return AgentRun(
-        id=str(d.get("id", "")),
-        session_id=str(d.get("session_id", "")),
-        deployment_version=str(d.get("deployment_version", "unknown")),
-        environment=str(d.get("environment", "production")),
-        started_at=_parse_datetime(d.get("started_at")),
-        completed_at=_parse_datetime(d.get("completed_at")),
-        task_input_hash=str(d.get("task_input_hash", "")),
-        tool_sequence=str(d.get("tool_sequence", "[]")),
-        tool_call_count=int(d.get("tool_call_count", 0)),
-        output_length=int(d.get("output_length", 0)),
-        output_structure_hash=str(d.get("output_structure_hash", "")),
-        latency_ms=int(d.get("latency_ms", 0)),
-        error_count=int(d.get("error_count", 0)),
-        retry_count=int(d.get("retry_count", 0)),
-        semantic_cluster=str(d.get("semantic_cluster", "cluster_none")),
-    )
 
 
 def get_runs_for_version(
@@ -277,17 +246,31 @@ def render_diff_report(
         ("Latency drift", report.latency_drift),
         ("Error drift", report.error_drift),
     ]
-    for name, score in dims:
+    for i, (name, score) in enumerate(dims):
         is_breach = score >= threshold
         delta_style = "red" if is_breach else _dimension_style(score, threshold)
+        current_val = f"{score:.2f}"
+        if i == 0 and getattr(report, "drift_score_upper", None) is not None and getattr(report, "drift_score_lower", None) is not None:
+            upper, lower = report.drift_score_upper, report.drift_score_lower
+            if upper - lower > 0.01:
+                current_val = f"{score:.2f}  [{lower:.2f} – {upper:.2f}]"
         table.add_row(
             name,
             "0.00",
-            f"{score:.2f}",
+            current_val,
             f"[{delta_style}]{score:+.2f}[/]",
         )
 
     console.print(table)
+
+    if getattr(report, "sample_size_warning", False):
+        console.print(
+            Panel(
+                "Low sample count — confidence interval may be wide. Run more iterations for a tighter estimate.",
+                title="[bold yellow]⚠[/]",
+                border_style="yellow",
+            )
+        )
 
     # Tool call frequency diff table (absolute + percentage change per tool)
     tools_table = Table(
@@ -351,6 +334,8 @@ def render_diff_report(
 
     # Footer
     footer = f"Runs: [bold]{baseline_label}[/] (n={baseline_n}) → [bold]{current_label}[/] (n={current_n})"
+    if getattr(report, "bootstrap_iterations", 0) > 0:
+        footer += " · 95% CI"
     if compute_time_ms is not None:
         footer += f" · Computed in {compute_time_ms:.0f}ms"
     footer += " · No data left your machine"
@@ -414,7 +399,7 @@ def diff_local(
     if baseline_fp is None or current_fp is None:
         return None, None, None, "Failed to build fingerprints"
 
-    report = compute_drift(baseline_fp, current_fp)
+    report = compute_drift(baseline_fp, current_fp, baseline_run_dicts, current_run_dicts)
     return report, baseline_fp, current_fp, None
 
 

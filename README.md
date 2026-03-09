@@ -11,7 +11,7 @@ When you ship a new prompt, model, or tool set, agent behavior can change in sub
 **1. Install**
 
 ```bash
-pip install driftbase[local]
+pip install driftbase
 ```
 
 **2. Add the decorator**

@@ -323,7 +323,7 @@ async def compute_temporal_baseline_drift_async(
         DriftReport if both windows have sufficient samples and drift was computed;
         None otherwise.
     """
-    from driftbase.diff import compute_drift
+    from driftbase.local.diff import compute_drift
 
     settings = get_settings()
     if store is None:

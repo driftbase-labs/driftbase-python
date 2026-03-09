@@ -75,6 +75,12 @@ def _build_report_data(
     error_drift = report.error_drift
     tool_drift_jsd = _jsd(baseline_tools, current_tools)
 
+    drift_score_lower = getattr(report, "drift_score_lower", overall_drift)
+    drift_score_upper = getattr(report, "drift_score_upper", overall_drift)
+    confidence_interval_pct = getattr(report, "confidence_interval_pct", 95)
+    bootstrap_iterations = getattr(report, "bootstrap_iterations", 0)
+    sample_size_warning = getattr(report, "sample_size_warning", False)
+
     summary_table = [
         {"metric": "Overall drift", "score": round(overall_drift, 2), "status": _status_label(overall_drift, threshold, is_overall=True)},
         {"metric": "Decision drift", "score": round(decision_drift, 2), "status": _status_label(decision_drift, threshold)},
@@ -127,6 +133,11 @@ def _build_report_data(
         "current_n": current_n,
         "threshold": threshold,
         "summary_table": summary_table,
+        "drift_score_lower": drift_score_lower,
+        "drift_score_upper": drift_score_upper,
+        "confidence_interval_pct": confidence_interval_pct,
+        "bootstrap_iterations": bootstrap_iterations,
+        "sample_size_warning": sample_size_warning,
         "what_changed": what_changed,
         "root_cause_analysis": root_cause_text,
         "recommendation": recommendation,
@@ -147,6 +158,11 @@ def format_markdown(data: dict[str, Any]) -> str:
     ]
     for row in data["summary_table"]:
         lines.append(f"| {row['metric']} | {row['score']} | {row['status']} |")
+    ci_lower = data.get("drift_score_lower")
+    ci_upper = data.get("drift_score_upper")
+    if ci_lower is not None and ci_upper is not None and data.get("bootstrap_iterations", 0) > 0:
+        lines.append("")
+        lines.append(f"95% confidence interval: [{ci_lower:.2f} – {ci_upper:.2f}]")
     lines.extend(["", "### What Changed", ""])
     if data["what_changed"]:
         for bullet in data["what_changed"]:
@@ -169,6 +185,11 @@ def format_html(data: dict[str, Any]) -> str:
         f"<tr><td>{r['metric']}</td><td>{r['score']}</td><td>{r['status']}</td></tr>"
         for r in data["summary_table"]
     )
+    ci_line = ""
+    ci_lower = data.get("drift_score_lower")
+    ci_upper = data.get("drift_score_upper")
+    if ci_lower is not None and ci_upper is not None and data.get("bootstrap_iterations", 0) > 0:
+        ci_line = f"<p class=\"meta\">95% confidence interval: [{ci_lower:.2f} – {ci_upper:.2f}]</p>"
     bullets_html = "".join(
         f"<li>{b.replace('**', '')}</li>" for b in data["what_changed"]
     ) if data["what_changed"] else "<li>No major changes detected.</li>"
@@ -195,6 +216,7 @@ def format_html(data: dict[str, Any]) -> str:
 <p class="meta">Generated: {data['generated_at_utc']} · Runs: {data['baseline_version']} (n={data['baseline_n']}), {data['current_version']} (n={data['current_n']})</p>
 <h2>Summary</h2>
 <table><thead><tr><th>Metric</th><th>Score</th><th>Status</th></tr></thead><tbody>{rows_html}</tbody></table>
+{ci_line}
 <h2>What Changed</h2><ul>{bullets_html}</ul>
 <h2>Root Cause Analysis</h2><p>{rc_html}</p>
 <h2>Recommendation</h2><div class="recommendation">{rec_html}</div>
