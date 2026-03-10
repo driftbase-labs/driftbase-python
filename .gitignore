@@ -226,4 +226,4 @@ Thumbs.db
 
 # IDE Workspaces (uncommented for safety)
 .vscode/
-.idea/
+.idea/.claude/

@@ -83,6 +83,15 @@ class DriftReport:
     confidence_interval_pct: int = 95
     sample_size_warning: bool = False
     bootstrap_iterations: int = 0
+    # Context values for before→after display
+    baseline_escalation_rate: float = 0.0
+    current_escalation_rate: float = 0.0
+    baseline_p95_latency_ms: float = 0.0
+    current_p95_latency_ms: float = 0.0
+    baseline_error_rate: float = 0.0
+    current_error_rate: float = 0.0
+    baseline_dominant_tool: str = ""
+    current_dominant_tool: str = ""
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:

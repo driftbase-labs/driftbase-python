@@ -207,21 +207,35 @@ def generate_hypotheses(
         if "drop" in rule_id or "decrease" in rule_id or "specific_tool" in rule_id:
             if drop:
                 tool_name, delta_pct = drop
-                obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{abs(delta_pct):.0f}")
+                # Use concrete language for 100% drops
+                if abs(delta_pct) >= 99:
+                    obs = f"Tool '{tool_name}' dropped from baseline — no longer being called"
+                else:
+                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{abs(delta_pct):.0f}")
                 action = action.replace("{{tool_name}}", tool_name)
         elif "rise" in rule_id or "increase" in rule_id or "escalation" in rule_id:
             if rise:
                 tool_name, delta_pct = rise
-                obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{delta_pct:.0f}")
+                # Use concrete language for new tools
+                if delta_pct >= 99 and "100" in obs:
+                    obs = f"Tool '{tool_name}' is new in current version — not present in baseline"
+                else:
+                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{delta_pct:.0f}")
                 action = action.replace("{{tool_name}}", tool_name)
         else:
             if drop:
                 tool_name, delta_pct = drop
-                obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{abs(delta_pct):.0f}")
+                if abs(delta_pct) >= 99:
+                    obs = f"Tool '{tool_name}' dropped from baseline — no longer being called"
+                else:
+                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{abs(delta_pct):.0f}")
                 action = action.replace("{{tool_name}}", tool_name)
             if rise:
                 tool_name, delta_pct = rise
-                obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{delta_pct:.0f}")
+                if delta_pct >= 99:
+                    obs = f"Tool '{tool_name}' is new in current version — not present in baseline"
+                else:
+                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{delta_pct:.0f}")
                 action = action.replace("{{tool_name}}", tool_name)
         out.append({
             "observation": obs,

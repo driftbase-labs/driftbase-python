@@ -72,6 +72,13 @@ def _threshold_multiplier(sample_size: int, min_samples: int = MIN_SAMPLES) -> f
         return 2.0  # Fallback for edge cases like N=0 or 1
 
 
+def _get_dominant_tool(tool_dist: dict[str, float]) -> str:
+    """Get the most frequently used tool from a distribution."""
+    if not tool_dist:
+        return ""
+    return max(tool_dist.items(), key=lambda x: x[1])[0]
+
+
 def _classify_severity(drift_score: float, threshold_multiplier: float = 1.0) -> str:
     """Classify severity from drift score using a given threshold multiplier."""
     critical_threshold = 0.50 * threshold_multiplier
@@ -214,6 +221,10 @@ def compute_drift(
     sample_size = min(baseline.sample_count, current.sample_count)
     severity = classify_severity(drift_score, sample_size)
 
+    # Extract context values for before→after display
+    baseline_dominant_tool = _get_dominant_tool(base_dist)
+    current_dominant_tool = _get_dominant_tool(curr_dist)
+
     report = DriftReport(
         baseline_fingerprint_id=baseline.id,
         current_fingerprint_id=current.id,
@@ -226,6 +237,15 @@ def compute_drift(
         semantic_drift=semantic_drift,
         escalation_rate_delta=escalation_rate_delta,
         summary="",
+        # Context values
+        baseline_escalation_rate=escalation_base,
+        current_escalation_rate=escalation_curr,
+        baseline_p95_latency_ms=baseline.p95_latency_ms,
+        current_p95_latency_ms=current.p95_latency_ms,
+        baseline_error_rate=baseline.error_rate,
+        current_error_rate=current.error_rate,
+        baseline_dominant_tool=baseline_dominant_tool,
+        current_dominant_tool=current_dominant_tool,
     )
 
     # Bootstrap 95% CI when run lists are provided

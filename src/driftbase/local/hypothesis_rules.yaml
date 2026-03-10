@@ -9,19 +9,19 @@ rules:
     condition:
       tool_decrease_min_pct: 20
       overall_drift_min: 0.05
-    observation: "Tool '{{tool_name}}' usage dropped by {{delta_pct}}% vs baseline."
-    likely_cause: "Prompt or model change may be bypassing or deprioritizing this tool; or fewer tasks require it."
-    recommended_action: "Review recent prompt/agent changes and whether {{tool_name}} should be invoked more. Check for new fallback paths."
-    confidence: "High when tool drop correlates with overall drift."
+    observation: "Tool '{{tool_name}}' is being used much less (down {{delta_pct}}% vs baseline)"
+    likely_cause: "Prompt or model change bypassing this tool; fewer tasks requiring it; or new fallback path."
+    recommended_action: "Review recent changes that might reduce {{tool_name}} usage. Ensure the tool is still invoked when needed."
+    confidence: "Investigate further"
 
   - id: tool_increase
     condition:
       tool_increase_min_pct: 50
       overall_drift_min: 0.05
-    observation: "Tool '{{tool_name}}' usage increased by {{delta_pct}}% vs baseline."
-    likely_cause: "Agent may be over-relying on this tool (e.g. escalation or search) or task mix shifted."
+    observation: "Tool '{{tool_name}}' is being used much more (up {{delta_pct}}% vs baseline)"
+    likely_cause: "Agent over-relying on this tool; task mix shift; or escalation/search behavior increased."
     recommended_action: "Confirm whether increased {{tool_name}} use is intended. If not, tighten instructions or add guardrails."
-    confidence: "High when rise is large and correlates with decision or latency drift."
+    confidence: "Investigate further"
 
   - id: decision_drift
     condition:

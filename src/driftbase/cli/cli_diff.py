@@ -200,77 +200,149 @@ def render_diff_report(
     explanation: str,
     threshold: float = DEFAULT_THRESHOLD,
     compute_time_ms: Optional[float] = None,
-) -> None:
-    """Render drift report using rich Table and Panel (no raw ANSI)."""
-    above = report.drift_score >= threshold
+) -> int:
+    """Render drift report using rich Table and Panel (no raw ANSI).
 
-    # Threshold breach / within-threshold panel (red for breaches, green for within)
-    if above:
-        panel_body = (
-            f"Drift score [bold]{report.drift_score:.2f}[/] is [bold red]above[/] threshold {threshold:.2f}. "
-            "Consider investigating before deploying."
-        )
-        if explanation:
-            panel_body += f"\n\n[dim]{explanation}[/]"
-        console.print(
-            Panel(
-                panel_body,
-                title="[bold red]▲ ABOVE THRESHOLD[/]",
-                border_style="red",
-            )
-        )
-    else:
-        console.print(
-            Panel(
-                f"Drift score [bold]{report.drift_score:.2f}[/] is [bold green]within[/] threshold {threshold:.2f}.",
-                title="[bold green]~ WITHIN THRESHOLD[/]",
-                border_style="green",
-            )
-        )
+    Returns:
+        Exit code (0 for SHIP/MONITOR, 1 for REVIEW/BLOCK)
+    """
+    from driftbase.verdict import compute_verdict
 
-    # Metrics table: Metric, Baseline, Current, Delta (reference 0 → current score)
-    table = Table(
-        title=f"Drift — {baseline_label} → {current_label}",
-        show_header=True,
-        header_style="bold",
-        border_style="dim",
+    # Compute verdict
+    verdict_result = compute_verdict(
+        report,
+        baseline_tools=baseline_tools,
+        current_tools=current_tools,
+        baseline_n=baseline_n,
+        current_n=current_n,
     )
-    table.add_column("Metric", style="cyan")
-    table.add_column("Baseline", justify="right")
-    table.add_column("Current", justify="right")
-    table.add_column("Delta", justify="right")
 
+    # Header
+    console.print("─" * 60)
+    console.print(
+        f"  [bold]DRIFTBASE[/]  {baseline_label} → {current_label}  ·  {baseline_n} vs {current_n} runs"
+    )
+    console.print("─" * 60)
+    console.print()
+
+    # Overall drift with CI
+    ci_display = ""
+    if (
+        hasattr(report, "drift_score_upper")
+        and hasattr(report, "drift_score_lower")
+        and report.drift_score_upper is not None
+        and report.drift_score_lower is not None
+    ):
+        lower, upper = report.drift_score_lower, report.drift_score_upper
+        if upper - lower > 0.01:
+            ci_display = f"  [{lower:.2f}–{upper:.2f}, 95% CI]"
+    console.print(f"  Overall drift      [bold]{report.drift_score:.2f}[/]{ci_display}")
+    console.print()
+
+    # Dimension breakdown with status indicators
     dims = [
-        ("Overall drift", report.drift_score),
-        ("Decision drift", report.decision_drift),
-        ("Latency drift", report.latency_drift),
-        ("Error drift", report.error_drift),
+        ("decision_drift", "Decisions", report.decision_drift),
+        ("latency_drift", "Latency", report.latency_drift),
+        ("error_drift", "Errors", report.error_drift),
     ]
-    for i, (name, score) in enumerate(dims):
-        is_breach = score >= threshold
-        delta_style = "red" if is_breach else _dimension_style(score, threshold)
-        current_val = f"{score:.2f}"
-        if i == 0 and getattr(report, "drift_score_upper", None) is not None and getattr(report, "drift_score_lower", None) is not None:
-            upper, lower = report.drift_score_upper, report.drift_score_lower
-            if upper - lower > 0.01:
-                current_val = f"{score:.2f}  [{lower:.2f} – {upper:.2f}]"
-        table.add_row(
-            name,
-            "0.00",
-            current_val,
-            f"[{delta_style}]{score:+.2f}[/]",
+
+    for dim_key, dim_name, score in dims:
+        status = _dimension_status(score)
+        style = _dimension_style(score, threshold)
+
+        # Status symbol
+        if score >= 0.5:
+            symbol = "⚠"
+        elif score >= 0.2:
+            symbol = "·"
+        elif score >= 0.1:
+            symbol = "·"
+        else:
+            symbol = "✓"
+
+        # Context line with before→after values
+        context = ""
+        if dim_key == "decision_drift" and score > 0.2:
+            # Show escalation rate: before → after
+            baseline_esc = getattr(report, "baseline_escalation_rate", 0.0) * 100
+            current_esc = getattr(report, "current_escalation_rate", 0.0) * 100
+            if baseline_esc > 0 or current_esc > 0:
+                context = f"\n    └─ escalation rate jumped from {baseline_esc:.0f}% → {current_esc:.0f}%"
+                if current_esc > baseline_esc * 1.5:
+                    multiplier = current_esc / max(baseline_esc, 1)
+                    context += f"\n    └─ agent is routing {multiplier:.1f}× more to humans"
+            else:
+                context = "\n    └─ outcome distribution changed"
+        elif dim_key == "latency_drift" and score > 0.15:
+            # Show p95 latency: before → after
+            baseline_p95 = getattr(report, "baseline_p95_latency_ms", 0.0)
+            current_p95 = getattr(report, "current_p95_latency_ms", 0.0)
+            if baseline_p95 > 0:
+                context = f"\n    └─ p95 increased {baseline_p95:.0f}ms → {current_p95:.0f}ms"
+            else:
+                pct_change = score * 100
+                context = f"\n    └─ p95 +{pct_change:.0f}%"
+        elif dim_key == "error_drift":
+            baseline_err = getattr(report, "baseline_error_rate", 0.0) * 100
+            current_err = getattr(report, "current_error_rate", 0.0) * 100
+            if score < 0.05:
+                context = "\n    └─ stable"
+            elif baseline_err > 0 or current_err > 0:
+                context = f"\n    └─ error rate {baseline_err:.1f}% → {current_err:.1f}%"
+            else:
+                err_pct = score * 50
+                context = f"\n    └─ error rate +{err_pct:.1f}%"
+
+        console.print(
+            f"  {dim_name:<18} [{style}]{score:.2f}  {symbol} {status}[/]{context}"
         )
 
-    console.print(table)
+    console.print()
+    console.print("─" * 60)
 
+    # Generate hypotheses to include top one in verdict panel
+    from driftbase.local.hypothesis_engine import generate_hypotheses
+
+    hypotheses = generate_hypotheses(
+        report, baseline_tools, current_tools, baseline_n, current_n
+    )
+
+    # Verdict panel with integrated top hypothesis
+    verdict_symbol = verdict_result.symbol
+    verdict_title = f"{verdict_symbol}  {verdict_result.title}"
+
+    # Build verdict panel content
+    verdict_content = verdict_result.explanation
+
+    # Add the top hypothesis if available (most critical insight)
+    if hypotheses:
+        top_hypothesis = hypotheses[0]
+        verdict_content += f"\n\n[bold]Most likely cause:[/]\n  → {top_hypothesis['observation']}\n  [dim]{top_hypothesis['likely_cause']}[/]"
+
+    # Add next steps
+    verdict_content += f"\n\n[bold]Next steps:[/]\n" + "\n".join(
+        f"  □ {step}" for step in verdict_result.next_steps
+    )
+
+    console.print(
+        Panel(
+            verdict_content,
+            title=f"[bold {verdict_result.style}]VERDICT  {verdict_title}[/]",
+            border_style=verdict_result.style,
+        )
+    )
+    console.print()
+
+    # Sample size warning (if applicable)
     if getattr(report, "sample_size_warning", False):
         console.print(
             Panel(
                 "Low sample count — confidence interval may be wide. Run more iterations for a tighter estimate.",
-                title="[bold yellow]⚠[/]",
+                title="[bold yellow]⚠  Sample Size Warning[/]",
                 border_style="yellow",
             )
         )
+        console.print()
 
     # Tool call frequency diff table (absolute + percentage change per tool)
     tools_table = Table(
@@ -323,23 +395,34 @@ def render_diff_report(
             )
         console.print(seq_table)
 
-    # Root cause hypothesis
-    from driftbase.local.hypothesis_engine import format_hypotheses, generate_hypotheses
+    # Additional hypotheses (technical details) - show remaining ones if there are multiple
+    if len(hypotheses) > 1:
+        from driftbase.local.hypothesis_engine import format_hypotheses
 
-    hypotheses = generate_hypotheses(
-        report, baseline_tools, current_tools, baseline_n, current_n
-    )
-    hypothesis_text = format_hypotheses(hypotheses)
-    console.print(Panel(hypothesis_text, title="Root cause hypothesis", border_style="dim"))
+        # Format all hypotheses except the first (which is in verdict)
+        remaining_hypotheses = hypotheses[1:]
+        hypothesis_text = format_hypotheses(remaining_hypotheses)
+        console.print(
+            Panel(
+                hypothesis_text,
+                title="[dim]Additional Analysis (hypothesis engine)[/]",
+                border_style="dim",
+            )
+        )
+        console.print()
 
     # Footer
-    footer = f"Runs: [bold]{baseline_label}[/] (n={baseline_n}) → [bold]{current_label}[/] (n={current_n})"
+    console.print("─" * 60)
+    footer_parts = []
     if getattr(report, "bootstrap_iterations", 0) > 0:
-        footer += " · 95% CI"
+        footer_parts.append("95% CI via bootstrap")
     if compute_time_ms is not None:
-        footer += f" · Computed in {compute_time_ms:.0f}ms"
-    footer += " · No data left your machine"
+        footer_parts.append(f"Computed in {compute_time_ms:.0f}ms")
+    footer_parts.append("No data left your machine")
+    footer = "  " + " · ".join(footer_parts)
     console.print(f"[dim]{footer}[/]")
+
+    return verdict_result.exit_code
 
 
 def diff_local(
@@ -493,6 +576,15 @@ def run_diff(
     )
 
     if json_output:
+        from driftbase.verdict import compute_verdict
+
+        verdict_result = compute_verdict(
+            report,
+            baseline_tools=baseline_tools,
+            current_tools=current_tools,
+            baseline_n=baseline_n,
+            current_n=current_n,
+        )
         out = {
             "baseline_version": baseline_label,
             "current_version": current_label,
@@ -500,6 +592,10 @@ def run_diff(
             "current_n": current_n,
             "drift_score": report.drift_score,
             "severity": report.severity,
+            "verdict": verdict_result.verdict.value,
+            "verdict_title": verdict_result.title,
+            "verdict_explanation": verdict_result.explanation,
+            "next_steps": verdict_result.next_steps,
             "above_threshold": report.drift_score >= threshold,
             "threshold": threshold,
             "decision_drift": report.decision_drift,
@@ -516,9 +612,9 @@ def run_diff(
         if report.drift_score >= threshold and explanation:
             out["explanation"] = explanation
         console.print(json.dumps(out, indent=2))
-        return 1 if report.drift_score >= threshold else 0
+        return verdict_result.exit_code
 
-    render_diff_report(
+    exit_code = render_diff_report(
         console,
         report,
         baseline_label,
@@ -533,7 +629,7 @@ def run_diff(
         threshold=threshold,
         compute_time_ms=elapsed_ms,
     )
-    return 1 if report.drift_score >= threshold else 0
+    return exit_code
 
 
 def run_watch(

@@ -179,8 +179,8 @@ def format_json(data: dict[str, Any]) -> str:
     return json.dumps(data, indent=2)
 
 
-def format_html(data: dict[str, Any]) -> str:
-    """Single self-contained HTML file with inline CSS."""
+def format_html_legacy(data: dict[str, Any]) -> str:
+    """Legacy HTML format - kept for compatibility. Use format_html_verdict() for new verdict-based format."""
     rows_html = "".join(
         f"<tr><td>{r['metric']}</td><td>{r['score']}</td><td>{r['status']}</td></tr>"
         for r in data["summary_table"]
@@ -225,6 +225,52 @@ def format_html(data: dict[str, Any]) -> str:
 </html>"""
 
 
+def format_html_verdict(
+    report: Any,
+    baseline_fp: Any,
+    current_fp: Any,
+    baseline_tools: dict[str, float],
+    current_tools: dict[str, float],
+    tool_frequency_diffs: list[dict[str, Any]],
+    compute_time_ms: float | None = None,
+) -> str:
+    """Generate modern HTML report using verdict engine and new design."""
+    from driftbase.local.hypothesis_engine import generate_hypotheses
+    from driftbase.reports.html import generate_html_report
+    from driftbase.verdict import compute_verdict
+
+    baseline_n = baseline_fp.sample_count
+    current_n = current_fp.sample_count
+    baseline_label = baseline_fp.deployment_version
+    current_label = current_fp.deployment_version
+
+    # Generate verdict
+    verdict_result = compute_verdict(
+        report,
+        baseline_tools=baseline_tools,
+        current_tools=current_tools,
+        baseline_n=baseline_n,
+        current_n=current_n,
+    )
+
+    # Generate hypotheses
+    hypotheses = generate_hypotheses(
+        report, baseline_tools, current_tools, baseline_n, current_n
+    )
+
+    return generate_html_report(
+        report=report,
+        verdict_result=verdict_result,
+        baseline_label=baseline_label,
+        current_label=current_label,
+        baseline_n=baseline_n,
+        current_n=current_n,
+        hypotheses=hypotheses,
+        tool_frequency_diffs=tool_frequency_diffs,
+        compute_time_ms=compute_time_ms,
+    )
+
+
 def run_report(
     baseline_version: str,
     current_version: str,
@@ -237,14 +283,17 @@ def run_report(
     console: Optional[Any] = None,
 ) -> int:
     """Generate shareable report; print to stdout or write to file. Returns 0 on success, 1 on error."""
+    import time
     from rich.console import Console as RichConsole
     from rich.panel import Panel
+    from driftbase.local.rootcause import tool_frequency_diff
     _console = console if console is not None else RichConsole()
 
     if backend is None:
         from driftbase.backends.factory import get_backend
         backend = get_backend()
 
+    t0 = time.perf_counter()
     report, baseline_fp, current_fp, err = diff_local(
         backend,
         baseline_version,
@@ -252,6 +301,8 @@ def run_report(
         environment=environment,
         threshold=threshold,
     )
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
     if err:
         _console.print(
             Panel(err, title="[bold red]Error[/]", border_style="red"),
@@ -272,6 +323,27 @@ def run_report(
     baseline_tools = tool_usage_distribution(baseline_run_dicts)
     current_tools = tool_usage_distribution(current_run_dicts)
 
+    # For HTML format, use new verdict-based generator
+    if fmt == "html":
+        tool_frequency_diffs = tool_frequency_diff(baseline_run_dicts, current_run_dicts)
+        out = format_html_verdict(
+            report,
+            baseline_fp,
+            current_fp,
+            baseline_tools,
+            current_tools,
+            tool_frequency_diffs,
+            compute_time_ms=elapsed_ms,
+        )
+        if output_path:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(out)
+            _console.print(f"[green]✓[/] HTML report written to {output_path}")
+            return 0
+        _console.print(out)
+        return 0
+
+    # For markdown/json, use existing data-based format
     data = _build_report_data(
         report,
         baseline_fp,
@@ -285,8 +357,6 @@ def run_report(
 
     if fmt == "json":
         out = format_json(data)
-    elif fmt == "html":
-        out = format_html(data)
     else:
         out = format_markdown(data)
 
