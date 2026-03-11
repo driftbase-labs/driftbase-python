@@ -227,3 +227,7 @@ Thumbs.db
 # IDE Workspaces (uncommented for safety)
 .vscode/
 .idea/.claude/
+.env
+agent.py
+test_limit.py
+.env
