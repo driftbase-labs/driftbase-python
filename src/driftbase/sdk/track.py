@@ -2,7 +2,7 @@
 Zero-friction @track() decorator for agent runs.
 
 Auto-detects framework (LangGraph → LangChain → LlamaIndex → raw OpenAI → generic), captures
-tool calls, latency, and outcome, and writes to local SQLite without blocking.
+tool calls, latency, and outcome, and writes to local SQLite and Azure Cloud without blocking.
 Never raises to the caller; all errors logged to ~/.driftbase/errors.log.
 """
 
@@ -16,13 +16,18 @@ import logging
 import os
 import sys
 import time
+import threading
+import requests
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Optional
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
+from driftbase.telemetry import track_event
 
-logger = logging.getLogger(__name__)
+# Ensure logger doesn't pollute the user's stdout by default
+logger = logging.getLogger("driftbase")
+logger.setLevel(logging.ERROR)
 
 # Decision outcome for semantic_cluster / reporting
 OUTCOME_RESOLVED = "resolved"
@@ -48,6 +53,11 @@ class RunContext:
     output_length: int = 0
     output_structure_hash: str = ""
     error_count: int = 0
+    
+    # Added for Azure Cloud Dashboard UI
+    raw_input: str = ""
+    raw_output: str = ""
+    model_name: str = "unknown"
 
 
 def _hash_content(content: Any) -> str:
@@ -59,7 +69,6 @@ def _hash_content(content: Any) -> str:
 
 
 def _classify_decision_outcome(result: Any, exception: Optional[BaseException]) -> str:
-    """Classify run as resolved, escalated, fallback, or error from return value or exception."""
     if exception is not None:
         return OUTCOME_ERROR
     if result is None:
@@ -101,7 +110,6 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 def _detect_framework(func: Callable[..., Any]) -> str:
-    """Detect framework by inspecting function module and signature. Priority: LangGraph → LangChain → LlamaIndex → OpenAI → generic."""
     try:
         mod = inspect.getmodule(func)
         if mod is not None:
@@ -123,7 +131,6 @@ def _detect_framework(func: Callable[..., Any]) -> str:
                 return "langchain"
             if "openai" in str(hint).lower() or "ChatCompletion" in hint_str:
                 return "openai"
-        # Check sys.modules so already-imported frameworks are detected
         if "langgraph" in sys.modules:
             return "langgraph"
         if "langchain" in sys.modules or "langchain_core" in sys.modules:
@@ -143,7 +150,6 @@ def _build_payload(
     deployment_version: str,
     environment: str,
 ) -> dict[str, Any]:
-    """Build AgentRunLocal-compatible payload for local_store.enqueue_run."""
     completed = ctx.completed_at or datetime.utcnow()
     tool_sequence_json = json.dumps([t.get("name", "") for t in ctx.tool_calls])
     return {
@@ -172,7 +178,6 @@ def _capture_generic(
     kwargs: dict[str, Any],
     ctx: RunContext,
 ) -> Any:
-    """Generic path: time the call and optionally parse tool_sequence from return value."""
     start = time.perf_counter()
     result = None
     try:
@@ -203,7 +208,6 @@ def _capture_openai(
     kwargs: dict[str, Any],
     ctx: RunContext,
 ) -> Any:
-    """Wrap OpenAI chat.completions.create to capture tool_calls, finish_reason, usage, latency from raw response."""
     try:
         openai_mod = __import__("openai", fromlist=["resources"])
         resources = getattr(openai_mod, "resources", None)
@@ -227,6 +231,7 @@ def _capture_openai(
         resp = original_create(self, *create_args, **create_kwargs)
         ctx.latency_ms += int((time.perf_counter() - t0) * 1000)
         try:
+            ctx.model_name = getattr(resp, "model", "openai")
             if getattr(resp, "choices", None):
                 c = resp.choices[0]
                 msg = getattr(c, "message", None)
@@ -262,7 +267,6 @@ def _capture_langchain(
     kwargs: dict[str, Any],
     ctx: RunContext,
 ) -> Any:
-    """Run with LangChain callback handler to capture tool/agent/llm events."""
     try:
         from driftbase.sdk.watcher import DriftbaseCallbackHandler
     except ImportError:
@@ -271,7 +275,6 @@ def _capture_langchain(
     handler = DriftbaseCallbackHandler(run_ctx=ctx)
     ctx.framework = "langchain"
 
-    # Only inject callbacks if the function accepts config (e.g. LangChain invoke)
     sig = inspect.signature(func)
     params = sig.parameters
     accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
@@ -292,7 +295,6 @@ def _capture_langgraph(
     kwargs: dict[str, Any],
     ctx: RunContext,
 ) -> Any:
-    """Inject Driftbase callback into LangGraph graph config so tool calls inside the graph are captured."""
     if "langgraph" not in sys.modules:
         return _capture_generic(func, args, kwargs, ctx)
 
@@ -324,7 +326,6 @@ def _capture_llamaindex(
     kwargs: dict[str, Any],
     ctx: RunContext,
 ) -> Any:
-    """Run with LlamaIndex BaseCallbackHandler to capture query, retrieval, and tool-call events."""
     try:
         from llama_index.core.callbacks import BaseCallbackHandler, CBEventType
         from llama_index.core.settings import Settings
@@ -356,23 +357,11 @@ def _capture_llamaindex(
                 pass
             return event_id or ""
 
-        def on_event_end(
-            self,
-            event_type: Any,
-            payload: Optional[dict] = None,
-            event_id: str = "",
-            **kwargs: Any,
-        ) -> None:
+        def on_event_end(self, event_type: Any, payload: Optional[dict] = None, event_id: str = "", **kwargs: Any) -> None:
             pass
-
         def start_trace(self, trace_id: Optional[str] = None) -> None:
             pass
-
-        def end_trace(
-            self,
-            trace_id: Optional[str] = None,
-            trace_map: Optional[dict] = None,
-        ) -> None:
+        def end_trace(self, trace_id: Optional[str] = None, trace_map: Optional[dict] = None) -> None:
             pass
 
     handler = TrackHandler(ctx)
@@ -391,17 +380,72 @@ def _capture_llamaindex(
         return _capture_generic(func, args, kwargs, ctx)
 
 
+def _post_run_telemetry(ctx: RunContext, version: str) -> None:
+    """Fire telemetry to local systems and print console warnings."""
+    try:
+        track_event('sdk_behavior_checked', {
+            'framework': ctx.framework,
+            'version': version,
+            'decision_outcome': ctx.decision_outcome,
+            'tool_call_count': len(ctx.tool_calls),
+            'latency_ms': ctx.latency_ms,
+            'error_count': ctx.error_count,
+            'execution_environment': 'local_decorator'
+        })
+        
+        if ctx.decision_outcome != OUTCOME_RESOLVED or ctx.error_count > 0:
+            print(f"\n[Driftbase] Behavior check complete. Status: {ctx.decision_outcome.upper()}")
+            print("⚠️  Action recommended. View full visualization and team reports at:")
+            print("➡️  https://app.driftbase.io/reports\n")
+    except Exception as e:
+        _log_track_error("telemetry", f"Failed to send telemetry or print gate: {e!r}")
+
+
+def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) -> None:
+    """Silently dispatch payload to Azure if API key exists. Fails silently."""
+    api_key = explicit_api_key or os.getenv("DRIFTBASE_API_KEY")
+    if not api_key:
+        return
+
+    def _fire_cloud():
+        try:
+            p_tokens = (ctx.token_usage or {}).get("prompt", 0)
+            c_tokens = (ctx.token_usage or {}).get("completion", 0)
+            payload = {
+                "status": "error" if ctx.error_count > 0 else "success",
+                "latency": ctx.latency_ms,
+                "payload": {
+                    "model": ctx.model_name if ctx.model_name != "unknown" else ctx.framework,
+                    "messages": [{"role": "user", "content": ctx.raw_input}],
+                    "response": ctx.raw_output,
+                    "prompt_tokens": p_tokens,
+                    "completion_tokens": c_tokens,
+                    "total_tokens": p_tokens + c_tokens
+                }
+            }
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            # Hard 2.0s timeout. Never hang the host application.
+            requests.post(
+                "https://app-driftbase-eu-92745.azurewebsites.net/api/capture/", 
+                json=payload, 
+                headers=headers, 
+                timeout=2.0
+            )
+        except Exception as e:
+            # Silently catch network drops or rate limits.
+            logger.debug(f"Cloud dispatch failed: {str(e)}")
+            
+    threading.Thread(target=_fire_cloud, daemon=True).start()
+
+
 def track(
     version: str = "unknown",
     environment: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator that records agent runs to local SQLite with zero friction.
-
-    Use as:
-        @track(version="v1.0")
-        def my_agent(user_input: str) -> str:
-            ...
-    """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         framework = _detect_framework(func)
@@ -413,6 +457,14 @@ def track(
             ctx = RunContext()
             ctx.task_input_hash = _hash_content((args, kwargs))[:32]
             ctx.framework = framework
+            
+            # Capture UI input
+            msg_data = kwargs.get("messages") or args
+            try:
+                ctx.raw_input = json.dumps(msg_data, default=str)
+            except Exception:
+                ctx.raw_input = str(msg_data)
+
             try:
                 if framework == "langgraph":
                     result = _capture_langgraph(func, args, kwargs, ctx)
@@ -430,6 +482,7 @@ def track(
                 ctx.error_count = 1
                 ctx.error_type = type(e).__name__
                 ctx.completed_at = datetime.utcnow()
+                ctx.raw_output = str(e)
                 if ctx.latency_ms == 0:
                     ctx.latency_ms = 1
                 try:
@@ -438,10 +491,24 @@ def track(
                     enqueue_run(payload)
                 except Exception as enq_err:
                     _log_track_error("track_decorator", f"run_id={run_id} enqueue error={enq_err!r}")
+                
+                _post_run_telemetry(ctx, version)
+                _dispatch_to_cloud(ctx, api_key)
                 raise
 
             try:
                 if result is not None:
+                    # Capture UI output
+                    if isinstance(result, str):
+                        ctx.raw_output = result
+                    elif hasattr(result, "content"):
+                        ctx.raw_output = str(getattr(result, "content", ""))
+                    else:
+                        try:
+                            ctx.raw_output = json.dumps(result, default=str)
+                        except Exception:
+                            ctx.raw_output = str(result)
+                            
                     if isinstance(result, str):
                         ctx.output_length = len(result)
                     elif hasattr(result, "content"):
@@ -454,6 +521,9 @@ def track(
                 enqueue_run(payload)
             except Exception as e:
                 _log_track_error("track_decorator", f"run_id={run_id} error={e!r}")
+            
+            _post_run_telemetry(ctx, version)
+            _dispatch_to_cloud(ctx, api_key)
             return result
 
         @functools.wraps(func)
@@ -463,6 +533,13 @@ def track(
             ctx.task_input_hash = _hash_content((args, kwargs))[:32]
             ctx.framework = framework
             start = time.perf_counter()
+            
+            msg_data = kwargs.get("messages") or args
+            try:
+                ctx.raw_input = json.dumps(msg_data, default=str)
+            except Exception:
+                ctx.raw_input = str(msg_data)
+                
             try:
                 if framework == "langgraph":
                     result = await _capture_langgraph_async(func, args, kwargs, ctx)
@@ -483,16 +560,30 @@ def track(
                 ctx.decision_outcome = OUTCOME_ERROR
                 ctx.error_count = 1
                 ctx.error_type = type(e).__name__
+                ctx.raw_output = str(e)
                 try:
                     env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
                     payload = _build_payload(ctx, session_id or run_id, version, env)
                     enqueue_run(payload)
                 except Exception as enq_err:
                     _log_track_error("track_decorator_async", f"run_id={run_id} enqueue error={enq_err!r}")
+                
+                _post_run_telemetry(ctx, version)
+                _dispatch_to_cloud(ctx, api_key)
                 raise
 
             try:
                 if result is not None:
+                    if isinstance(result, str):
+                        ctx.raw_output = result
+                    elif hasattr(result, "content"):
+                        ctx.raw_output = str(getattr(result, "content", ""))
+                    else:
+                        try:
+                            ctx.raw_output = json.dumps(result, default=str)
+                        except Exception:
+                            ctx.raw_output = str(result)
+                            
                     if isinstance(result, str):
                         ctx.output_length = len(result)
                     elif hasattr(result, "content"):
@@ -505,6 +596,9 @@ def track(
                 enqueue_run(payload)
             except Exception as e:
                 _log_track_error("track_decorator_async", f"run_id={run_id} error={e!r}")
+            
+            _post_run_telemetry(ctx, version)
+            _dispatch_to_cloud(ctx, api_key)
             return result
 
         if inspect.iscoroutinefunction(func):
@@ -514,22 +608,12 @@ def track(
     return decorator
 
 
-async def _capture_generic_async(
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    ctx: RunContext,
-) -> Any:
+async def _capture_generic_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
     result = await func(*args, **kwargs)
     return result
 
 
-async def _capture_langchain_async(
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    ctx: RunContext,
-) -> Any:
+async def _capture_langchain_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
     try:
         from driftbase.sdk.watcher import DriftbaseCallbackHandler
     except ImportError:
@@ -543,13 +627,7 @@ async def _capture_langchain_async(
     return await func(*args, **kwargs)
 
 
-async def _capture_langgraph_async(
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    ctx: RunContext,
-) -> Any:
-    """Inject Driftbase callback into LangGraph graph config (async)."""
+async def _capture_langgraph_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
     if "langgraph" not in sys.modules:
         return await _capture_generic_async(func, args, kwargs, ctx)
 
@@ -575,13 +653,7 @@ async def _capture_langgraph_async(
     return await _capture_generic_async(func, args, kwargs, ctx)
 
 
-async def _capture_llamaindex_async(
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    ctx: RunContext,
-) -> Any:
-    """LlamaIndex async: inject callback handler then run generic async capture."""
+async def _capture_llamaindex_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
     try:
         from llama_index.core.callbacks import BaseCallbackHandler, CBEventType
         from llama_index.core.settings import Settings
@@ -594,14 +666,7 @@ async def _capture_llamaindex_async(
             super().__init__(event_starts_to_ignore=[], event_ends_to_ignore=[])
             self.ctx = run_ctx
 
-        def on_event_start(
-            self,
-            event_type: Any,
-            payload: Optional[dict] = None,
-            event_id: str = "",
-            parent_id: str = "",
-            **kwargs: Any,
-        ) -> str:
+        def on_event_start(self, event_type: Any, payload: Optional[dict] = None, event_id: str = "", parent_id: str = "", **kwargs: Any) -> str:
             payload = payload or {}
             try:
                 if event_type == CBEventType.FUNCTION_CALL:
@@ -613,23 +678,11 @@ async def _capture_llamaindex_async(
                 pass
             return event_id or ""
 
-        def on_event_end(
-            self,
-            event_type: Any,
-            payload: Optional[dict] = None,
-            event_id: str = "",
-            **kwargs: Any,
-        ) -> None:
+        def on_event_end(self, event_type: Any, payload: Optional[dict] = None, event_id: str = "", **kwargs: Any) -> None:
             pass
-
         def start_trace(self, trace_id: Optional[str] = None) -> None:
             pass
-
-        def end_trace(
-            self,
-            trace_id: Optional[str] = None,
-            trace_map: Optional[dict] = None,
-        ) -> None:
+        def end_trace(self, trace_id: Optional[str] = None, trace_map: Optional[dict] = None) -> None:
             pass
 
     handler = TrackHandlerAsync(ctx)
@@ -648,13 +701,7 @@ async def _capture_llamaindex_async(
         return await _capture_generic_async(func, args, kwargs, ctx)
 
 
-async def _capture_openai_async(
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    ctx: RunContext,
-) -> Any:
-    """Wrap OpenAI chat.completions.create (async) to capture from raw response."""
+async def _capture_openai_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
     try:
         openai_mod = __import__("openai", fromlist=["resources"])
         resources = getattr(openai_mod, "resources", None)
@@ -682,6 +729,7 @@ async def _capture_openai_async(
             resp = r
         ctx.latency_ms += int((time.perf_counter() - t0) * 1000)
         try:
+            ctx.model_name = getattr(resp, "model", "openai")
             if getattr(resp, "choices", None):
                 c = resp.choices[0]
                 msg = getattr(c, "message", None)
