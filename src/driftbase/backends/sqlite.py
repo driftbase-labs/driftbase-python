@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
@@ -14,6 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Field, Session, SQLModel, select
 
 from driftbase.backends.base import StorageBackend
+from driftbase.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,8 @@ class AgentRunLocal(SQLModel, table=True):
     semantic_cluster: str = "cluster_none"
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
+    raw_prompt: str = ""
+    raw_output: str = ""
 
 
 def _ensure_dir(path: str) -> None:
@@ -48,31 +52,38 @@ def _ensure_dir(path: str) -> None:
         os.makedirs(d, exist_ok=True)
 
 
-def _migrate_token_columns(engine: Any) -> None:
-    """Add prompt_tokens and completion_tokens if missing (existing DBs)."""
+def _migrate_schema(engine: Any) -> None:
+    """Add new columns if missing (existing DBs)."""
     try:
         with engine.connect() as conn:
             r = conn.execute(text("PRAGMA table_info(agent_runs_local)"))
             columns = {row[1] for row in r.fetchall()}
+            
             if "prompt_tokens" not in columns:
                 conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN prompt_tokens INTEGER"))
                 conn.commit()
             if "completion_tokens" not in columns:
                 conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN completion_tokens INTEGER"))
                 conn.commit()
+            if "raw_prompt" not in columns:
+                conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN raw_prompt TEXT"))
+                conn.commit()
+            if "raw_output" not in columns:
+                conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN raw_output TEXT"))
+                conn.commit()
     except Exception as e:
-        logger.debug("Token column migration skip: %s", e)
+        logger.debug("Schema migration skip: %s", e)
 
 
 def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
     """Convert AgentRunLocal row to run dict."""
     return {
-        "id": r.id,
+        "id": str(r.id) if r.id else str(uuid.uuid4()),
         "session_id": r.session_id,
         "deployment_version": r.deployment_version,
         "environment": r.environment,
-        "started_at": r.started_at,
-        "completed_at": r.completed_at,
+        "started_at": r.started_at.isoformat() if isinstance(r.started_at, datetime) else r.started_at,
+        "completed_at": r.completed_at.isoformat() if isinstance(r.completed_at, datetime) else r.completed_at,
         "task_input_hash": r.task_input_hash,
         "tool_sequence": r.tool_sequence,
         "tool_call_count": r.tool_call_count,
@@ -84,6 +95,8 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "semantic_cluster": r.semantic_cluster,
         "prompt_tokens": r.prompt_tokens,
         "completion_tokens": r.completion_tokens,
+        "raw_prompt": r.raw_prompt,
+        "raw_output": r.raw_output,
     }
 
 
@@ -96,13 +109,34 @@ class SQLiteBackend(StorageBackend):
         url = "sqlite:///" + self._db_path
         self._engine = create_engine(url, connect_args={"check_same_thread": False})
         AgentRunLocal.__table__.create(self._engine, checkfirst=True)
-        _migrate_token_columns(self._engine)
+        _migrate_schema(self._engine)
+
+    def _prune(self, session: Session) -> None:
+        """Enforces the rolling retention window to prevent disk bloat."""
+        limit = get_settings().DRIFTBASE_LOCAL_RETENTION_LIMIT
+        try:
+            session.execute(
+                text(
+                    """
+                    DELETE FROM agent_runs_local 
+                    WHERE id NOT IN (
+                        SELECT id FROM agent_runs_local 
+                        ORDER BY started_at DESC 
+                        LIMIT :limit
+                    )
+                    """
+                ),
+                {"limit": limit}
+            )
+        except Exception as e:
+            logger.debug("SQLite database pruning failed: %s", e)
 
     def write_run(self, payload: dict[str, Any]) -> None:
         try:
             with Session(self._engine) as session:
                 run = AgentRunLocal(**payload)
                 session.add(run)
+                self._prune(session)
                 session.commit()
         except Exception as e:
             logger.debug("SQLite write_run failed: %s", e)
@@ -116,6 +150,7 @@ class SQLiteBackend(StorageBackend):
                 for payload in batch:
                     run = AgentRunLocal(**payload)
                     session.add(run)
+                self._prune(session)
                 session.commit()
         except Exception as e:
             logger.debug("SQLite write_runs failed: %s", e)

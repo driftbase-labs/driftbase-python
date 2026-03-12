@@ -1,175 +1,88 @@
-"""
-CLI inspect: show what the SDK captured, hashed, and dropped for a run (verifiable privacy).
-"""
-
-from __future__ import annotations
-
 import json
-import os
-import sys
-from typing import Any, Optional
-
 import click
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.markdown import Markdown
 
-from driftbase.backends.base import StorageBackend
 from driftbase.backends.factory import get_backend
+from driftbase.pricing import estimate_run_cost
 
-
-DROPPED_ITEMS = [
-    ("Raw user message", "never stored, never hashed, dropped"),
-    ("Raw agent output", "never stored, never hashed, dropped"),
-    ("System prompt", "never stored, never hashed, dropped"),
-    ("API keys / headers", "never accessed"),
-    ("User identifiers", "never accessed"),
-]
-
-
-
-
-def format_inspect_report(run: dict[str, Any], storage_location: str) -> str:
-    """Produce the human-readable inspect output for a single run."""
-    run_id = run.get("id", "unknown")
-    lines = [
-        f"DRIFTBASE INSPECT — run_id: {run_id}",
-        "─" * 45,
-        "WHAT WAS CAPTURED (stored locally)",
-        "",
-        "  tool_calls:",
-    ]
-    tool_sequence = run.get("tool_sequence", "[]")
-    try:
-        tools = json.loads(tool_sequence) if isinstance(tool_sequence, str) else tool_sequence
-    except Exception:
-        tools = []
-    for i, name in enumerate(tools, 1):
-        lines.append(f"    [{i}] {name}")
-    lines.append("")
-    decision = run.get("semantic_cluster") or "—"
-    if decision == "cluster_none":
-        decision = "—"
-    lines.append(f"  decision_outcome:         {decision}")
-    lines.append(f"  total_latency_ms:         {run.get('latency_ms', 0)}")
-    lines.append(f"  error_count:              {run.get('error_count', 0)}")
-    lines.append(f"  retry_count:              {run.get('retry_count', 0)}")
-    pt = run.get("prompt_tokens")
-    ct = run.get("completion_tokens")
-    if pt is not None and ct is not None:
-        total = pt + ct
-        lines.append(f"  token_usage:              {total:,} tokens")
-    else:
-        lines.append("  token_usage:              —")
-    lines.append("")
-    lines.append("WHAT WAS HASHED (content never stored)")
-    lines.append("")
-    input_hash = run.get("task_input_hash") or ""
-    lines.append("  input_hash:     sha256(user_input)  [original discarded]")
-    lines.append(f"                  → {input_hash}")
-    lines.append("")
-    output_hash = run.get("output_structure_hash") or ""
-    lines.append("  output_hash:    sha256(agent_output)  [original discarded]")
-    lines.append(f"                  → {output_hash}")
-    lines.append("")
-    lines.append("  tool_inputs:    each tool input hashed individually")
-    lines.append("                  → originals discarded immediately after hashing")
-    lines.append("")
-    lines.append("WHAT WAS DROPPED (never touched by driftbase)")
-    lines.append("")
-    for label, desc in DROPPED_ITEMS:
-        lines.append(f"  ✗  {label:<25} — {desc}")
-    lines.append("")
-    lines.append("─" * 45)
-    lines.append(f"Storage location: {storage_location}")
-    lines.append("Nothing sent to any external server (free tier)")
-    return "\n".join(lines)
-
-
-def inspect_run_to_dict(run: dict[str, Any], storage_location: str) -> dict[str, Any]:
-    """Produce a JSON-serializable inspect payload for --export."""
-    tool_sequence = run.get("tool_sequence", "[]")
-    try:
-        tools = json.loads(tool_sequence) if isinstance(tool_sequence, str) else tool_sequence
-    except Exception:
-        tools = []
-    pt = run.get("prompt_tokens")
-    ct = run.get("completion_tokens")
-    token_usage = (pt + ct) if (pt is not None and ct is not None) else None
-    return {
-        "run_id": run.get("id"),
-        "what_was_captured": {
-            "tool_calls": [{"index": i, "name": n} for i, n in enumerate(tools, 1)],
-            "decision_outcome": run.get("semantic_cluster") or None,
-            "total_latency_ms": run.get("latency_ms"),
-            "error_count": run.get("error_count"),
-            "retry_count": run.get("retry_count"),
-            "token_usage": token_usage,
-        },
-        "what_was_hashed": {
-            "input_hash": run.get("task_input_hash"),
-            "output_hash": run.get("output_structure_hash"),
-            "tool_inputs": "each tool input hashed individually; originals discarded",
-        },
-        "what_was_dropped": [{"item": label, "note": desc} for label, desc in DROPPED_ITEMS],
-        "storage_location": storage_location,
-        "no_external_transmission": True,
-    }
-
-
-def get_storage_location(backend: Optional[StorageBackend] = None) -> str:
-    """Return the storage path/location string for the current backend."""
-    if backend is None:
-        backend = get_backend()
-    if hasattr(backend, "_db_path"):
-        return os.path.expanduser(backend._db_path) + " (local only)"
-    return "configured backend (local only)"
-
-
-def run_inspect(
-    run_id_or_last: str,
-    *,
-    export_path: Optional[str] = None,
-    backend: Optional[StorageBackend] = None,
-    console: Optional[Any] = None,
-) -> int:
-    """
-    Load a run by id or 'last', print inspect report, optionally export JSON.
-    Returns 0 on success, 1 if run not found.
-    """
-    from rich.console import Console as RichConsole
-    from rich.panel import Panel
-    _console = console if console is not None else RichConsole()
-
-    if backend is None:
-        backend = get_backend()
-    if run_id_or_last.strip().lower() == "last":
-        run = backend.get_last_run()
-    else:
-        run = backend.get_run(run_id_or_last)
-    if not run:
-        _console.print(
-            Panel(
-                f"Run not found: {run_id_or_last}",
-                title="[bold red]Error[/]",
-                border_style="red",
-            ),
-        )
-        return 1
-    storage_location = get_storage_location(backend)
-    text_report = format_inspect_report(run, storage_location)
-    _console.print(text_report)
-    if export_path:
-        payload = inspect_run_to_dict(run, storage_location)
-        with open(export_path, "w") as f:
-            json.dump(payload, f, indent=2)
-        _console.print(f"\nExported to: {export_path}")
-    return 0
-
-
-@click.command(name="inspect")
-@click.option("--run", "-r", required=True, metavar="RUN_ID_OR_LAST", help="Run ID or 'last' for most recent run.")
-@click.option("--export", "-o", "export_path", metavar="PATH", help="Export inspect output as JSON.")
+@click.command("inspect")
+@click.argument("run_id")
 @click.pass_context
-def cmd_inspect(ctx: click.Context, run: str, export_path: str | None) -> None:
-    """Show what was captured, hashed, and dropped for a run (verifiable privacy)."""
-    console = ctx.obj["console"]
-    code = run_inspect(run, export_path=export_path, console=console)
-    ctx.exit(code)
+def cmd_inspect(ctx: click.Context, run_id: str) -> None:
+    """Deep-dive into a specific agent run (tools, latency, cost, and raw text)."""
+    console: Console = ctx.obj["console"]
+    backend = get_backend()
+
+    runs = backend.get_all_runs()
+    target_run = next((r for r in runs if str(r.get("id", "")).startswith(run_id) or str(r.get("session_id", "")).startswith(run_id)), None)
+
+    if not target_run:
+        console.print(Panel(f"No run found matching ID: [bold]{run_id}[/]", title="Error", border_style="red"))
+        ctx.exit(1)
+
+    full_id = target_run.get("id", target_run.get("session_id", "Unknown"))
+    version = target_run.get("deployment_version", "unknown")
+    outcome = target_run.get("semantic_cluster", "unknown")
+    latency = target_run.get("latency_ms", 0)
+    p_tokens = target_run.get("prompt_tokens", 0) or 0
+    c_tokens = target_run.get("completion_tokens", 0) or 0
+    cost = estimate_run_cost(p_tokens, c_tokens)
+    raw_prompt = target_run.get("raw_prompt")
+    raw_output = target_run.get("raw_output")
+
+    outcome_color = "red" if outcome in ["error", "escalated"] else "green"
+
+    # 1. Metadata Panel
+    meta_table = Table(show_header=False, box=None, padding=(0, 2))
+    meta_table.add_row("[dim]Run ID[/]", f"[bold]{full_id}[/]")
+    meta_table.add_row("[dim]Version[/]", f"[bold cyan]{version}[/]")
+    meta_table.add_row("[dim]Outcome[/]", f"[bold {outcome_color}]{outcome.upper()}[/]")
+    meta_table.add_row("[dim]Latency[/]", f"{latency}ms")
+    meta_table.add_row("[dim]Tokens[/]", f"{p_tokens} prompt / {c_tokens} completion")
+    meta_table.add_row("[dim]Est. Cost[/]", f"€{cost:.6f}")
+
+    console.print(Panel(meta_table, title="[bold]Run Metadata[/]", border_style="blue"))
+
+    # 2. Tool Execution Path
+    tools_raw = target_run.get("tool_sequence", "[]")
+    try:
+        tools = json.loads(tools_raw) if isinstance(tools_raw, str) else tools_raw
+    except Exception:
+        tools = []
+
+    if tools:
+        tool_steps = " ➔ ".join(f"[bold cyan]{t}[/]" for t in tools)
+        console.print(Panel(tool_steps, title="[bold]Tool Execution Chain[/]", border_style="cyan"))
+    else:
+        console.print(Panel("[dim]No tools called during this run.[/]", title="[bold]Tool Execution Chain[/]", border_style="dim"))
+
+    # 3. Raw Prompt (Local Flight Recorder)
+    if raw_prompt:
+        console.print(Panel(
+            Markdown(raw_prompt), 
+            title="[bold yellow]Raw Prompt[/] [dim](Local Only)[/]", 
+            border_style="yellow"
+        ))
+
+    # 4. Raw Output (Local Flight Recorder)
+    if raw_output:
+        console.print(Panel(
+            Markdown(raw_output), 
+            title="[bold green]Raw Output[/] [dim](Local Only)[/]", 
+            border_style="green"
+        ))
+
+    # 5. Privacy State
+    privacy_table = Table(show_header=False, box=None, padding=(0, 2))
+    privacy_table.add_row("[dim]Input Hash[/]", f"[bold dim]{target_run.get('task_input_hash', 'N/A')}[/]")
+    privacy_table.add_row("[dim]Output Structure[/]", f"[bold dim]{target_run.get('output_structure_hash', 'N/A')}[/]")
+    
+    console.print(Panel(
+        privacy_table, 
+        title="[bold dim]Cloud Sync Payload[/]", 
+        border_style="dim",
+        subtitle="[dim]Only structural hashes leave this machine during 'driftbase push'[/]"
+    ))

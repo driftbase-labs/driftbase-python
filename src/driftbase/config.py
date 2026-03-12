@@ -64,6 +64,20 @@ class Settings:
         """Number of hours for current window in temporal drift. Default: 24."""
         return _env_int("DRIFTBASE_CURRENT_HOURS", 24, min_val=1)
 
+    @property
+    def DRIFTBASE_LOCAL_RETENTION_LIMIT(self) -> int:
+        """Maximum number of runs to keep in the local SQLite database. Default: 10000."""
+        return _env_int("DRIFTBASE_LOCAL_RETENTION_LIMIT", 10000, min_val=1)
+
+    @property
+    def DRIFTBASE_SCRUB_PII(self) -> bool:
+        """
+        Enable PII scrubbing by default. 
+        Critical for EU AI Act and GDPR compliance.
+        Set DRIFTBASE_SCRUB_PII=0 to disable.
+        """
+        return _env_bool("DRIFTBASE_SCRUB_PII", True)
+
 
 _settings: Optional[Settings] = None
 

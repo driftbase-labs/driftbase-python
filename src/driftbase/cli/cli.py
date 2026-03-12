@@ -1,5 +1,5 @@
 """
-CLI for driftbase: versions, diff, watch, inspect, report, push.
+CLI for driftbase: versions, diff, watch, inspect, report, push, demo.
 Uses click for parsing and rich for output.
 """
 
@@ -40,11 +40,13 @@ from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_inspect import cmd_inspect
 from driftbase.cli.cli_report import cmd_report
 from driftbase.cli.cli_push import cmd_push
+from driftbase.cli.cli_demo import cmd_demo
 
 cli.add_command(cmd_diff)
 cli.add_command(cmd_inspect)
 cli.add_command(cmd_report)
 cli.add_command(cmd_push)
+cli.add_command(cmd_demo)
 
 
 def _mask_secret(value: str) -> str:
@@ -152,6 +154,9 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
             hypothesis_rules = str(_rules_path())
         except Exception:
             hypothesis_rules = "(bundled)"
+            
+    rate_prompt_raw, rate_prompt_source = _get("DRIFTBASE_RATE_PROMPT_1M", "2.50")
+    rate_comp_raw, rate_comp_source = _get("DRIFTBASE_RATE_COMPLETION_1M", "10.00")
 
     return [
         ("DRIFTBASE_DB_PATH", _mask_secret(db_path), db_path_source, "Path to the local SQLite database."),
@@ -162,6 +167,8 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
         ("DRIFTBASE_MIN_SAMPLES", str(min_samples), min_samples_source, "Minimum runs to compute a fingerprint (default 10)."),
         ("DRIFTBASE_SCRUB_PII", scrub_pii, scrub_source, "Whether to scrub PII before hashing (default false)."),
         ("DRIFTBASE_HYPOTHESIS_RULES", _mask_secret(hypothesis_rules), hypothesis_rules_source, "Path to hypothesis rules YAML (default: bundled)."),
+        ("DRIFTBASE_RATE_PROMPT_1M", rate_prompt_raw, rate_prompt_source, "EUR per 1M prompt tokens (default 2.50)."),
+        ("DRIFTBASE_RATE_COMPLETION_1M", rate_comp_raw, rate_comp_source, "EUR per 1M completion tokens (default 10.00)."),
     ]
 
 

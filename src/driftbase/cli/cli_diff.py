@@ -1,6 +1,6 @@
 """
 Local CLI diff and watch: compute drift from local backend (SQLite/Postgres) runs.
-All computation runs locally; no cloud connection. Output via rich Console/Table/Panel.
+All computation runs locally unless --remote is specified. Output via rich Console/Table/Panel.
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import os
 from collections import Counter
 from datetime import datetime
 from typing import Any, Optional
@@ -38,6 +39,7 @@ DEFAULT_THRESHOLD = 0.20
 @click.option("--environment", "-e", default=None, help="Filter by environment.")
 @click.option("--threshold", "-t", type=float, default=0.20, help="Drift threshold (default 0.20).")
 @click.option("--json", "json_output", is_flag=True, help="Machine-readable output for CI.")
+@click.option("--remote", is_flag=True, help="Compute diff using the Driftbase Pro cloud engine.")
 @click.pass_context
 def cmd_diff(
     ctx: click.Context,
@@ -48,12 +50,82 @@ def cmd_diff(
     environment: str | None,
     threshold: float,
     json_output: bool,
+    remote: bool,
 ) -> None:
-    """Compare two versions or last N runs vs baseline (local SQLite)."""
-    from driftbase.backends.factory import get_backend
-
+    """Compare two versions or last N runs vs baseline. Use --remote for cloud comparison."""
     console: Console = ctx.obj["console"]
     use_color = not console.no_color
+
+    # Handle Cloud Diff
+    if remote:
+        if not baseline or not current:
+            console.print("[bold red]Error:[/] --remote requires explicit baseline and current versions (e.g. driftbase diff v1.0 v2.0 --remote)")
+            ctx.exit(1)
+            
+        import httpx
+        
+        api_key = os.getenv("DRIFTBASE_API_KEY")
+        if not api_key:
+            console.print("[bold red]Error:[/] DRIFTBASE_API_KEY missing.")
+            ctx.exit(1)
+
+        api_url = os.getenv("DRIFTBASE_API_URL", "http://localhost:8000")
+        
+        payload = {
+            "baseline_version": baseline,
+            "current_version": current,
+            "environment": environment or "production"
+        }
+
+        try:
+            response = httpx.post(
+                f"{api_url}/diff",
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            console.print(f"[bold red]API Error:[/] {str(e)}")
+            ctx.exit(1)
+
+        score = data.get("drift_score", 0.0)
+        severity = data.get("severity", "unknown")
+        
+        # Financial calculation
+        rate_p = float(os.getenv("DRIFTBASE_RATE_PROMPT_1M", "2.50"))
+        rate_c = float(os.getenv("DRIFTBASE_RATE_COMPLETION_1M", "10.00"))
+        
+        b_p_tok = data.get("baseline_prompt_tokens", 0)
+        b_c_tok = data.get("baseline_completion_tokens", 0)
+        c_p_tok = data.get("current_prompt_tokens", 0)
+        c_c_tok = data.get("current_completion_tokens", 0)
+        
+        b_cost_10k = ((b_p_tok * rate_p) + (b_c_tok * rate_c)) * 10000 / 1000000
+        c_cost_10k = ((c_p_tok * rate_p) + (c_c_tok * rate_c)) * 10000 / 1000000
+        delta_cost = c_cost_10k - b_cost_10k
+        
+        console.print(f"\n[bold]Drift Analysis (Cloud):[/] {baseline} ➔ {current}")
+        console.print(f"Sample size: {data.get('baseline_sample_count', 0)} vs {data.get('current_sample_count', 0)}")
+        console.print(f"Jensen-Shannon Divergence: [bold]{score}[/]")
+        
+        cost_color = "red" if delta_cost > 0 else "green"
+        cost_sign = "+" if delta_cost > 0 else ""
+        console.print(f"Cost Impact (per 10k runs): [{cost_color}]{cost_sign}€{delta_cost:.2f}[/]")
+        
+        if severity == "high":
+            console.print("\n[bold red]✖ High behavioral drift detected. Deployment blocked.[/]")
+            ctx.exit(1)
+        elif severity == "medium":
+            console.print("\n[bold yellow]! Medium behavioral drift detected. Proceed with caution.[/]")
+            ctx.exit(0)
+        else:
+            console.print("\n[bold green]✓ Agent behavior is stable. Deployment approved.[/]")
+            ctx.exit(0)
+
+    # Handle Local Diff
+    from driftbase.backends.factory import get_backend
 
     if last is not None and against is not None:
         code = run_diff(
@@ -201,14 +273,9 @@ def render_diff_report(
     threshold: float = DEFAULT_THRESHOLD,
     compute_time_ms: Optional[float] = None,
 ) -> int:
-    """Render drift report using rich Table and Panel (no raw ANSI).
-
-    Returns:
-        Exit code (0 for SHIP/MONITOR, 1 for REVIEW/BLOCK)
-    """
+    """Render drift report using rich Table and Panel (no raw ANSI)."""
     from driftbase.verdict import compute_verdict
 
-    # Compute verdict
     verdict_result = compute_verdict(
         report,
         baseline_tools=baseline_tools,
@@ -217,7 +284,6 @@ def render_diff_report(
         current_n=current_n,
     )
 
-    # Header
     console.print("─" * 60)
     console.print(
         f"  [bold]DRIFTBASE[/]  {baseline_label} → {current_label}  ·  {baseline_n} vs {current_n} runs"
@@ -225,7 +291,6 @@ def render_diff_report(
     console.print("─" * 60)
     console.print()
 
-    # Overall drift with CI
     ci_display = ""
     if (
         hasattr(report, "drift_score_upper")
@@ -239,7 +304,6 @@ def render_diff_report(
     console.print(f"  Overall drift      [bold]{report.drift_score:.2f}[/]{ci_display}")
     console.print()
 
-    # Dimension breakdown with status indicators
     dims = [
         ("decision_drift", "Decisions", report.decision_drift),
         ("latency_drift", "Latency", report.latency_drift),
@@ -250,7 +314,6 @@ def render_diff_report(
         status = _dimension_status(score)
         style = _dimension_style(score, threshold)
 
-        # Status symbol
         if score >= 0.5:
             symbol = "⚠"
         elif score >= 0.2:
@@ -260,10 +323,8 @@ def render_diff_report(
         else:
             symbol = "✓"
 
-        # Context line with before→after values
         context = ""
         if dim_key == "decision_drift" and score > 0.2:
-            # Show escalation rate: before → after
             baseline_esc = getattr(report, "baseline_escalation_rate", 0.0) * 100
             current_esc = getattr(report, "current_escalation_rate", 0.0) * 100
             if baseline_esc > 0 or current_esc > 0:
@@ -274,7 +335,6 @@ def render_diff_report(
             else:
                 context = "\n    └─ outcome distribution changed"
         elif dim_key == "latency_drift" and score > 0.15:
-            # Show p95 latency: before → after
             baseline_p95 = getattr(report, "baseline_p95_latency_ms", 0.0)
             current_p95 = getattr(report, "current_p95_latency_ms", 0.0)
             if baseline_p95 > 0:
@@ -300,26 +360,21 @@ def render_diff_report(
     console.print()
     console.print("─" * 60)
 
-    # Generate hypotheses to include top one in verdict panel
     from driftbase.local.hypothesis_engine import generate_hypotheses
 
     hypotheses = generate_hypotheses(
         report, baseline_tools, current_tools, baseline_n, current_n
     )
 
-    # Verdict panel with integrated top hypothesis
     verdict_symbol = verdict_result.symbol
     verdict_title = f"{verdict_symbol}  {verdict_result.title}"
 
-    # Build verdict panel content
     verdict_content = verdict_result.explanation
 
-    # Add the top hypothesis if available (most critical insight)
     if hypotheses:
         top_hypothesis = hypotheses[0]
         verdict_content += f"\n\n[bold]Most likely cause:[/]\n  → {top_hypothesis['observation']}\n  [dim]{top_hypothesis['likely_cause']}[/]"
 
-    # Add next steps
     verdict_content += f"\n\n[bold]Next steps:[/]\n" + "\n".join(
         f"  □ {step}" for step in verdict_result.next_steps
     )
@@ -333,7 +388,6 @@ def render_diff_report(
     )
     console.print()
 
-    # Sample size warning (if applicable)
     if getattr(report, "sample_size_warning", False):
         console.print(
             Panel(
@@ -344,7 +398,6 @@ def render_diff_report(
         )
         console.print()
 
-    # Tool call frequency diff table (absolute + percentage change per tool)
     tools_table = Table(
         title="Tool call frequency diff",
         show_header=True,
@@ -372,7 +425,6 @@ def render_diff_report(
 
     console.print(tools_table)
 
-    # Top sequence shifts (Markov transitions that changed most)
     if top_sequence_shifts_list:
         seq_table = Table(
             title="Top 3 sequence shifts (Markov transitions)",
@@ -395,11 +447,9 @@ def render_diff_report(
             )
         console.print(seq_table)
 
-    # Additional hypotheses (technical details) - show remaining ones if there are multiple
     if len(hypotheses) > 1:
         from driftbase.local.hypothesis_engine import format_hypotheses
 
-        # Format all hypotheses except the first (which is in verdict)
         remaining_hypotheses = hypotheses[1:]
         hypothesis_text = format_hypotheses(remaining_hypotheses)
         console.print(
@@ -411,7 +461,6 @@ def render_diff_report(
         )
         console.print()
 
-    # Footer
     console.print("─" * 60)
     footer_parts = []
     if getattr(report, "bootstrap_iterations", 0) > 0:
@@ -438,7 +487,6 @@ def diff_local(
 ) -> tuple[Optional[DriftReport], Optional[BehavioralFingerprint], Optional[BehavioralFingerprint], Optional[str]]:
     """
     Compute drift between two run sets from the local backend.
-    Returns (report, baseline_fp, current_fp, error_message).
     """
     if last_n is not None and against_version is not None:
         baseline_run_dicts = get_runs_for_version(
@@ -537,7 +585,6 @@ def run_diff(
     baseline_n = baseline_fp.sample_count
     current_n = current_fp.sample_count
 
-    # Minimum sample size warning (yellow panel)
     if baseline_n < MIN_SAMPLES_WARNING or current_n < MIN_SAMPLES_WARNING:
         console.print(
             Panel(
@@ -564,6 +611,7 @@ def run_diff(
     else:
         baseline_run_dicts = get_runs_for_version(backend, baseline_version, limit=5000, environment=environment)
         current_run_dicts = get_runs_for_version(backend, current_version, limit=5000, environment=environment)
+    
     baseline_tools = tool_usage_distribution(baseline_run_dicts)
     current_tools = tool_usage_distribution(current_run_dicts)
 
@@ -645,8 +693,7 @@ def run_watch(
     console: Optional[Console] = None,
     max_iterations: Optional[int] = None,
 ) -> None:
-    """Poll backend and print live diff via rich; exit on Ctrl+C.
-    If max_iterations is set (e.g. 1 for tests), stop after that many poll cycles."""
+    """Poll backend and print live diff via rich; exit on Ctrl+C."""
     if backend is None:
         from driftbase.backends.factory import get_backend
         backend = get_backend()

@@ -1,79 +1,77 @@
 import os
-import sys
-import requests
-from datetime import datetime
+import httpx
 import click
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from driftbase.backends.factory import get_backend
 
 @click.command("push")
-@click.option("--url", help="Platform API URL (overrides DRIFTBASE_API_URL).")
-@click.option("--key", help="Platform API Key (overrides DRIFTBASE_API_KEY).")
 @click.pass_context
-def cmd_push(ctx: click.Context, url: str | None, key: str | None) -> None:
-    """Push local agent runs to the Driftbase platform."""
+def cmd_push(ctx: click.Context):
+    """Sync local telemetry to Driftbase Pro (removes raw text)."""
     console: Console = ctx.obj["console"]
+
+    api_key = os.getenv("DRIFTBASE_API_KEY")
+    if not api_key:
+        console.print("[bold red]Error:[/] DRIFTBASE_API_KEY environment variable is missing.")
+        console.print("To authenticate with Driftbase Pro, run:")
+        console.print("👉 [bold cyan]export DRIFTBASE_API_KEY='drift_abc123'[/]")
+        ctx.exit(1)
+
+    api_url = os.getenv("DRIFTBASE_API_URL", "http://localhost:8000")
     
-    target_url = url or os.getenv("DRIFTBASE_API_URL") or "http://localhost:8000"
-    target_key = key or os.getenv("DRIFTBASE_API_KEY")
-
-    if not target_key:
-        console.print("[bold red]Error:[/] DRIFTBASE_API_KEY is missing. Cannot authenticate.", style="red")
-        sys.exit(1)
-
-    console.print("Connecting to local backend...")
     backend = get_backend()
+    runs = backend.get_all_runs()
     
-    local_runs = backend.get_all_runs()
-    
-    if not local_runs:
-        console.print("No local runs found to push.")
-        return
+    if not runs:
+        console.print("[yellow]No local runs found to sync. Run 'driftbase demo' first.[/]")
+        ctx.exit(0)
 
-    console.print(f"Found [bold]{len(local_runs)}[/] runs. Formatting payload...")
-
-    payload = {"runs": []}
-    for run in local_runs:
-        started = run.get("started_at")
-        completed = run.get("completed_at")
+    # Enforce strict European data boundary: drop raw text before it touches the network
+    payload_runs = []
+    for r in runs:
+        safe_run = r.copy()
+        safe_run.pop("raw_prompt", None)
+        safe_run.pop("raw_output", None)
         
-        payload["runs"].append({
-            "session_id": run.get("session_id", ""),
-            "deployment_version": run.get("deployment_version", ""),
-            "environment": run.get("environment", "production"),
-            "started_at": started.isoformat() if isinstance(started, datetime) else started,
-            "completed_at": completed.isoformat() if isinstance(completed, datetime) else completed,
-            "task_input_hash": run.get("task_input_hash", ""),
-            "tool_sequence": run.get("tool_sequence", ""),
-            "tool_call_count": run.get("tool_call_count", 0),
-            "output_length": run.get("output_length", 0),
-            "output_structure_hash": run.get("output_structure_hash", ""),
-            "latency_ms": run.get("latency_ms", 0),
-            "error_count": run.get("error_count", 0),
-            "retry_count": run.get("retry_count", 0),
-            "semantic_cluster": run.get("semantic_cluster", "cluster_none")
-        })
-
-    console.print(f"Pushing payload to [bold]{target_url}/ingest/runs[/] ...")
-    
-    try:
-        response = requests.post(
-            f"{target_url.rstrip('/')}/ingest/runs",
-            json=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {target_key}"},
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            console.print(f"[bold green]Success![/] Platform ingested {data.get('ingested_count')} runs.")
-        elif response.status_code == 401:
-            console.print("[bold red]Error 401:[/] Unauthorized. Your API key was rejected by the platform.")
-        else:
-            console.print(f"[bold red]Error {response.status_code}:[/] {response.text}")
+        # Ensure datetimes are ISO strings for JSON serialization
+        if hasattr(safe_run.get("started_at"), "isoformat"):
+            safe_run["started_at"] = safe_run["started_at"].isoformat()
+        if hasattr(safe_run.get("completed_at"), "isoformat"):
+            safe_run["completed_at"] = safe_run["completed_at"].isoformat()
             
-    except requests.exceptions.ConnectionError:
-        console.print(f"[bold red]Connection Error:[/] Could not reach the platform at {target_url}.")
-    except Exception as e:
-        console.print(f"[bold red]Unexpected error:[/] {e}")
+        payload_runs.append(safe_run)
+
+    payload = {"runs": payload_runs}
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task(f"Syncing {len(payload_runs)} runs to Driftbase Pro...", total=None)
+        
+        try:
+            response = httpx.post(
+                f"{api_url}/api/v1/sync",
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            progress.update(task, completed=True)
+            
+            inserted = data.get("inserted", 0)
+            tenant = data.get("tenant_id", "unknown")
+            
+            console.print(f"\n[bold green]✓ Successfully synced {inserted} new runs.[/]")
+            console.print(f"[dim]Workspace: {tenant}[/]")
+            console.print("[dim]Raw prompts and outputs were stripped to maintain GDPR compliance.[/]")
+
+        except httpx.HTTPStatusError as e:
+            console.print(f"\n[bold red]API Error:[/] {e.response.status_code} - {e.response.text}")
+        except Exception as e:
+            console.print(f"\n[bold red]Connection Error:[/] Could not reach {api_url}.")
+            console.print(f"[dim]{str(e)}[/dim]")

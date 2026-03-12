@@ -14,6 +14,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import sys
 import time
 import threading
@@ -24,6 +25,7 @@ from typing import Any, Callable, Optional
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
 from driftbase.telemetry import track_event
+from driftbase.config import get_settings
 
 # Ensure logger doesn't pollute the user's stdout by default
 logger = logging.getLogger("driftbase")
@@ -34,6 +36,33 @@ OUTCOME_RESOLVED = "resolved"
 OUTCOME_ESCALATED = "escalated"
 OUTCOME_FALLBACK = "fallback"
 OUTCOME_ERROR = "error"
+
+# Pre-compiled regexes for zero-latency PII scrubbing (GDPR/EU AI Act)
+PII_PATTERNS = [
+    (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'), '[EMAIL]'),
+    (re.compile(r'\b(?:\d[ -]*?){13,16}\b'), '[CREDIT_CARD]'),
+    (re.compile(r'\b(?:[A-Z]{2}[0-9]{2})(?:[ ]?[0-9a-zA-Z]{4}){3,5}\b'), '[IBAN]'),
+    (re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'), '[IP_ADDRESS]'),
+    (re.compile(r'\+?\d{1,4}?[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}'), '[PHONE]'),
+]
+
+
+def _scrub_pii(data: Any) -> Any:
+    """Recursively scrub PII if enabled in settings."""
+    if not get_settings().DRIFTBASE_SCRUB_PII:
+        return data
+
+    if isinstance(data, str):
+        for pattern, replacement in PII_PATTERNS:
+            data = pattern.sub(replacement, data)
+        return data
+    elif isinstance(data, dict):
+        return {k: _scrub_pii(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_scrub_pii(item) for item in data]
+    elif isinstance(data, tuple):
+        return tuple(_scrub_pii(item) for item in data)
+    return data
 
 
 @dataclass
@@ -113,32 +142,18 @@ def _detect_framework(func: Callable[..., Any]) -> str:
     try:
         mod = inspect.getmodule(func)
         if mod is not None:
-            if "langgraph" in mod.__name__:
-                return "langgraph"
-            if "langchain" in mod.__name__:
-                return "langchain"
-            if "llama" in mod.__name__.lower() or "llamaindex" in mod.__name__.lower():
-                return "llamaindex"
-            if "openai" in mod.__name__:
-                return "openai"
+            if "langgraph" in mod.__name__: return "langgraph"
+            if "langchain" in mod.__name__: return "langchain"
+            if "llama" in mod.__name__.lower() or "llamaindex" in mod.__name__.lower(): return "llamaindex"
+            if "openai" in mod.__name__: return "openai"
+
         sig = inspect.signature(func)
         hint = sig.return_annotation
         if hint != inspect.Parameter.empty and hint is not None:
             hint_str = getattr(hint, "__name__", str(hint))
-            if "StateGraph" in hint_str or "CompiledStateGraph" in hint_str or "langgraph" in str(hint).lower():
-                return "langgraph"
-            if "Runnable" in hint_str or "BaseMessage" in hint_str or "langchain" in str(hint):
-                return "langchain"
-            if "openai" in str(hint).lower() or "ChatCompletion" in hint_str:
-                return "openai"
-        if "langgraph" in sys.modules:
-            return "langgraph"
-        if "langchain" in sys.modules or "langchain_core" in sys.modules:
-            return "langchain"
-        if "llama_index" in sys.modules or "llamaindex" in sys.modules:
-            return "llamaindex"
-        if "openai" in sys.modules:
-            return "openai"
+            if "StateGraph" in hint_str or "langgraph" in str(hint).lower(): return "langgraph"
+            if "Runnable" in hint_str or "langchain" in str(hint): return "langchain"
+            if "openai" in str(hint).lower() or "ChatCompletion" in hint_str: return "openai"
     except Exception:
         pass
     return "generic"
@@ -402,7 +417,7 @@ def _post_run_telemetry(ctx: RunContext, version: str) -> None:
 
 
 def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) -> None:
-    """Silently dispatch payload to Azure if API key exists. Fails silently."""
+    """Silently dispatch payload to Azure if API key exists. Data is already scrubbed."""
     api_key = explicit_api_key or os.getenv("DRIFTBASE_API_KEY")
     if not api_key:
         return
@@ -411,7 +426,10 @@ def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) 
         try:
             p_tokens = (ctx.token_usage or {}).get("prompt", 0)
             c_tokens = (ctx.token_usage or {}).get("completion", 0)
-            payload = {
+            
+            # Since ctx.raw_input and ctx.raw_output were scrubbed in the wrapper,
+            # this payload is completely clean and safe for EU enterprise compliance.
+            raw_payload = {
                 "status": "error" if ctx.error_count > 0 else "success",
                 "latency": ctx.latency_ms,
                 "payload": {
@@ -423,6 +441,7 @@ def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) 
                     "total_tokens": p_tokens + c_tokens
                 }
             }
+
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -430,7 +449,7 @@ def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) 
             # Hard 2.0s timeout. Never hang the host application.
             requests.post(
                 "https://app-driftbase-eu-92745.azurewebsites.net/api/capture/", 
-                json=payload, 
+                json=raw_payload, 
                 headers=headers, 
                 timeout=2.0
             )
@@ -453,13 +472,19 @@ def track(
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
             ctx = RunContext()
-            ctx.task_input_hash = _hash_content((args, kwargs))[:32]
             ctx.framework = framework
             
-            # Capture UI input
-            msg_data = kwargs.get("messages") or args
+            # 1. SCRUB THE INPUT DATA BEFORE HASHING
+            safe_args = _scrub_pii(args)
+            safe_kwargs = _scrub_pii(kwargs)
+            ctx.task_input_hash = _hash_content((safe_args, safe_kwargs))[:32]
+            
+            # Capture UI input securely
+            msg_data = safe_kwargs.get("messages") or safe_args
             try:
                 ctx.raw_input = json.dumps(msg_data, default=str)
             except Exception:
@@ -482,11 +507,10 @@ def track(
                 ctx.error_count = 1
                 ctx.error_type = type(e).__name__
                 ctx.completed_at = datetime.utcnow()
-                ctx.raw_output = str(e)
+                ctx.raw_output = _scrub_pii(str(e))
                 if ctx.latency_ms == 0:
                     ctx.latency_ms = 1
                 try:
-                    env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
                     payload = _build_payload(ctx, session_id or run_id, version, env)
                     enqueue_run(payload)
                 except Exception as enq_err:
@@ -498,8 +522,18 @@ def track(
 
             try:
                 if result is not None:
-                    # Capture UI output
-                    if isinstance(result, str):
+                    # Parse objects for clean text and tokens
+                    if hasattr(result, "choices") and isinstance(getattr(result, "choices"), list) and len(result.choices) > 0:
+                        ctx.raw_output = getattr(result.choices[0].message, "content", "")
+                        ctx.framework = "openai" # Auto-correct framework
+                        
+                        if hasattr(result, "usage") and result.usage:
+                            ctx.token_usage = {
+                                "prompt": getattr(result.usage, "prompt_tokens", 0),
+                                "completion": getattr(result.usage, "completion_tokens", 0)
+                            }
+                    # Fallbacks for standard strings and dicts
+                    elif isinstance(result, str):
                         ctx.raw_output = result
                     elif hasattr(result, "content"):
                         ctx.raw_output = str(getattr(result, "content", ""))
@@ -509,14 +543,11 @@ def track(
                         except Exception:
                             ctx.raw_output = str(result)
                             
-                    if isinstance(result, str):
-                        ctx.output_length = len(result)
-                    elif hasattr(result, "content"):
-                        ctx.output_length = len(getattr(result, "content", "") or "")
-                    elif isinstance(result, (dict, list)):
-                        ctx.output_length = len(json.dumps(result, default=str))
+                    # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
+                    ctx.raw_output = _scrub_pii(ctx.raw_output)
+                    ctx.output_length = len(ctx.raw_output)
                     ctx.output_structure_hash = _compute_structure_hash(result)
-                env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+
                 payload = _build_payload(ctx, session_id or run_id, version, env)
                 enqueue_run(payload)
             except Exception as e:
@@ -528,13 +559,19 @@ def track(
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
             ctx = RunContext()
-            ctx.task_input_hash = _hash_content((args, kwargs))[:32]
             ctx.framework = framework
             start = time.perf_counter()
             
-            msg_data = kwargs.get("messages") or args
+            # 1. SCRUB THE INPUT DATA BEFORE HASHING
+            safe_args = _scrub_pii(args)
+            safe_kwargs = _scrub_pii(kwargs)
+            ctx.task_input_hash = _hash_content((safe_args, safe_kwargs))[:32]
+            
+            msg_data = safe_kwargs.get("messages") or safe_args
             try:
                 ctx.raw_input = json.dumps(msg_data, default=str)
             except Exception:
@@ -560,9 +597,8 @@ def track(
                 ctx.decision_outcome = OUTCOME_ERROR
                 ctx.error_count = 1
                 ctx.error_type = type(e).__name__
-                ctx.raw_output = str(e)
+                ctx.raw_output = _scrub_pii(str(e))
                 try:
-                    env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
                     payload = _build_payload(ctx, session_id or run_id, version, env)
                     enqueue_run(payload)
                 except Exception as enq_err:
@@ -574,7 +610,16 @@ def track(
 
             try:
                 if result is not None:
-                    if isinstance(result, str):
+                    if hasattr(result, "choices") and isinstance(getattr(result, "choices"), list) and len(result.choices) > 0:
+                        ctx.raw_output = getattr(result.choices[0].message, "content", "")
+                        ctx.framework = "openai" 
+                        
+                        if hasattr(result, "usage") and result.usage:
+                            ctx.token_usage = {
+                                "prompt": getattr(result.usage, "prompt_tokens", 0),
+                                "completion": getattr(result.usage, "completion_tokens", 0)
+                            }
+                    elif isinstance(result, str):
                         ctx.raw_output = result
                     elif hasattr(result, "content"):
                         ctx.raw_output = str(getattr(result, "content", ""))
@@ -584,14 +629,11 @@ def track(
                         except Exception:
                             ctx.raw_output = str(result)
                             
-                    if isinstance(result, str):
-                        ctx.output_length = len(result)
-                    elif hasattr(result, "content"):
-                        ctx.output_length = len(getattr(result, "content", "") or "")
-                    elif isinstance(result, (dict, list)):
-                        ctx.output_length = len(json.dumps(result, default=str))
+                    # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
+                    ctx.raw_output = _scrub_pii(ctx.raw_output)
+                    ctx.output_length = len(ctx.raw_output)
                     ctx.output_structure_hash = _compute_structure_hash(result)
-                env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+
                 payload = _build_payload(ctx, session_id or run_id, version, env)
                 enqueue_run(payload)
             except Exception as e:

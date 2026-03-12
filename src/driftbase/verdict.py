@@ -236,3 +236,49 @@ def compute_verdict(
         next_steps=["Proceed with deployment"],
         exit_code=0,
     )
+
+
+def generate_markdown_report(
+    version_a: str, 
+    version_b: str, 
+    report: "DriftReport", 
+    result: VerdictResult,
+    cost_delta_eur: float = 0.0,
+    cost_pct: float = 0.0
+) -> str:
+    """Generate a clean, PR-ready Markdown block for CI/CD pipelines."""
+    
+    status_text = {
+        Verdict.SHIP: "[PASS]",
+        Verdict.MONITOR: "[WARN]",
+        Verdict.REVIEW: "[REVIEW]",
+        Verdict.BLOCK: "[FAIL]",
+    }[result.verdict]
+
+    md = f"""## Driftbase Behavioral Report
+Comparing `{version_a}` vs `{version_b}`
+
+### {status_text} {result.title}
+**Overall Drift Score:** `{report.drift_score:.2f}` (Threshold: 0.40)  
+*{result.explanation}*
+
+### Dimension Breakdown
+| Metric | Score | Status |
+|---|---|---|
+| Decision Logic | `{report.decision_drift:.2f}` | {'PASS' if report.decision_drift < 0.25 else 'WARN'} |
+| Latency Profile | `{report.latency_drift:.2f}` | {'PASS' if report.latency_drift < 0.20 else 'WARN'} |
+| Error Rates | `{report.error_drift:.2f}` | {'PASS' if report.error_drift < 0.15 else 'WARN'} |
+"""
+
+    if cost_pct > 5.0:
+        md += f"\n### Financial Impact\n**Cost increased by {cost_pct:.1f}%**. At current blended rates, this change will cost an additional **€{cost_delta_eur:.2f} per 10,000 runs**.\n\n"
+    elif cost_pct < -5.0:
+        md += f"\n### Financial Impact\n**Cost decreased by {abs(cost_pct):.1f}%**. At current blended rates, this change will save **€{abs(cost_delta_eur):.2f} per 10,000 runs**.\n\n"
+
+    md += "### Next Steps\n"
+    for step in result.next_steps:
+        md += f"- {step}\n"
+        
+    md += "\n> *Generated locally. 100% Data Sovereignty maintained.*\n"
+    md += "> *Automate PR comments and CI/CD gates with Driftbase Pro: https://driftbase.io/pro*"
+    return md

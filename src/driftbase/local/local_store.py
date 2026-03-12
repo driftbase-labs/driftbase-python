@@ -40,6 +40,8 @@ class AgentRun:
     error_count: int
     retry_count: int
     semantic_cluster: str
+    raw_prompt: str = ""
+    raw_output: str = ""
 
 
 @dataclass
@@ -123,6 +125,8 @@ def run_dict_to_agent_run(d: dict[str, Any]) -> AgentRun:
         error_count=int(d.get("error_count", 0)),
         retry_count=int(d.get("retry_count", 0)),
         semantic_cluster=str(d.get("semantic_cluster", "cluster_none")),
+        raw_prompt=str(d.get("raw_prompt", "") or ""),
+        raw_output=str(d.get("raw_output", "") or ""),
     )
 
 
