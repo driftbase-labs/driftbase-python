@@ -205,7 +205,14 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Root-level dev artifacts (keep tests in tests/ directory only)
 test_run.py
+test_verdict_cli.py
+test_first_run.py
+agent.py
+langchain_utils.py
+drift-report*.html
 
 # OS generated files
 .DS_Store
