@@ -49,6 +49,8 @@ This command instantly populates your local database with 50 baseline runs (v1.0
 driftbase demo
 ```
 
+**Note:** Run `driftbase demo` only once on a fresh database. Multiple runs will accumulate additional synthetic data. To start fresh, delete `~/.driftbase/runs.db` before running demo again.
+
 ### 3. Diff the versions
 ```bash
 driftbase diff v1.0 v2.0
