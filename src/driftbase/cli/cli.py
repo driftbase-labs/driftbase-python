@@ -43,6 +43,7 @@ from driftbase.cli.cli_report import cmd_report
 from driftbase.cli.cli_push import cmd_push
 from driftbase.cli.cli_demo import cmd_demo
 from driftbase.cli.cli_init import cmd_init
+from driftbase.cli.cli_export import export_command, import_command
 
 cli.add_command(cmd_init)
 cli.add_command(cmd_diff)
@@ -50,6 +51,8 @@ cli.add_command(cmd_inspect)
 cli.add_command(cmd_report)
 cli.add_command(cmd_push)
 cli.add_command(cmd_demo)
+cli.add_command(export_command)
+cli.add_command(import_command)
 
 
 def _mask_secret(value: str) -> str:

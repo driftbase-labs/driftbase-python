@@ -532,8 +532,6 @@ def track(
             except Exception as e:
                 _log_track_error("track_decorator", f"run_id={run_id} error={e!r}")
             
-            _post_run_telemetry(ctx, version)
-            _dispatch_to_cloud(ctx, api_key)
             return result
 
         @functools.wraps(func)
@@ -617,9 +615,7 @@ def track(
             except Exception as e:
                 _log_track_error("track_decorator_async", f"run_id={run_id} error={e!r}")
             
-            _post_run_telemetry(ctx, version)
             _dispatch_to_cloud(ctx, api_key)
-            return result
 
         if inspect.iscoroutinefunction(func):
             return async_wrapper
