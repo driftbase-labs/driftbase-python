@@ -517,10 +517,23 @@ def diff_local(
         baseline_label = baseline_version
         current_label = current_version
 
-    if len(baseline_run_dicts) < 2:
-        return None, None, None, f"Insufficient baseline runs for '{baseline_label}' (got {len(baseline_run_dicts)})"
-    if len(current_run_dicts) < 2:
-        return None, None, None, f"Insufficient current runs for '{current_label}' (got {len(current_run_dicts)})"
+    min_runs_needed = 2
+    if len(baseline_run_dicts) < min_runs_needed:
+        return (
+            None, None, None,
+            f"\nNot enough runs to diff.\n"
+            f"{baseline_label}: {len(baseline_run_dicts)} runs (need {min_runs_needed})\n"
+            f"{current_label}: {len(current_run_dicts)} runs\n\n"
+            f"Run your agent more, then try again."
+        )
+    if len(current_run_dicts) < min_runs_needed:
+        return (
+            None, None, None,
+            f"\nNot enough runs to diff.\n"
+            f"{baseline_label}: {len(baseline_run_dicts)} runs\n"
+            f"{current_label}: {len(current_run_dicts)} runs (need {min_runs_needed})\n\n"
+            f"Run your agent more, then try again."
+        )
 
     baseline_fp = fingerprint_from_runs(
         baseline_run_dicts, baseline_label, environment or "production"

@@ -146,7 +146,7 @@ def _log_track_error(context: str, message: str) -> None:
         pass
 
 
-_write_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue(maxsize=500)
+_write_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue(maxsize=int(os.getenv("DRIFTBASE_MAX_QUEUE_SIZE", "1000")))
 _worker: Optional[threading.Thread] = None
 
 BATCH_SIZE = 10

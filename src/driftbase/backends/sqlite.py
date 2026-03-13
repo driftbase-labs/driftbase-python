@@ -107,7 +107,26 @@ class SQLiteBackend(StorageBackend):
         self._db_path = os.path.expanduser(db_path)
         _ensure_dir(self._db_path)
         url = "sqlite:///" + self._db_path
-        self._engine = create_engine(url, connect_args={"check_same_thread": False})
+
+        # Configure for concurrent reads/writes (critical for async frameworks)
+        # WAL mode allows concurrent readers while one writer is active
+        self._engine = create_engine(
+            url,
+            connect_args={"check_same_thread": False},
+            pool_pre_ping=True,
+        )
+
+        # Enable WAL mode and optimize synchronous setting
+        # These must be set on every connection for SQLite
+        from sqlalchemy import event
+
+        @event.listens_for(self._engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+
         AgentRunLocal.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
