@@ -251,6 +251,8 @@ def format_html_verdict(
         current_tools=current_tools,
         baseline_n=baseline_n,
         current_n=current_n,
+        baseline_label=baseline_label,
+        current_label=current_label,
     )
 
     # Generate hypotheses

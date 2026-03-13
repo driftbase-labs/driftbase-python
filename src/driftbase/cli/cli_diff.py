@@ -283,6 +283,8 @@ def render_diff_report(
         current_tools=current_tools,
         baseline_n=baseline_n,
         current_n=current_n,
+        baseline_label=baseline_label,
+        current_label=current_label,
     )
 
     console.print("─" * 60)
@@ -646,6 +648,8 @@ def run_diff(
             current_tools=current_tools,
             baseline_n=baseline_n,
             current_n=current_n,
+            baseline_label=baseline_label,
+            current_label=current_label,
         )
         out = {
             "baseline_version": baseline_label,

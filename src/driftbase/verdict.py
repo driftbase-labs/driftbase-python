@@ -69,6 +69,8 @@ def _get_highest_dimension(report: DriftReport) -> tuple[str, float]:
 def _generate_next_steps(
     report: DriftReport,
     highest_dim: str,
+    baseline_label: str = "",
+    current_label: str = "",
     baseline_tools: dict[str, float] | None = None,
     current_tools: dict[str, float] | None = None,
 ) -> list[str]:
@@ -118,8 +120,11 @@ def _generate_next_steps(
 
     # Generic steps for all high-drift cases
     if report.drift_score > 0.20:
+        # Use version labels if available, otherwise fall back to fingerprint IDs
+        baseline_ref = baseline_label or report.baseline_fingerprint_id
+        current_ref = current_label or report.current_fingerprint_id
         steps.append(
-            f"Run 'driftbase report {report.baseline_fingerprint_id} {report.current_fingerprint_id} --format html' for full analysis"
+            f"Run 'driftbase report {baseline_ref} {current_ref} --format html' for full analysis"
         )
 
     # If we generated no specific steps, add generic review step
@@ -135,6 +140,8 @@ def compute_verdict(
     current_tools: dict[str, float] | None = None,
     baseline_n: int = 0,
     current_n: int = 0,
+    baseline_label: str = "",
+    current_label: str = "",
 ) -> VerdictResult:
     """
     Compute shipping verdict from drift report.
@@ -151,6 +158,8 @@ def compute_verdict(
         current_tools: Tool usage distribution for current (for next steps)
         baseline_n: Number of baseline runs (for context)
         current_n: Number of current runs (for context)
+        baseline_label: Version label for baseline (for next steps command)
+        current_label: Version label for current (for next steps command)
 
     Returns:
         VerdictResult with verdict, explanation, and next steps
@@ -169,7 +178,7 @@ def compute_verdict(
                 "Investigate root cause before promoting this version."
             ),
             next_steps=_generate_next_steps(
-                report, highest_dim, baseline_tools, current_tools
+                report, highest_dim, baseline_label, current_label, baseline_tools, current_tools
             ),
             exit_code=1,
         )
@@ -203,7 +212,7 @@ def compute_verdict(
                 "Review changes before promoting to production."
             ),
             next_steps=_generate_next_steps(
-                report, highest_dim, baseline_tools, current_tools
+                report, highest_dim, baseline_label, current_label, baseline_tools, current_tools
             ),
             exit_code=1,
         )
