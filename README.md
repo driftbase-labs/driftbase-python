@@ -1,8 +1,8 @@
 # Driftbase
 
-**Behavioral drift detection for AI agents.**
+**Behavioral drift detection for AI agents — catch regressions before your users do.**
 
-Fingerprint your agent's behavior in production. Diff two versions. Get a statistically grounded drift score, financial impact analysis, and plain-English verdict — before your users notice something changed.
+Fingerprint your agent's behavior in production. Diff two versions. Get a statistically grounded drift score, financial impact analysis, and plain-English verdict — all computed locally on your machine.
 
 [![PyPI version](https://badge.fury.io/py/driftbase.svg)](https://pypi.org/project/driftbase/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,53 +10,66 @@ Fingerprint your agent's behavior in production. Diff two versions. Get a statis
 
 ---
 
-## What it does
+## Why Driftbase?
 
-Most observability tools tell you your agent ran. They don't tell you it *behaved differently* than last week.
+Most observability tools tell you your agent *ran*. They don't tell you it **behaved differently** than last week.
 
-Driftbase records behavioral signals from each run — tool call sequences, latency percentiles, token cost bloat, and decision outcomes — and computes a drift score when you compare two versions. Every deploy gets a verdict: ship, monitor, review, or block.
+When you deploy a new prompt, update your model version, or refactor tool calling logic, you need answers:
+- Did decision patterns change? (Are we routing more to humans?)
+- Did latency increase? (Are we burning tokens on retry loops?)
+- Did costs balloon? (What's the financial impact per 10k runs?)
+- What *caused* the change? (Which tool disappeared from the call graph?)
 
-- **One decorator, zero config** — wraps your existing agent entry point.
-- **Financial impact** — translates token bloat directly into Euro (€) cost deltas.
-- **Data never leaves your machine** — local SQLite, zero egress architecture.
-- **Edge PII Scrubbing** — built-in regex engine strips emails, IBANs, and IPs before hashing.
-- **Plain-English verdicts** — tells you exactly what changed and what to do next.
+Driftbase gives you a single drift score, a financial delta in euros, and a root-cause hypothesis — in 2 seconds, from your terminal.
+
+### Core Value Proposition
+
+| What You Get | Why It Matters |
+|--------------|----------------|
+| **Statistical drift scores** | Know *how much* behavior changed (0.0 = identical, 1.0 = completely different) |
+| **Financial impact analysis** | Translate token bloat into €/$ cost deltas for leadership |
+| **Root cause hypotheses** | Auto-generated plain-English explanations of what changed |
+| **Zero-egress architecture** | All data stays on your machine — no US servers, GDPR-compliant by design |
+| **EU AI Act compliance** | Generate Article 72 post-market monitoring reports with `--template eu-ai-act` |
+| **Framework-agnostic** | Auto-detects LangChain, LangGraph, OpenAI, AutoGen, CrewAI — zero config |
 
 ---
 
 ## The 60-Second Quickstart
 
-See the drift engine in action right now without writing any code.
+See the drift engine in action **right now** without writing any code.
 
 ### 1. Install
 
-**For production tracking** (decorator only):
+**For production tracking** (decorator only, minimal deps):
 ```bash
 pip install driftbase
 ```
 
-**For local analysis** (CLI + diff engine):
+**For local analysis** (CLI + statistical diff engine):
 ```bash
 pip install 'driftbase[analyze]'
 ```
 
-The base install provides the `@track()` decorator with minimal dependencies (pydantic, httpx). The `[analyze]` profile adds numpy, scipy, and rich for statistical drift computation and terminal UI.
+The base install adds the `@track()` decorator with minimal dependencies (pydantic, httpx, click). The `[analyze]` profile adds numpy, scipy, and rich for statistical drift computation and beautiful terminal UI.
 
 ### 2. Run the synthetic demo
-This command instantly populates your local database with 50 baseline runs (v1.0) and 50 regressed runs (v2.0 with higher token usage and hallucinated tool calls).
+
+This command instantly populates your local database with 50 baseline runs (v1.0) and 50 regressed runs (v2.0) that simulate real behavioral drift:
 
 ```bash
 driftbase demo
 ```
 
-**Note:** Run `driftbase demo` only once on a fresh database. Multiple runs will accumulate additional synthetic data. To start fresh, delete `~/.driftbase/runs.db` before running demo again.
+**Note:** Run this only once on a fresh database. To reset, delete `~/.driftbase/runs.db` before running again.
 
 ### 3. Diff the versions
+
 ```bash
 driftbase diff v1.0 v2.0
 ```
 
-You will immediately see a rich terminal UI detailing the financial impact, tool sequence changes, and a root-cause hypothesis:
+You'll immediately see a rich terminal UI with financial impact, tool sequence changes, and root-cause analysis:
 
 ```plaintext
 ────────────────────────────────────────────────
@@ -77,84 +90,255 @@ You will immediately see a rich terminal UI detailing the financial impact, tool
 ╰────────────────────────────────────────────────────╯
 
 ╭──────────────── VERDICT  ⚠ REVIEW ────────────────╮
+│ Significant behavioral drift detected.             │
+│                                                     │
 │ Most likely cause:                                 │
 │   → Tool 'search_knowledge_base' dropped from      │
 │     baseline — no longer being called              │
+│                                                     │
+│ Next steps:                                        │
+│ □ Review prompt changes that removed tool usage   │
+│ □ Check if escalation rate increase is acceptable │
+│ □ Profile latency regression before production    │
 ╰────────────────────────────────────────────────────╯
 ```
 
-### 4. Inspect the failure
-Grab a run ID from the synthetic data and see exactly what happened. This proves your raw text is safely hashed at the edge:
+### 4. Inspect individual runs
+
+Grab a run ID from the output and deep-dive into exactly what happened:
 
 ```bash
 driftbase inspect <RUN_ID>
 ```
 
+This proves your raw text is safely hashed at the edge — only structural metadata is stored.
+
 ---
 
 ## Instrument Your Code
 
-Once you see the value, drop Driftbase into your actual application. It auto-detects LangChain, LangGraph, LlamaIndex, and raw OpenAI clients.
+Once you see the value, drop Driftbase into your actual application. It auto-detects your framework and captures telemetry with zero configuration.
 
-**In your production container** (requires only `pip install driftbase`):
+### Supported Frameworks
+
+Driftbase has native integrations for:
+- **OpenAI SDK** (direct client calls)
+- **LangChain** (chains, agents, tools)
+- **LangGraph** (graph-based workflows)
+- **AutoGen** (multi-agent conversations)
+- **CrewAI** (crew-based agent orchestration)
+
+### Quick Integration Examples
+
+#### OpenAI SDK
+
 ```python
 from driftbase import track
 import openai
 
-@track(version="v1.0")
-def run_agent(prompt: str):
+@track(version="v2.1")
+def run_agent(user_query: str):
     client = openai.Client()
     return client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        tools=[{"type": "function", "function": {"name": "query_db"}}]
+        messages=[{"role": "user", "content": user_query}],
+        tools=[{"type": "function", "function": {"name": "query_database"}}]
     )
 
-# Run your code normally. Telemetry is silently captured in ~/.driftbase/runs.db
-run_agent("What's the revenue for Q4?")
+# Just run your code normally. Telemetry is captured automatically.
+result = run_agent("What's Q4 revenue?")
 ```
 
-**On your laptop or in CI** (requires `pip install 'driftbase[analyze]'`), let the data decide:
+#### LangChain
 
-```bash
-driftbase diff v1.0 v2.0 --format md > pr_comment.md
+```python
+from driftbase import track
+from langchain.agents import AgentExecutor, create_openai_functions_agent
+from langchain_openai import ChatOpenAI
+
+@track(version="v2.1", environment="staging")
+def run_langchain_agent(query: str):
+    llm = ChatOpenAI(model="gpt-4o")
+    agent = create_openai_functions_agent(llm, tools, prompt)
+    executor = AgentExecutor(agent=agent, tools=tools)
+    return executor.invoke({"input": query})
+
+result = run_langchain_agent("Find similar documents")
 ```
 
-The `@track` decorator has zero production overhead (pydantic + httpx only). Statistical analysis runs locally with numpy/scipy.
+#### LangGraph
+
+```python
+from driftbase import track
+from langgraph.graph import StateGraph
+
+@track(version="v2.1")
+def run_langgraph_workflow(input_data: dict):
+    graph = StateGraph(state_schema)
+    # ... build your graph
+    return graph.invoke(input_data)
+```
+
+The `@track` decorator captures:
+- Tool call sequences and parameters (hashed)
+- Token usage (prompt + completion)
+- Latency distribution (p50, p95, p99)
+- Error rates and types
+- Decision outcomes (e.g., escalation to human)
+- Cost deltas (computed from your configured rates)
+
+All data is stored in `~/.driftbase/runs.db` (SQLite) with automatic retention limits and WAL mode for safe concurrent writes.
 
 ---
 
-## EU Compliance & Data Sovereignty
+## Diff Analysis & CI/CD Integration
 
-Driftbase is engineered specifically for European teams with strict compliance obligations (GDPR, EU AI Act, DORA).
-
-- **Zero-Egress**: The free tier runs entirely on your machine. Data never goes to US servers.
-- **Structural Hashing**: We analyze the structure of the behavior, not the sensitive context.
-- **Edge PII Scrubbing**: Enable the scrubber to redact personal data before it even hits your local disk.
+Once you have telemetry from two versions, compare them locally:
 
 ```bash
-# Enable PII redaction
+# Terminal UI (requires [analyze] profile)
+driftbase diff v2.0 v2.1
+
+# Markdown for PR comments
+driftbase diff v2.0 v2.1 --format md > pr_comment.md
+
+# JSON for automated pipelines
+driftbase diff v2.0 v2.1 --format json > drift_report.json
+
+# HTML report for stakeholders
+driftbase diff v2.0 v2.1 --format html --output report.html
+```
+
+### Statistical Methodology
+
+Driftbase uses the **Kolmogorov-Smirnov test** to measure distributional differences between version populations:
+- **Bootstrap confidence intervals** (95% CI) for stable estimates with small sample sizes
+- **Composite drift score** weighted across dimensions (decisions, latency, errors, tool usage)
+- **Hypothesis engine** that generates plain-English root-cause explanations
+
+This isn't just logging — it's a **statistical behavioral fingerprint**.
+
+---
+
+## EU AI Act Compliance Reporting
+
+For teams subject to the EU AI Act (Regulation 2024/1689), Driftbase can generate Article 72 post-market monitoring reports:
+
+```bash
+driftbase report v2.0 v2.1 --format html --template eu-ai-act --sign
+```
+
+This produces a self-contained HTML compliance report with:
+1. **Cover page** with compliance notice and metadata
+2. **Compliance status badge** mapping verdict to regulatory language
+3. **Article 72 evidence table** documenting monitoring requirements
+4. **Detailed behavioral metrics** with EU AI Act article references
+5. **SHA256 integrity hash** (when `--sign` flag is used) for tamper detection
+6. **Legal disclaimer** clarifying the tool's role in compliance
+
+Output filename: `drift-report-eu-ai-act-{baseline}-{current}-{timestamp}.html`
+
+**Important:** This tool assists with post-market monitoring but does not replace human oversight, risk assessment, or legal review. Consult qualified legal counsel for compliance guidance.
+
+---
+
+## Data Privacy & Sovereignty
+
+Driftbase is engineered for European teams with strict compliance obligations (GDPR, EU AI Act, DORA, NIS2).
+
+### Zero-Egress Architecture
+
+- **Local-first**: All data stays in `~/.driftbase/runs.db` on your machine
+- **No telemetry**: We removed PostHog and all third-party analytics
+- **Structural hashing**: We analyze *what tools were called*, not *what the user said*
+- **Edge PII scrubbing**: Optional regex-based redaction before disk write
+
+### Enable PII Scrubbing
+
+```bash
+export DRIFTBASE_SCRUB_PII=true
+```
+
+This strips emails, IBANs, phone numbers, and IP addresses from tool parameters and user inputs before hashing. Scrubbing happens **at the edge** — sensitive data never touches disk.
+
+### Database Resilience
+
+Driftbase implements a robust database path fallback chain:
+1. `~/.driftbase/runs.db` (default)
+2. `/tmp/driftbase/runs.db` (if home directory unavailable)
+3. `./driftbase/runs.db` (current working directory)
+
+This ensures telemetry works in Docker containers, CI environments, and restricted filesystems.
+
+### Retention & Performance
+
+- **Automatic pruning**: Oldest runs are deleted when count exceeds `DRIFTBASE_LOCAL_RETENTION_LIMIT` (default: 100,000)
+- **Pruning optimization**: Runs every 100 batches (~1,000 records) instead of every write for 99% less overhead
+- **Drop counter**: Logs warning every 100 dropped payloads if background writer can't keep up
+- **WAL mode**: SQLite write-ahead logging for safe concurrent access
+
+---
+
+## Configuration Reference
+
+Driftbase is **zero-config by default** but fully customizable via environment variables:
+
+### Core Settings
+
+```bash
+# Database location (default: ~/.driftbase/runs.db)
+export DRIFTBASE_DB_PATH="/path/to/custom/runs.db"
+
+# Default deployment version (if not set in @track decorator)
+export DRIFTBASE_DEPLOYMENT_VERSION="v2.1"
+
+# Environment label (e.g., production, staging, dev)
+export DRIFTBASE_ENVIRONMENT="staging"
+
+# Retention limit (default: 100,000 runs)
+export DRIFTBASE_LOCAL_RETENTION_LIMIT=50000
+
+# Queue size for background writer (default: 10,000)
+export DRIFTBASE_MAX_QUEUE_SIZE=20000
+```
+
+### Privacy & Scrubbing
+
+```bash
+# Enable PII redaction (default: false)
 export DRIFTBASE_SCRUB_PII=true
 
-# Configure your custom enterprise rates for accurate cost deltas
-export DRIFTBASE_RATE_PROMPT_1M=2.50
-export DRIFTBASE_RATE_COMPLETION_1M=10.00
+# Disable all telemetry capture (default: false)
+export DRIFTBASE_DISABLE_TELEMETRY=true
 ```
 
----
-
-## Driftbase Pro (Team Sync)
-
-Local SQLite is perfect for individual feature branches. But when Engineer A and Engineer B need to compare baselines, or when you deploy to production, you need a shared source of truth.
-
-To sync your local runs to a secure, EU-hosted centralized dashboard:
+### Financial Configuration
 
 ```bash
-export DRIFTBASE_API_KEY="your_pro_key"
-driftbase push
+# Configure your enterprise rates for accurate cost deltas
+export DRIFTBASE_RATE_PROMPT_1M=2.50      # € per 1M prompt tokens
+export DRIFTBASE_RATE_COMPLETION_1M=10.00 # € per 1M completion tokens
 ```
 
-[Learn more about Driftbase Pro](https://driftbase.io/pro)
+### UI & Output
+
+```bash
+# Disable colored output (default: false)
+export DRIFTBASE_OUTPUT_COLOR=false
+```
+
+### Driftbase Pro (Team Sync)
+
+```bash
+# API key for syncing to centralized dashboard
+export DRIFTBASE_API_KEY="your_pro_key"
+```
+
+View your current configuration:
+
+```bash
+driftbase config
+```
 
 ---
 
@@ -162,16 +346,210 @@ driftbase push
 
 | Command | Description |
 |---------|-------------|
-| `driftbase demo` | Inject synthetic runs to test the engine |
-| `driftbase diff <v1> <v2>` | Compare two versions (use `--format md` for CI/CD) |
-| `driftbase inspect <id>` | Deep-dive into a specific run's execution path |
-| `driftbase watch -a <v1>` | Live terminal dashboard monitoring incoming runs |
-| `driftbase runs -v <v1>` | List all local runs for a version |
-| `driftbase config` | View your current local configuration and DB path |
-| `driftbase push` | Sync local database to the Driftbase Pro cloud |
+| `driftbase init` | Interactive setup guide — get started in 60 seconds |
+| `driftbase demo` | Inject synthetic runs to test the drift engine |
+| `driftbase diff <v1> <v2>` | Compare two versions with statistical analysis |
+| `driftbase report <v1> <v2>` | Generate shareable reports (markdown, JSON, HTML, EU AI Act) |
+| `driftbase inspect <run_id>` | Deep-dive into a specific run's execution trace |
+| `driftbase watch -a <version>` | Live terminal dashboard monitoring incoming runs |
+| `driftbase runs -v <version>` | List all local runs for a deployment version |
+| `driftbase versions` | List all deployment versions and run counts |
+| `driftbase export` | Export all runs to JSON for backup/archival |
+| `driftbase import <file.json>` | Import runs from JSON (supports merge/replace modes) |
+| `driftbase push` | Sync local database to Driftbase Pro cloud (removes raw text) |
+| `driftbase reset -v <version>` | Delete all runs for a deployment version |
+| `driftbase config` | View current configuration and database path |
+| `driftbase db-stats` | Print internal statistics (semantic clusters, etc.) |
+
+### CLI Examples
+
+```bash
+# Compare last 20 runs against baseline v2.0
+driftbase diff --last 20 --against v2.0
+
+# Filter comparison by environment
+driftbase diff v2.0 v2.1 --environment production
+
+# Generate markdown report for PR comment
+driftbase diff v2.0 v2.1 --format md --output drift_report.md
+
+# Generate EU AI Act compliance report with signature
+driftbase report v2.0 v2.1 --format html --template eu-ai-act --sign
+
+# Export all production runs to JSON
+driftbase export --output backup.json
+
+# Import runs with merge strategy
+driftbase import backup.json --merge
+
+# Watch for drift in real-time
+driftbase watch --against v2.0 --threshold 0.15
+```
+
+---
+
+## Driftbase Pro (Team Sync)
+
+Local SQLite is perfect for individual feature branches and CI pipelines. But when you need to:
+- **Compare baselines across teammates** (Engineer A vs Engineer B)
+- **Monitor production deployments** continuously
+- **Share dashboards with stakeholders** (PMs, leadership)
+- **Store long-term trend data** beyond local retention limits
+
+...you need a shared source of truth.
+
+**Driftbase Pro** provides:
+- EU-hosted centralized dashboard (Frankfurt, GDPR-compliant)
+- Team collaboration and version comparison
+- Long-term trend analysis and alerting
+- SSO/SAML integration for enterprise
+- Dedicated support and SLA
+
+To sync your local runs:
+
+```bash
+export DRIFTBASE_API_KEY="your_pro_key"
+driftbase push
+```
+
+All sensitive context is stripped before upload — only structural metadata and hashed tool parameters are transmitted.
+
+[Learn more about Driftbase Pro →](https://driftbase.io/pro)
+
+---
+
+## Architecture & Design Philosophy
+
+### Why Local-First?
+
+1. **Privacy by design**: Sensitive customer data never leaves your infrastructure
+2. **Zero latency**: No network calls in the hot path — just append to SQLite
+3. **Works offline**: Full functionality in air-gapped environments
+4. **Cost efficiency**: No per-run pricing — unlimited telemetry capture
+5. **Compliance simplicity**: GDPR/NIS2/DORA obligations are easier when data stays local
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────┐
+│ 1. Your Agent Code                              │
+│    @track(version="v2.1")                       │
+│    def run_agent(query: str): ...              │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│ 2. Auto-Detection Layer                         │
+│    Detects: LangChain / LangGraph / OpenAI      │
+│    Captures: tools, tokens, latency, errors     │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│ 3. PII Scrubbing (optional)                     │
+│    Regex-based redaction at the edge            │
+│    Strips: emails, IBANs, IPs, phone numbers    │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│ 4. Structural Hashing                           │
+│    Hash tool parameters and user inputs         │
+│    Preserve semantic structure, not raw text    │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│ 5. Background Writer (bounded queue)            │
+│    Non-blocking writes to SQLite (WAL mode)     │
+│    Auto-pruning every 100 batches               │
+│    Drop counter warns if queue saturates        │
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────┐
+│ 6. Local SQLite Database                        │
+│    ~/.driftbase/runs.db                         │
+│    Fallback: /tmp or cwd if home unavailable    │
+└─────────────────────────────────────────────────┘
+
+Later, in your terminal or CI:
+
+┌─────────────────────────────────────────────────┐
+│ driftbase diff v2.0 v2.1                        │
+│   ↓                                             │
+│ 1. Load runs from SQLite                        │
+│ 2. Build behavioral fingerprints                │
+│ 3. Compute KS test + bootstrap CI               │
+│ 4. Generate root-cause hypotheses               │
+│ 5. Render verdict with financial impact         │
+└─────────────────────────────────────────────────┘
+```
+
+### Production Deployment Model
+
+**Recommended architecture:**
+1. Instrument your production containers with `pip install driftbase` (minimal deps)
+2. Mount a persistent volume at `~/.driftbase/` or set `DRIFTBASE_DB_PATH`
+3. Periodically export with `driftbase export` and archive to S3/GCS
+4. On your laptop/CI, install `pip install 'driftbase[analyze]'` for statistical analysis
+5. Diff against exported baselines or use `driftbase push` for Pro sync
+
+This keeps heavy dependencies (numpy, scipy) out of production while maintaining full observability.
+
+---
+
+## Contributing
+
+We welcome contributions! Areas of interest:
+- Additional framework integrations (DSPy, Haystack, etc.)
+- New drift dimensions (token efficiency, retrieval quality)
+- Alternative statistical tests (MMD, Wasserstein distance)
+- Visualization improvements (terminal UI, HTML reports)
+
+**Before submitting a PR:**
+1. Run tests: `pytest tests/`
+2. Format code: `black src/ tests/`
+3. Check types: `mypy src/`
+
+---
+
+## FAQ
+
+**Q: Does this slow down my agent?**
+A: No. The `@track` decorator writes to an in-memory bounded queue and returns immediately. A background worker persists to SQLite asynchronously. Production overhead is <1ms per run.
+
+**Q: Can I use this with streaming responses?**
+A: Yes. Driftbase hooks into framework callbacks and captures the final aggregated result, including streaming token counts.
+
+**Q: What if I exceed the retention limit?**
+A: Oldest runs are automatically pruned when count exceeds `DRIFTBASE_LOCAL_RETENTION_LIMIT` (default: 100k). Pruning runs in the background every 100 batches.
+
+**Q: Can I disable telemetry in tests?**
+A: Yes. Set `DRIFTBASE_DISABLE_TELEMETRY=true` or use `@track(enabled=False)`.
+
+**Q: How accurate is the cost calculation?**
+A: Very accurate. We read token counts directly from LLM responses and multiply by your configured rates (`DRIFTBASE_RATE_PROMPT_1M`, `DRIFTBASE_RATE_COMPLETION_1M`). Default rates are OpenAI list prices.
+
+**Q: Does this work with Azure OpenAI?**
+A: Yes. Any OpenAI-compatible client is supported (Azure, Anthropic, Groq, local LLMs).
+
+**Q: Can I self-host the Pro dashboard?**
+A: Not yet. Self-hosted enterprise edition is on the roadmap for Q2 2026. Email pro@driftbase.io for early access.
 
 ---
 
 ## License
 
-Apache License 2.0. See LICENSE for details.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+---
+
+## Community & Support
+
+- **Documentation:** [docs.driftbase.io](https://docs.driftbase.io)
+- **GitHub Issues:** [github.com/driftbase/driftbase-python/issues](https://github.com/driftbase/driftbase-python/issues)
+- **Email:** support@driftbase.io
+- **Pro inquiries:** pro@driftbase.io
+
+**Built with 🇪🇺 in Europe. Data sovereignty by default.**
