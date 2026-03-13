@@ -170,7 +170,13 @@ def compute_drift(
     Returns:
         DriftReport with drift_score, severity, component drifts, and optional CI fields.
     """
-    import numpy as np
+    try:
+        import numpy as np
+    except ImportError:
+        raise ImportError(
+            "numpy is required for drift computation with confidence intervals. "
+            "Install with: pip install 'driftbase[analyze]'"
+        )
 
     from driftbase.local.fingerprinter import build_fingerprint_from_runs
     from driftbase.local.local_store import DriftReport, run_dict_to_agent_run

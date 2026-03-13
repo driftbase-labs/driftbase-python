@@ -9,10 +9,11 @@ import os
 import sys
 
 import click
-from rich.console import Console
-from rich.table import Table
-
+from driftbase.cli._deps import safe_import_rich
 from driftbase.backends.factory import get_backend
+
+# Lazy import of heavy [analyze] dependencies
+Console, Panel, Table = safe_import_rich()
 
 
 def _console_no_color(no_color_flag: bool) -> bool:

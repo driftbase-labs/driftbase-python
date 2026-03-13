@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import click
 from driftbase.backends.base import StorageBackend
+from driftbase.cli._deps import safe_import_rich
 from driftbase.local.diff import compute_drift
 from driftbase.local.fingerprinter import build_fingerprint_from_runs
 from driftbase.local.rootcause import (
@@ -23,9 +24,9 @@ from driftbase.local.rootcause import (
     tool_frequency_diff,
 )
 from driftbase.local.local_store import AgentRun, BehavioralFingerprint, DriftReport, run_dict_to_agent_run
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
+
+# Lazy import of heavy [analyze] dependencies
+Console, Panel, Table = safe_import_rich()
 
 MIN_SAMPLES_WARNING = 50
 DEFAULT_THRESHOLD = 0.20

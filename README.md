@@ -29,9 +29,18 @@ Driftbase records behavioral signals from each run — tool call sequences, late
 See the drift engine in action right now without writing any code.
 
 ### 1. Install
+
+**For production tracking** (decorator only):
 ```bash
 pip install driftbase
 ```
+
+**For local analysis** (CLI + diff engine):
+```bash
+pip install 'driftbase[analyze]'
+```
+
+The base install provides the `@track()` decorator with minimal dependencies (pydantic, httpx). The `[analyze]` profile adds numpy, scipy, and rich for statistical drift computation and terminal UI.
 
 ### 2. Run the synthetic demo
 This command instantly populates your local database with 50 baseline runs (v1.0) and 50 regressed runs (v2.0 with higher token usage and hallucinated tool calls).
@@ -85,6 +94,7 @@ driftbase inspect <RUN_ID>
 
 Once you see the value, drop Driftbase into your actual application. It auto-detects LangChain, LangGraph, LlamaIndex, and raw OpenAI clients.
 
+**In your production container** (requires only `pip install driftbase`):
 ```python
 from driftbase import track
 import openai
@@ -102,11 +112,13 @@ def run_agent(prompt: str):
 run_agent("What's the revenue for Q4?")
 ```
 
-Before you push to production, let the data decide. Export a clean, undeniable Markdown comment:
+**On your laptop or in CI** (requires `pip install 'driftbase[analyze]'`), let the data decide:
 
 ```bash
 driftbase diff v1.0 v2.0 --format md > pr_comment.md
 ```
+
+The `@track` decorator has zero production overhead (pydantic + httpx only). Statistical analysis runs locally with numpy/scipy.
 
 ---
 

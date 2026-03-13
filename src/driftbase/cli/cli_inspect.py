@@ -1,12 +1,16 @@
 import json
 import click
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.markdown import Markdown
-
+from driftbase.cli._deps import safe_import_rich
 from driftbase.backends.factory import get_backend
 from driftbase.pricing import estimate_run_cost
+
+# Lazy import of heavy [analyze] dependencies
+Console, Panel, Table = safe_import_rich()
+
+try:
+    from rich.markdown import Markdown
+except ImportError:
+    Markdown = None  # Graceful degradation
 
 @click.command("inspect")
 @click.argument("run_id")

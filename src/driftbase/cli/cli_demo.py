@@ -3,9 +3,11 @@ import random
 import json
 from datetime import datetime, timedelta
 import click
-from rich.console import Console
-
+from driftbase.cli._deps import safe_import_rich
 from driftbase.local.local_store import enqueue_run
+
+# Lazy import of heavy [analyze] dependencies
+Console, Panel, Table = safe_import_rich()
 
 def generate_synthetic_runs(version: str, count: int, is_regression: bool):
     """Generates synthetic telemetry data."""

@@ -10,17 +10,19 @@ readme = "README.md"
 requires-python = ">=3.9"
 license-files = ["LICENSE"]
 dependencies = [
-    "httpx>=0.25.0",
     "pydantic>=2.0.0",
-    "numpy>=1.24.0",
-    "scipy>=1.10.0",
+    "httpx>=0.25.0",
     "PyYAML>=6.0.0",
     "click>=8.0.0",
-    "rich>=13.0.0",
     "posthog>=3.0.0",
 ]
 
 [project.optional-dependencies]
+analyze = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "rich>=13.0.0",
+]
 semantic = [
     "light-embed>=1.0.0",
 ]

@@ -1,10 +1,16 @@
 import os
 import httpx
 import click
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
-
+from driftbase.cli._deps import safe_import_rich
 from driftbase.backends.factory import get_backend
+
+# Lazy import of heavy [analyze] dependencies
+Console, Panel, Table = safe_import_rich()
+
+try:
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+except ImportError:
+    Progress = SpinnerColumn = TextColumn = None  # Graceful degradation
 
 @click.command("push")
 @click.pass_context
