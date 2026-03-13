@@ -47,9 +47,25 @@ class AgentRunLocal(SQLModel, table=True):
 
 
 def _ensure_dir(path: str) -> None:
+    """
+    Ensure the parent directory of the database file exists.
+    Wraps mkdir in try/except to handle permission errors gracefully.
+    """
     d = os.path.dirname(path)
     if d:
-        os.makedirs(d, exist_ok=True)
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception as e:
+            logger.error(
+                "Failed to create database directory '%s': %s",
+                d,
+                str(e)
+            )
+            raise RuntimeError(
+                f"Could not create database directory at '{d}'. "
+                f"Error: {e}. "
+                "Please set DRIFTBASE_DB_PATH to a writable location."
+            ) from e
 
 
 def _migrate_schema(engine: Any) -> None:
@@ -130,23 +146,49 @@ class SQLiteBackend(StorageBackend):
         AgentRunLocal.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
-    def _prune(self, session: Session) -> None:
-        """Enforces the rolling retention window to prevent disk bloat."""
+    def prune_if_needed(self) -> None:
+        """
+        Enforces the rolling retention window to prevent disk bloat.
+
+        This method should be called from the background worker thread in local_store.py,
+        not during individual write operations. It checks the count first and only
+        deletes if the retention limit is exceeded.
+        """
         limit = get_settings().DRIFTBASE_LOCAL_RETENTION_LIMIT
         try:
-            session.execute(
-                text(
-                    """
-                    DELETE FROM agent_runs_local 
-                    WHERE id NOT IN (
-                        SELECT id FROM agent_runs_local 
-                        ORDER BY started_at DESC 
-                        LIMIT :limit
+            with Session(self._engine) as session:
+                # Check count first before issuing expensive DELETE
+                result = session.execute(text("SELECT COUNT(*) FROM agent_runs_local"))
+                count = result.scalar()
+
+                if count is None or count <= limit:
+                    # No pruning needed
+                    return
+
+                # Count exceeds limit, perform pruning
+                result = session.execute(
+                    text(
+                        """
+                        DELETE FROM agent_runs_local
+                        WHERE id NOT IN (
+                            SELECT id FROM agent_runs_local
+                            ORDER BY started_at DESC
+                            LIMIT :limit
+                        )
+                        """
+                    ),
+                    {"limit": limit}
+                )
+                deleted_count = result.rowcount
+                session.commit()
+
+                if deleted_count > 0:
+                    logger.debug(
+                        "Driftbase pruned %d old records (retention limit: %d, current count: %d)",
+                        deleted_count,
+                        limit,
+                        count
                     )
-                    """
-                ),
-                {"limit": limit}
-            )
         except Exception as e:
             logger.debug("SQLite database pruning failed: %s", e)
 
@@ -155,7 +197,6 @@ class SQLiteBackend(StorageBackend):
             with Session(self._engine) as session:
                 run = AgentRunLocal(**payload)
                 session.add(run)
-                self._prune(session)
                 session.commit()
         except Exception as e:
             logger.debug("SQLite write_run failed: %s", e)
@@ -169,7 +210,6 @@ class SQLiteBackend(StorageBackend):
                 for payload in batch:
                     run = AgentRunLocal(**payload)
                     session.add(run)
-                self._prune(session)
                 session.commit()
         except Exception as e:
             logger.debug("SQLite write_runs failed: %s", e)

@@ -5,8 +5,12 @@ Sensible defaults so the SDK works out-of-the-box for local developers.
 
 from __future__ import annotations
 
+import logging
 import os
+from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _env_bool(key: str, default: bool) -> bool:
@@ -29,15 +33,59 @@ def _env_int(key: str, default: int, min_val: Optional[int] = None) -> int:
         return default
 
 
+def _resolve_db_path_with_fallbacks() -> str:
+    """
+    Resolve the database path with a robust fallback chain for environments
+    where Path.home() fails (Docker, CI, restricted environments, etc.).
+
+    Fallback chain:
+    1. Try ~/.driftbase/runs.db (Path.home())
+    2. Fall back to /tmp/driftbase/runs.db
+    3. Fall back to ./.driftbase/runs.db (current working directory)
+
+    This ensures the SDK works in restricted environments without requiring
+    explicit DRIFTBASE_DB_PATH configuration.
+    """
+    # 1. Try Path.home() first (most common case)
+    try:
+        home_path = Path.home() / ".driftbase" / "runs.db"
+        return str(home_path)
+    except Exception as e:
+        logger.debug("Path.home() failed (%s), trying /tmp fallback", e)
+
+    # 2. Fall back to /tmp
+    try:
+        tmp_path = Path("/tmp") / "driftbase" / "runs.db"
+        return str(tmp_path)
+    except Exception as e:
+        logger.debug("/tmp fallback failed (%s), trying cwd fallback", e)
+
+    # 3. Final fallback to current working directory
+    try:
+        cwd_path = Path.cwd() / ".driftbase" / "runs.db"
+        return str(cwd_path)
+    except Exception as e:
+        logger.error("All database path fallbacks failed: %s", e)
+        raise RuntimeError(
+            "Could not resolve a writable database path. "
+            "Please set DRIFTBASE_DB_PATH explicitly to a writable location."
+        ) from e
+
+
 class Settings:
     """
     Read-only settings from environment. All defaults are tuned for local dev.
     """
 
     def __init__(self) -> None:
-        # Local SQLite path (expanded); same default as backends.factory
-        _path = os.environ.get("DRIFTBASE_DB_PATH", "~/.driftbase/runs.db")
-        self._db_path = os.path.expanduser(_path)
+        # Local SQLite path with fallback chain for restricted environments
+        env_path = os.environ.get("DRIFTBASE_DB_PATH")
+        if env_path:
+            # User explicitly set the path, use it as-is (expand ~ if present)
+            self._db_path = os.path.expanduser(env_path)
+        else:
+            # Use fallback chain for default path
+            self._db_path = _resolve_db_path_with_fallbacks()
 
     @property
     def DRIFTBASE_DB_PATH(self) -> str:

@@ -28,7 +28,7 @@ def _console_no_color(no_color_flag: bool) -> bool:
 
 
 @click.group()
-@click.version_option(version="0.2.6", prog_name="driftbase")
+@click.version_option(version="0.2.7", prog_name="driftbase")
 @click.option("--no-color", is_flag=True, help="Disable colored output (overrides DRIFTBASE_OUTPUT_COLOR).")
 @click.pass_context
 def cli(ctx: click.Context, no_color: bool) -> None:

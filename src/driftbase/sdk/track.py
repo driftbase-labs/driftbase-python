@@ -24,7 +24,6 @@ from datetime import datetime
 from typing import Any, Callable, Optional
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
-from driftbase.telemetry import track_event
 from driftbase.config import get_settings
 
 # Ensure logger doesn't pollute the user's stdout by default
@@ -395,25 +394,6 @@ def _capture_llamaindex(
         return _capture_generic(func, args, kwargs, ctx)
 
 
-def _post_run_telemetry(ctx: RunContext, version: str) -> None:
-    """Fire telemetry to local systems and print console warnings."""
-    try:
-        track_event('sdk_behavior_checked', {
-            'framework': ctx.framework,
-            'version': version,
-            'decision_outcome': ctx.decision_outcome,
-            'tool_call_count': len(ctx.tool_calls),
-            'latency_ms': ctx.latency_ms,
-            'error_count': ctx.error_count,
-            'execution_environment': 'local_decorator'
-        })
-        
-        if ctx.decision_outcome != OUTCOME_RESOLVED or ctx.error_count > 0:
-            print(f"\n[Driftbase] Behavior check complete. Status: {ctx.decision_outcome.upper()}")
-            print("⚠️  Action recommended. View full visualization and team reports at:")
-            print("➡️  https://app.driftbase.io/reports\n")
-    except Exception as e:
-        _log_track_error("telemetry", f"Failed to send telemetry or print gate: {e!r}")
 
 
 def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) -> None:
@@ -516,7 +496,6 @@ def track(
                 except Exception as enq_err:
                     _log_track_error("track_decorator", f"run_id={run_id} enqueue error={enq_err!r}")
                 
-                _post_run_telemetry(ctx, version)
                 _dispatch_to_cloud(ctx, api_key)
                 raise
 
@@ -604,7 +583,6 @@ def track(
                 except Exception as enq_err:
                     _log_track_error("track_decorator_async", f"run_id={run_id} enqueue error={enq_err!r}")
                 
-                _post_run_telemetry(ctx, version)
                 _dispatch_to_cloud(ctx, api_key)
                 raise
 

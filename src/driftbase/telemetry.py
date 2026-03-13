@@ -2,10 +2,6 @@ import os
 import uuid
 import requests
 from pathlib import Path
-from posthog import Posthog
-
-POSTHOG_API_KEY = 'phc_uNYs8JTyyPbaRLsLUwj3loCMLjYWdtBdxMbRdwZOIxL'
-POSTHOG_HOST = 'https://driftbase.io/ingest'
 
 def is_telemetry_enabled():
     """Enterprise kill switch for GDPR/DORA compliance."""
@@ -23,22 +19,6 @@ def get_machine_id():
     new_id = str(uuid.uuid4())
     id_file.write_text(new_id)
     return new_id
-
-def track_event(event_name, properties=None):
-    """Fire product usage event to your Cloudflare proxy."""
-    if not is_telemetry_enabled():
-        return 
-
-    ph = Posthog(POSTHOG_API_KEY, host=POSTHOG_HOST)
-    
-    ph.capture(
-        event_name, 
-        distinct_id=get_machine_id(),
-        properties=properties or {}
-    )
-    
-    # CLI scripts exit quickly. Force the background thread to send the payload.
-    ph.flush()
 
 def push_trace(api_key: str, latency: int, tokens: dict, status: str = "success", endpoint: str = "http://localhost:3000/api/traces"):
     """

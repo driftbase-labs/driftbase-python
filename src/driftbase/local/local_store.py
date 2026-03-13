@@ -148,9 +148,12 @@ def _log_track_error(context: str, message: str) -> None:
 
 _write_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue(maxsize=int(os.getenv("DRIFTBASE_MAX_QUEUE_SIZE", "1000")))
 _worker: Optional[threading.Thread] = None
+_drop_counter: int = 0
+_batch_counter: int = 0  # Track batches written to trigger periodic pruning
 
 BATCH_SIZE = 10
 BATCH_TIMEOUT_S = 0.05  # 50ms
+PRUNE_EVERY_N_BATCHES = 100  # Only prune once every 100 batches to avoid excessive COUNT queries
 
 
 def _flush_batch(batch: list[dict[str, Any]]) -> None:
@@ -164,7 +167,34 @@ def _flush_batch(batch: list[dict[str, Any]]) -> None:
         _log_track_error("local_store_write", str(e))
 
 
+def _prune_if_needed() -> None:
+    """
+    Trigger retention pruning on the backend if needed.
+
+    This runs in the background worker thread and is called periodically
+    (once every PRUNE_EVERY_N_BATCHES) to avoid excessive overhead.
+    The backend will check the count before deleting.
+
+    Must never raise - all exceptions are caught to prevent worker crashes.
+    """
+    try:
+        backend = get_backend()
+        # Check if backend has prune_if_needed method (SQLite backend)
+        if hasattr(backend, 'prune_if_needed'):
+            backend.prune_if_needed()
+    except Exception as e:
+        logger.debug("Retention pruning failed: %s", e)
+        # Never crash the worker thread
+
+
 def _worker_loop() -> None:
+    """
+    Background worker loop that processes queued runs in batches.
+
+    After writing each batch, increments a counter and triggers retention
+    pruning once every PRUNE_EVERY_N_BATCHES to avoid excessive overhead.
+    """
+    global _batch_counter
     batch: list[dict[str, Any]] = []
     while True:
         try:
@@ -172,27 +202,51 @@ def _worker_loop() -> None:
             if payload is None:
                 if batch:
                     _flush_batch(batch)
+                    _batch_counter += 1
+                    # Prune after final batch on shutdown if counter threshold reached
+                    if _batch_counter >= PRUNE_EVERY_N_BATCHES:
+                        _prune_if_needed()
+                        _batch_counter = 0
                 break
             batch.append(payload)
             if len(batch) >= BATCH_SIZE:
                 _flush_batch(batch)
+                _batch_counter += 1
+                # Check if it's time to prune (once every 100 batches)
+                if _batch_counter >= PRUNE_EVERY_N_BATCHES:
+                    _prune_if_needed()
+                    _batch_counter = 0
                 batch = []
         except queue.Empty:
             if batch:
                 _flush_batch(batch)
+                _batch_counter += 1
+                # Check if it's time to prune
+                if _batch_counter >= PRUNE_EVERY_N_BATCHES:
+                    _prune_if_needed()
+                    _batch_counter = 0
                 batch = []
 
 
 def enqueue_run(payload: dict[str, Any]) -> None:
     """Enqueue an agent run for non-blocking write. Safe to call from any thread."""
-    global _worker
+    global _worker, _drop_counter
     if _worker is None:
         _worker = threading.Thread(target=_worker_loop, daemon=True)
         _worker.start()
     try:
         _write_queue.put_nowait(payload)
     except queue.Full:
-        logger.warning("Local store queue full — run dropped")
+        try:
+            _drop_counter += 1
+            if _drop_counter >= 100:
+                logger.warning(
+                    "Driftbase: 100 telemetry payloads dropped — background writer cannot keep up. "
+                    "Consider reducing agent throughput or increasing DRIFTBASE_MAX_QUEUE_SIZE."
+                )
+                _drop_counter = 0
+        except Exception:
+            pass  # Never crash the host application
         _log_track_error("enqueue_run", "Queue full — run dropped")
 
 
