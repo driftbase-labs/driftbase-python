@@ -233,10 +233,12 @@ def format_html_verdict(
     current_tools: dict[str, float],
     tool_frequency_diffs: list[dict[str, Any]],
     compute_time_ms: float | None = None,
+    template: str = "standard",
+    sign: bool = False,
 ) -> str:
     """Generate modern HTML report using verdict engine and new design."""
     from driftbase.local.hypothesis_engine import generate_hypotheses
-    from driftbase.reports.html import generate_html_report
+    from driftbase.reports.html import generate_html_report, generate_eu_ai_act_report
     from driftbase.verdict import compute_verdict
 
     baseline_n = baseline_fp.sample_count
@@ -260,17 +262,32 @@ def format_html_verdict(
         report, baseline_tools, current_tools, baseline_n, current_n
     )
 
-    return generate_html_report(
-        report=report,
-        verdict_result=verdict_result,
-        baseline_label=baseline_label,
-        current_label=current_label,
-        baseline_n=baseline_n,
-        current_n=current_n,
-        hypotheses=hypotheses,
-        tool_frequency_diffs=tool_frequency_diffs,
-        compute_time_ms=compute_time_ms,
-    )
+    # Branch on template type
+    if template == "eu-ai-act":
+        return generate_eu_ai_act_report(
+            report=report,
+            verdict_result=verdict_result,
+            baseline_label=baseline_label,
+            current_label=current_label,
+            baseline_n=baseline_n,
+            current_n=current_n,
+            hypotheses=hypotheses,
+            tool_frequency_diffs=tool_frequency_diffs,
+            compute_time_ms=compute_time_ms,
+            include_signature=sign,
+        )
+    else:
+        return generate_html_report(
+            report=report,
+            verdict_result=verdict_result,
+            baseline_label=baseline_label,
+            current_label=current_label,
+            baseline_n=baseline_n,
+            current_n=current_n,
+            hypotheses=hypotheses,
+            tool_frequency_diffs=tool_frequency_diffs,
+            compute_time_ms=compute_time_ms,
+        )
 
 
 def run_report(
@@ -283,6 +300,8 @@ def run_report(
     environment: Optional[str] = None,
     backend: Optional[StorageBackend] = None,
     console: Optional[Any] = None,
+    template: str = "standard",
+    sign: bool = False,
 ) -> int:
     """Generate shareable report; print to stdout or write to file. Returns 0 on success, 1 on error."""
     import time
@@ -336,11 +355,21 @@ def run_report(
             current_tools,
             tool_frequency_diffs,
             compute_time_ms=elapsed_ms,
+            template=template,
+            sign=sign,
         )
-        if output_path:
-            with open(output_path, "w", encoding="utf-8") as f:
+
+        # Auto-generate filename for EU AI Act reports
+        final_output_path = output_path
+        if output_path is None and template == "eu-ai-act":
+            from datetime import datetime
+            timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+            final_output_path = f"drift-report-eu-ai-act-{baseline_version}-{current_version}-{timestamp}.html"
+
+        if final_output_path:
+            with open(final_output_path, "w", encoding="utf-8") as f:
                 f.write(out)
-            _console.print(f"[green]✓[/] HTML report written to {output_path}")
+            _console.print(f"[green]✓[/] HTML report written to {final_output_path}")
             return 0
         _console.print(out)
         return 0
@@ -377,6 +406,8 @@ def run_report(
 @click.option("--output", "-o", "output_path", metavar="PATH", help="Write report to file instead of stdout.")
 @click.option("--threshold", "-t", type=float, default=0.20, help="Drift threshold for recommendation (default 0.20).")
 @click.option("--environment", "-e", default=None, help="Filter by environment.")
+@click.option("--template", type=click.Choice(["standard", "eu-ai-act"]), default="standard", help="Report template (HTML format only).")
+@click.option("--sign", is_flag=True, default=False, help="Include SHA256 integrity hash (eu-ai-act template only).")
 @click.pass_context
 def cmd_report(
     ctx: click.Context,
@@ -386,6 +417,8 @@ def cmd_report(
     output_path: str | None,
     threshold: float,
     environment: str | None,
+    template: str,
+    sign: bool,
 ) -> None:
     """Generate shareable drift report (markdown, JSON, HTML) from local SQLite data."""
     console = ctx.obj["console"]
@@ -397,5 +430,7 @@ def cmd_report(
         threshold=threshold,
         environment=environment,
         console=console,
+        template=template,
+        sign=sign,
     )
     ctx.exit(code)
