@@ -10,6 +10,8 @@ fi
 
 echo "✓ Versions match: $VERSION"
 rm -rf dist/
-python -m build
-twine upload dist/*
-echo "✓ Published $VERSION to PyPI"
+git add -A
+git commit -m "release: v$VERSION"
+git tag "v$VERSION"
+git push origin main --tags
+echo "✓ Tagged v$VERSION — GitHub Action will publish to PyPI and create release"
