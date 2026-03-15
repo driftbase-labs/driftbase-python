@@ -37,25 +37,53 @@ class TestTrackLangGraph(unittest.TestCase):
     def test_langgraph_invoke_captures_tool_sequence(self) -> None:
         """With LangGraph auto-detected, decorated function gets tool calls recorded."""
         import sys
+        from uuid import uuid4
+
+        import driftbase.sdk.watcher as watcher_module
 
         mock_graph = MagicMock()
         mock_graph.invoke.return_value = {"result": "ok"}
 
-        original_init = DriftbaseCallbackHandler.__init__
+        # Create a mock handler that simulates DriftbaseCallbackHandler behavior
+        def create_mock_handler(run_ctx=None, **kwargs):
+            handler = MagicMock()
+            handler.run_ctx = run_ctx
+            handler.session_id = str(uuid4())
+            handler.deployment_version = "unknown"
+            handler.environment = "production"
+            handler.active_runs = {}
+            handler._run_to_root = {}
+            if run_ctx is not None:
+                # Inject tool call into context
+                run_ctx.tool_calls.append({"name": "mock_tool", "latency_ms": 42})
+            return handler
 
-        def mocked_init(self, *args, **kwargs):
-            original_init(self, *args, **kwargs)
-            ctx = kwargs.get("run_ctx")
-            if ctx is not None:
-                # Elegantly bypass LangChain's complex event lifecycle by directly
-                # injecting the tool call into the context the moment it is initialized.
-                ctx.tool_calls.append({"name": "mock_tool", "latency_ms": 42})
+        # Mock both sys.modules and the handler creation
+        mock_langchain = MagicMock()
+        mock_langchain.callbacks.BaseCallbackHandler = object
 
-        # Mock sys.modules to pretend langgraph is installed
-        with patch.dict(sys.modules, {"langgraph": MagicMock()}), patch.object(DriftbaseCallbackHandler, "__init__", mocked_init):
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "langgraph": MagicMock(),
+                    "langchain_core": mock_langchain,
+                    "langchain_core.callbacks": mock_langchain.callbacks,
+                },
+            ),
+            patch.object(watcher_module, "_LANGCHAIN_AVAILABLE", True),
+            patch.object(
+                watcher_module,
+                "DriftbaseCallbackHandler",
+                side_effect=create_mock_handler,
+            ),
+        ):
             # The 'langgraph' type hint string guarantees the auto-detector triggers perfectly
             @track(version="test_langgraph")
-            def run_agent(state: "langgraph", config=None):  # type: ignore[name-defined]  # noqa: F821, UP037
+            def run_agent(
+                state: "langgraph",  # type: ignore[name-defined]  # noqa: F821, UP037
+                config=None,
+            ):
                 return mock_graph.invoke(state, config=config)
 
             run_agent("dummy_state")
