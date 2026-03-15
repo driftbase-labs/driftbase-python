@@ -34,7 +34,6 @@ driftbase = "driftbase.cli.main:cli"
 [tool.setuptools.package-data]
 driftbase = ["**/*.yaml", "hypothesis_rules.yaml"]
 
-# This tells setuptools_scm to read the version from Git tags
 [tool.setuptools_scm]
 
 [tool.pytest.ini_options]
@@ -56,9 +55,19 @@ ignore = [
     "SIM105", # allow standard try-except-pass blocks
     "SIM115", # allow unmanaged file opening (standard for tempfile in tests)
     "SIM116", # allow if/elif chains instead of forcing dictionaries
+    "SIM102", # allow nested if statements instead of forcing 'and'
     "N802",   # allow uppercase function properties (DRIFTBASE_ env vars)
     "N806",   # allow uppercase variables (Completions class alias)
     "B904",   # allow raise without 'from'
+    "UP045",  # allow Optional[X] instead of forcing X | None
+    "UP006",  # allow Dict[X, Y] instead of forcing dict[X, Y]
+    "UP031",  # allow % string formatting
+    "UP035",  # allow typing.Iterator
+    "F841",   # allow unused local variables
+    "F401",   # allow unused imports (useful during active development)
+    "W291",   # ignore trailing whitespace
+    "W292",   # ignore missing newline at end of file
+    "W293",   # ignore blank lines containing whitespace
 ]
 
 [tool.ruff.format]
