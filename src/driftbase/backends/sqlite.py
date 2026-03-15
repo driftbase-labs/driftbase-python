@@ -56,11 +56,7 @@ def _ensure_dir(path: str) -> None:
         try:
             os.makedirs(d, exist_ok=True)
         except Exception as e:
-            logger.error(
-                "Failed to create database directory '%s': %s",
-                d,
-                str(e)
-            )
+            logger.error("Failed to create database directory '%s': %s", d, str(e))
             raise RuntimeError(
                 f"Could not create database directory at '{d}'. "
                 f"Error: {e}. "
@@ -74,18 +70,30 @@ def _migrate_schema(engine: Any) -> None:
         with engine.connect() as conn:
             r = conn.execute(text("PRAGMA table_info(agent_runs_local)"))
             columns = {row[1] for row in r.fetchall()}
-            
+
             if "prompt_tokens" not in columns:
-                conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN prompt_tokens INTEGER"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN prompt_tokens INTEGER"
+                    )
+                )
                 conn.commit()
             if "completion_tokens" not in columns:
-                conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN completion_tokens INTEGER"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN completion_tokens INTEGER"
+                    )
+                )
                 conn.commit()
             if "raw_prompt" not in columns:
-                conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN raw_prompt TEXT"))
+                conn.execute(
+                    text("ALTER TABLE agent_runs_local ADD COLUMN raw_prompt TEXT")
+                )
                 conn.commit()
             if "raw_output" not in columns:
-                conn.execute(text("ALTER TABLE agent_runs_local ADD COLUMN raw_output TEXT"))
+                conn.execute(
+                    text("ALTER TABLE agent_runs_local ADD COLUMN raw_output TEXT")
+                )
                 conn.commit()
     except Exception as e:
         logger.debug("Schema migration skip: %s", e)
@@ -98,8 +106,12 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "session_id": r.session_id,
         "deployment_version": r.deployment_version,
         "environment": r.environment,
-        "started_at": r.started_at.isoformat() if isinstance(r.started_at, datetime) else r.started_at,
-        "completed_at": r.completed_at.isoformat() if isinstance(r.completed_at, datetime) else r.completed_at,
+        "started_at": r.started_at.isoformat()
+        if isinstance(r.started_at, datetime)
+        else r.started_at,
+        "completed_at": r.completed_at.isoformat()
+        if isinstance(r.completed_at, datetime)
+        else r.completed_at,
         "task_input_hash": r.task_input_hash,
         "tool_sequence": r.tool_sequence,
         "tool_call_count": r.tool_call_count,
@@ -177,7 +189,7 @@ class SQLiteBackend(StorageBackend):
                         )
                         """
                     ),
-                    {"limit": limit}
+                    {"limit": limit},
                 )
                 deleted_count = result.rowcount
                 session.commit()
@@ -187,7 +199,7 @@ class SQLiteBackend(StorageBackend):
                         "Driftbase pruned %d old records (retention limit: %d, current count: %d)",
                         deleted_count,
                         limit,
-                        count
+                        count,
                     )
         except Exception as e:
             logger.debug("SQLite database pruning failed: %s", e)
@@ -221,17 +233,20 @@ class SQLiteBackend(StorageBackend):
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
         with Session(self._engine) as session:
-            stmt = select(AgentRunLocal).order_by(AgentRunLocal.started_at.desc()).limit(limit)
+            stmt = (
+                select(AgentRunLocal)
+                .order_by(AgentRunLocal.started_at.desc())
+                .limit(limit)
+            )
             if deployment_version is not None:
-                stmt = stmt.where(AgentRunLocal.deployment_version == deployment_version)
+                stmt = stmt.where(
+                    AgentRunLocal.deployment_version == deployment_version
+                )
             if environment is not None:
                 stmt = stmt.where(AgentRunLocal.environment == environment)
             result = session.execute(stmt)
             rows = result.scalars().all()
-            return [
-                _row_to_run_dict(r)
-                for r in rows
-            ]
+            return [_row_to_run_dict(r) for r in rows]
 
     def get_versions(self) -> list[tuple[str, int]]:
         with Session(self._engine) as session:
@@ -265,9 +280,7 @@ class SQLiteBackend(StorageBackend):
     def get_last_run(self) -> dict[str, Any] | None:
         with Session(self._engine) as session:
             stmt = (
-                select(AgentRunLocal)
-                .order_by(AgentRunLocal.started_at.desc())
-                .limit(1)
+                select(AgentRunLocal).order_by(AgentRunLocal.started_at.desc()).limit(1)
             )
             result = session.execute(stmt)
             row = result.scalars().first()
@@ -281,7 +294,4 @@ class SQLiteBackend(StorageBackend):
             stmt = select(AgentRunLocal).order_by(AgentRunLocal.started_at.asc())
             result = session.execute(stmt)
             rows = result.scalars().all()
-            return [
-                _row_to_run_dict(r)
-                for r in rows
-            ]
+            return [_row_to_run_dict(r) for r in rows]

@@ -69,7 +69,9 @@ def _prepare_run_for_import(run: dict[str, Any]) -> dict[str, Any]:
     help="Export only runs for a specific deployment version (e.g., --version v1.0)",
 )
 @click.pass_context
-def export_command(ctx: click.Context, output: Optional[str], version: Optional[str]) -> None:
+def export_command(
+    ctx: click.Context, output: Optional[str], version: Optional[str]
+) -> None:
     """
     Export all runs from local SQLite database to JSON.
 
@@ -173,7 +175,9 @@ def import_command(
             sys.exit(1)
 
         if not isinstance(runs, list):
-            click.echo(f"Error: Expected JSON array, got {type(runs).__name__}", err=True)
+            click.echo(
+                f"Error: Expected JSON array, got {type(runs).__name__}", err=True
+            )
             sys.exit(1)
 
         click.echo(f"✓ Loaded {len(runs)} runs from {json_path}")
@@ -186,7 +190,9 @@ def import_command(
 
         # Replace mode: delete existing runs for versions in import file
         if replace:
-            click.echo(f"\n--replace mode: Clearing existing runs for {len(versions_in_import)} version(s)...")
+            click.echo(
+                f"\n--replace mode: Clearing existing runs for {len(versions_in_import)} version(s)..."
+            )
             for ver in versions_in_import:
                 deleted = backend.delete_runs(ver)
                 click.echo(f"  Deleted {deleted} runs for version {ver}")
@@ -217,7 +223,7 @@ def import_command(
         batch_size = 100
         imported = 0
         for i in range(0, len(runs), batch_size):
-            batch = runs[i:i + batch_size]
+            batch = runs[i : i + batch_size]
             # Convert datetime strings to datetime objects
             prepared_batch = [_prepare_run_for_import(run) for run in batch]
             try:
@@ -226,7 +232,9 @@ def import_command(
                 if (i + batch_size) % 1000 == 0:
                     click.echo(f"  Imported {imported}/{len(runs)} runs...")
             except Exception as e:
-                click.echo(f"Warning: Failed to import batch at index {i}: {e}", err=True)
+                click.echo(
+                    f"Warning: Failed to import batch at index {i}: {e}", err=True
+                )
                 # Continue with next batch instead of failing completely
 
         click.echo(f"✓ Imported {imported} runs")
@@ -245,5 +253,6 @@ def import_command(
     except Exception as e:
         click.echo(f"Error during import: {e}", err=True)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

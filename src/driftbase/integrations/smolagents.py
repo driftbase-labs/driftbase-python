@@ -19,19 +19,19 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import time
 from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import smolagents - fail only at instantiation time
 try:
-    from smolagents.memory import MemoryStep, ActionStep, PlanningStep, FinalAnswerStep
     from smolagents.agents import MultiStepAgent
+    from smolagents.memory import ActionStep, FinalAnswerStep, MemoryStep, PlanningStep
+
     _SMOLAGENTS_AVAILABLE = True
 except ImportError:
     _SMOLAGENTS_AVAILABLE = False
@@ -65,6 +65,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _SMOLAGENTS_AVAILABLE:
+
     class SmolagentsTracer:
         """
         Explicit smolagents tracer that hooks into step_callbacks.
@@ -100,6 +101,7 @@ if _SMOLAGENTS_AVAILABLE:
             agent_id: Optional[str] = None,
         ):
             import os
+
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
             self.session_id = agent_id or str(uuid4())
@@ -128,7 +130,7 @@ if _SMOLAGENTS_AVAILABLE:
             """
             try:
                 # Capture task input from the first step
-                if not self.task_input_hash and hasattr(agent, 'task'):
+                if not self.task_input_hash and hasattr(agent, "task"):
                     self.task_input_hash = _hash_content(agent.task)
 
                 # Extract step type and data
@@ -146,7 +148,9 @@ if _SMOLAGENTS_AVAILABLE:
                         self.planning_steps.append(plan_text)
                         step_data["plan"] = plan_text
                         self.tool_sequence.append(f"plan_{len(self.planning_steps)}")
-                        logger.debug(f"smolagents: Captured planning step {len(self.planning_steps)}")
+                        logger.debug(
+                            f"smolagents: Captured planning step {len(self.planning_steps)}"
+                        )
 
                 # Handle ActionStep - capture the "what"
                 elif isinstance(step, ActionStep):
@@ -154,8 +158,12 @@ if _SMOLAGENTS_AVAILABLE:
                     code_action = getattr(step, "code_action", None)
                     if code_action:
                         self.code_blocks.append(code_action)
-                        step_data["code"] = code_action  # Full code for local audit trail
-                        logger.debug(f"smolagents: Captured code block {len(self.code_blocks)}")
+                        step_data["code"] = (
+                            code_action  # Full code for local audit trail
+                        )
+                        logger.debug(
+                            f"smolagents: Captured code block {len(self.code_blocks)}"
+                        )
 
                     # Extract sandbox execution output
                     action_output = getattr(step, "action_output", None)
@@ -163,7 +171,7 @@ if _SMOLAGENTS_AVAILABLE:
                         output_str = str(action_output)
                         self.execution_outputs.append(output_str)
                         step_data["output"] = output_str
-                        logger.debug(f"smolagents: Captured execution output")
+                        logger.debug("smolagents: Captured execution output")
 
                     # Extract observations (context from the environment)
                     observations = getattr(step, "observations", None)
@@ -175,7 +183,9 @@ if _SMOLAGENTS_AVAILABLE:
                     if error is not None:
                         self.error_count += 1
                         step_data["error"] = str(error)
-                        logger.warning(f"smolagents: Action step failed with error: {error}")
+                        logger.warning(
+                            f"smolagents: Action step failed with error: {error}"
+                        )
 
                     # Add to tool sequence
                     self.tool_sequence.append(f"code_{len(self.code_blocks)}")
@@ -184,8 +194,10 @@ if _SMOLAGENTS_AVAILABLE:
                 elif isinstance(step, FinalAnswerStep):
                     # Extract the final answer
                     self.final_answer = getattr(step, "answer", None)
-                    step_data["answer"] = str(self.final_answer) if self.final_answer else ""
-                    logger.debug(f"smolagents: Captured final answer")
+                    step_data["answer"] = (
+                        str(self.final_answer) if self.final_answer else ""
+                    )
+                    logger.debug("smolagents: Captured final answer")
 
                     # Accumulate this step, then save the run
                     self.steps.append(step_data)
@@ -207,7 +219,9 @@ if _SMOLAGENTS_AVAILABLE:
             """
             try:
                 completed_at = datetime.utcnow()
-                latency_ms = int((completed_at - self.started_at).total_seconds() * 1000)
+                latency_ms = int(
+                    (completed_at - self.started_at).total_seconds() * 1000
+                )
 
                 # Compute output metrics
                 output_text = str(self.final_answer) if self.final_answer else ""
@@ -221,7 +235,9 @@ if _SMOLAGENTS_AVAILABLE:
                     "environment": self.environment,
                     "started_at": self.started_at,
                     "completed_at": completed_at,
-                    "task_input_hash": self.task_input_hash[:32] if self.task_input_hash else "none",
+                    "task_input_hash": self.task_input_hash[:32]
+                    if self.task_input_hash
+                    else "none",
                     "tool_sequence": json.dumps(self.tool_sequence),
                     "tool_call_count": len(self.tool_sequence),
                     "output_length": output_length,
@@ -234,12 +250,14 @@ if _SMOLAGENTS_AVAILABLE:
 
                 # EU AI Act compliance: Store full audit trail in local SQLite
                 # (This will be truncated/hashed when syncing to Azure Cloud)
-                payload["code_audit_trail"] = json.dumps({
-                    "planning_steps": self.planning_steps,
-                    "code_blocks": self.code_blocks,
-                    "execution_outputs": self.execution_outputs,
-                    "steps": self.steps,
-                })
+                payload["code_audit_trail"] = json.dumps(
+                    {
+                        "planning_steps": self.planning_steps,
+                        "code_blocks": self.code_blocks,
+                        "execution_outputs": self.execution_outputs,
+                        "steps": self.steps,
+                    }
+                )
 
                 enqueue_run(payload)
                 logger.info(
@@ -255,6 +273,7 @@ else:
     # Stub when smolagents is not installed
     class SmolagentsTracer:
         """Stub when smolagents is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
                 "SmolagentsTracer requires smolagents. "

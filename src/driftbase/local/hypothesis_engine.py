@@ -17,6 +17,7 @@ def _bundled_rules_path() -> Optional[Path]:
     """Return path to bundled hypothesis_rules.yaml (for _rules_path fallback)."""
     try:
         from importlib.resources import files
+
         ref = files("driftbase") / "hypothesis_rules.yaml"
         try:
             if ref.is_file():
@@ -45,6 +46,7 @@ def _rules_path() -> Path:
 
 def _load_rules() -> list[dict[str, Any]]:
     import yaml
+
     env_path = os.getenv("DRIFTBASE_HYPOTHESIS_RULES")
     if env_path:
         path = Path(env_path).resolve()
@@ -55,6 +57,7 @@ def _load_rules() -> list[dict[str, Any]]:
         return []
     try:
         from importlib.resources import files
+
         ref = files("driftbase") / "hypothesis_rules.yaml"
         content = ref.read_text(encoding="utf-8")
         data = yaml.safe_load(content)
@@ -100,7 +103,13 @@ def _evaluate_condition(
 ) -> bool:
     """Return True if all condition keys in cond are satisfied by ctx."""
     for key, val in cond.items():
-        if key in ("observation", "likely_cause", "recommended_action", "confidence", "id"):
+        if key in (
+            "observation",
+            "likely_cause",
+            "recommended_action",
+            "confidence",
+            "id",
+        ):
             continue
         if key == "overall_drift_max":
             if ctx.get("overall_drift", 1.0) > val:
@@ -180,6 +189,7 @@ def generate_hypotheses(
         return []
     drop, rise = _compute_tool_deltas(baseline_tools, current_tools)
     from driftbase.local.diff import _jensen_shannon_divergence
+
     tool_drift = _jensen_shannon_divergence(baseline_tools, current_tools)
     ctx: dict[str, Any] = {
         "overall_drift": getattr(report, "drift_score", 0.0),
@@ -211,7 +221,9 @@ def generate_hypotheses(
                 if abs(delta_pct) >= 99:
                     obs = f"Tool '{tool_name}' dropped from baseline — no longer being called"
                 else:
-                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{abs(delta_pct):.0f}")
+                    obs = obs.replace("{{tool_name}}", tool_name).replace(
+                        "{{delta_pct}}", f"{abs(delta_pct):.0f}"
+                    )
                 action = action.replace("{{tool_name}}", tool_name)
         elif "rise" in rule_id or "increase" in rule_id or "escalation" in rule_id:
             if rise:
@@ -220,7 +232,9 @@ def generate_hypotheses(
                 if delta_pct >= 99 and "100" in obs:
                     obs = f"Tool '{tool_name}' is new in current version — not present in baseline"
                 else:
-                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{delta_pct:.0f}")
+                    obs = obs.replace("{{tool_name}}", tool_name).replace(
+                        "{{delta_pct}}", f"{delta_pct:.0f}"
+                    )
                 action = action.replace("{{tool_name}}", tool_name)
         else:
             if drop:
@@ -228,28 +242,36 @@ def generate_hypotheses(
                 if abs(delta_pct) >= 99:
                     obs = f"Tool '{tool_name}' dropped from baseline — no longer being called"
                 else:
-                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{abs(delta_pct):.0f}")
+                    obs = obs.replace("{{tool_name}}", tool_name).replace(
+                        "{{delta_pct}}", f"{abs(delta_pct):.0f}"
+                    )
                 action = action.replace("{{tool_name}}", tool_name)
             if rise:
                 tool_name, delta_pct = rise
                 if delta_pct >= 99:
                     obs = f"Tool '{tool_name}' is new in current version — not present in baseline"
                 else:
-                    obs = obs.replace("{{tool_name}}", tool_name).replace("{{delta_pct}}", f"{delta_pct:.0f}")
+                    obs = obs.replace("{{tool_name}}", tool_name).replace(
+                        "{{delta_pct}}", f"{delta_pct:.0f}"
+                    )
                 action = action.replace("{{tool_name}}", tool_name)
-        out.append({
-            "observation": obs,
-            "likely_cause": cause,
-            "recommended_action": action,
-            "confidence": confidence,
-        })
+        out.append(
+            {
+                "observation": obs,
+                "likely_cause": cause,
+                "recommended_action": action,
+                "confidence": confidence,
+            }
+        )
     return out
 
 
 def format_hypotheses(hypotheses: list[dict[str, str]]) -> str:
     """Format hypothesis list for terminal (plain English)."""
     if not hypotheses:
-        return "  → No specific hypothesis. Review dimension breakdown and tool changes."
+        return (
+            "  → No specific hypothesis. Review dimension breakdown and tool changes."
+        )
     lines = []
     for h in hypotheses:
         lines.append(f"  → {h['observation']}")

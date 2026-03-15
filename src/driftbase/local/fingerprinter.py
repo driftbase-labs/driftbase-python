@@ -70,12 +70,15 @@ def build_fingerprint_from_runs(
         seq: count / total_sequences for seq, count in top_sequences.items()
     }
 
-    semantic_clusters = [getattr(run, "semantic_cluster", "cluster_none") for run in runs]
+    semantic_clusters = [
+        getattr(run, "semantic_cluster", "cluster_none") for run in runs
+    ]
     semantic_counts = Counter(semantic_clusters)
     total_semantic = len(semantic_clusters)
     semantic_cluster_distribution = (
         {c: cnt / total_semantic for c, cnt in semantic_counts.items()}
-        if total_semantic else {}
+        if total_semantic
+        else {}
     )
 
     tool_call_counts = [run.tool_call_count for run in runs]
@@ -122,12 +125,15 @@ def compute_fingerprint(
 ) -> Optional[BehavioralFingerprint]:
     """Synchronous wrapper; runs async compute_fingerprint_async. Prefer compute_fingerprint_async in async code."""
     import asyncio
-    return asyncio.run(compute_fingerprint_async(
-        deployment_version=deployment_version,
-        environment=environment,
-        window_hours=window_hours,
-        store=store,
-    ))
+
+    return asyncio.run(
+        compute_fingerprint_async(
+            deployment_version=deployment_version,
+            environment=environment,
+            window_hours=window_hours,
+            store=store,
+        )
+    )
 
 
 async def compute_fingerprint_async(
@@ -152,6 +158,7 @@ async def compute_fingerprint_async(
 
     if store is None:
         from driftbase.store import get_store
+
         store = get_store()
 
     window_end = datetime.utcnow()
@@ -193,13 +200,16 @@ def compute_temporal_fingerprints(
 ) -> tuple[Optional[BehavioralFingerprint], Optional[BehavioralFingerprint]]:
     """Synchronous wrapper; runs async compute_temporal_fingerprints_async."""
     import asyncio
-    return asyncio.run(compute_temporal_fingerprints_async(
-        deployment_version=deployment_version,
-        environment=environment,
-        baseline_days=baseline_days,
-        current_hours=current_hours,
-        store=store,
-    ))
+
+    return asyncio.run(
+        compute_temporal_fingerprints_async(
+            deployment_version=deployment_version,
+            environment=environment,
+            baseline_days=baseline_days,
+            current_hours=current_hours,
+            store=store,
+        )
+    )
 
 
 async def compute_temporal_fingerprints_async(
@@ -227,11 +237,16 @@ async def compute_temporal_fingerprints_async(
     """
     settings = get_settings()
     min_samples = settings.DRIFTBASE_MIN_SAMPLES
-    baseline_days = baseline_days if baseline_days is not None else settings.DRIFTBASE_BASELINE_DAYS
-    current_hours = current_hours if current_hours is not None else settings.DRIFTBASE_CURRENT_HOURS
+    baseline_days = (
+        baseline_days if baseline_days is not None else settings.DRIFTBASE_BASELINE_DAYS
+    )
+    current_hours = (
+        current_hours if current_hours is not None else settings.DRIFTBASE_CURRENT_HOURS
+    )
 
     if store is None:
         from driftbase.store import get_store
+
         store = get_store()
 
     now = datetime.utcnow()
@@ -298,13 +313,16 @@ def compute_temporal_baseline_drift(
 ):
     """Synchronous wrapper; runs async compute_temporal_baseline_drift_async."""
     import asyncio
-    return asyncio.run(compute_temporal_baseline_drift_async(
-        deployment_version=deployment_version,
-        environment=environment,
-        baseline_days=baseline_days,
-        current_hours=current_hours,
-        store=store,
-    ))
+
+    return asyncio.run(
+        compute_temporal_baseline_drift_async(
+            deployment_version=deployment_version,
+            environment=environment,
+            baseline_days=baseline_days,
+            current_hours=current_hours,
+            store=store,
+        )
+    )
 
 
 async def compute_temporal_baseline_drift_async(
@@ -328,6 +346,7 @@ async def compute_temporal_baseline_drift_async(
     settings = get_settings()
     if store is None:
         from driftbase.store import get_store
+
         store = get_store()
 
     baseline_fp, current_fp = await compute_temporal_fingerprints_async(

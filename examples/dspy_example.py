@@ -14,7 +14,7 @@ try:
     tracer = DSPyTracer(
         version="v1.0",
         agent_id="qa-system",
-        track_optimizer=False  # DO NOT track compilation unless explicitly needed
+        track_optimizer=False,  # DO NOT track compilation unless explicitly needed
     )
 
     # Configure DSPy with the tracer
@@ -48,7 +48,9 @@ try:
     print("=" * 60)
     print(f"  - Modules executed: {len(tracer.module_executions)}")
     print(f"  - Reasoning steps: {len(tracer.reasoning_steps)}")
-    print(f"  - Total tokens: {tracer.total_prompt_tokens + tracer.total_completion_tokens}")
+    print(
+        f"  - Total tokens: {tracer.total_prompt_tokens + tracer.total_completion_tokens}"
+    )
     print(f"  - Models used: {set(tracer.model_names)}")
     print(f"  - Errors encountered: {tracer.error_count}")
 

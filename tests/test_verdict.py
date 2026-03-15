@@ -115,7 +115,9 @@ class TestVerdictEngine(unittest.TestCase):
 
         steps_str = " ".join(result.next_steps).lower()
         self.assertTrue(
-            "tool call" in steps_str or "performance" in steps_str or "reasoning" in steps_str
+            "tool call" in steps_str
+            or "performance" in steps_str
+            or "reasoning" in steps_str
         )
 
     def test_next_steps_error_drift(self) -> None:
@@ -124,7 +126,11 @@ class TestVerdictEngine(unittest.TestCase):
         result = compute_verdict(report)
 
         steps_str = " ".join(result.next_steps).lower()
-        self.assertTrue("availability" in steps_str or "dependencies" in steps_str or "error" in steps_str)
+        self.assertTrue(
+            "availability" in steps_str
+            or "dependencies" in steps_str
+            or "error" in steps_str
+        )
 
     def test_next_steps_with_new_tools(self) -> None:
         """If new tools appear, next steps should mention them."""

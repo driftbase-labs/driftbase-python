@@ -8,7 +8,7 @@ from driftbase.integrations import SmolagentsTracer
 
 # Example with smolagents (requires: pip install smolagents)
 try:
-    from smolagents import ToolCallingAgent, DuckDuckGoSearchTool, tool
+    from smolagents import DuckDuckGoSearchTool, ToolCallingAgent, tool
     from smolagents.models import HfApiModel
 
     # Define a custom tool
@@ -28,16 +28,13 @@ try:
             return f"Error: {e}"
 
     # Initialize the tracer
-    tracer = SmolagentsTracer(
-        version="v1.0",
-        agent_id="demo-research-agent"
-    )
+    tracer = SmolagentsTracer(version="v1.0", agent_id="demo-research-agent")
 
     # Create an agent with the tracer attached
     agent = ToolCallingAgent(
         model=HfApiModel(),
         tools=[DuckDuckGoSearchTool(), calculator],
-        step_callbacks=[tracer]  # <-- Attach the tracer here
+        step_callbacks=[tracer],  # <-- Attach the tracer here
     )
 
     # Run a task - the tracer will automatically capture:
@@ -49,7 +46,7 @@ try:
     result = agent.run("What is 15% of 1240?")
 
     print(f"Agent result: {result}")
-    print(f"\nTracking summary:")
+    print("\nTracking summary:")
     print(f"  - Code blocks executed: {len(tracer.code_blocks)}")
     print(f"  - Planning steps: {len(tracer.planning_steps)}")
     print(f"  - Errors encountered: {tracer.error_count}")

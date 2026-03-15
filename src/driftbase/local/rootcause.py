@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from typing import Any, Optional
+from typing import Any
 
 from driftbase.local.local_store import BehavioralFingerprint, DriftReport
 
@@ -66,15 +66,17 @@ def tool_frequency_diff(
         else:
             delta_pct = ((c_pct - b_pct) / b_pct) * 100.0
         delta_abs = c_count - b_count
-        out.append({
-            "tool": tool,
-            "baseline_count": b_count,
-            "current_count": c_count,
-            "baseline_pct": round(b_pct, 2),
-            "current_pct": round(c_pct, 2),
-            "delta_pct": round(delta_pct, 1),
-            "delta_abs": delta_abs,
-        })
+        out.append(
+            {
+                "tool": tool,
+                "baseline_count": b_count,
+                "current_count": c_count,
+                "baseline_pct": round(b_pct, 2),
+                "current_pct": round(c_pct, 2),
+                "delta_pct": round(delta_pct, 1),
+                "delta_abs": delta_abs,
+            }
+        )
     out.sort(key=lambda x: abs(x["delta_pct"]), reverse=True)
     return out
 
@@ -119,12 +121,14 @@ def top_sequence_shifts(
         b_pct = base_dist.get(trans, 0.0) * 100.0
         c_pct = curr_dist.get(trans, 0.0) * 100.0
         delta_pct = c_pct - b_pct
-        out.append({
-            "transition": trans,
-            "baseline_pct": round(b_pct, 2),
-            "current_pct": round(c_pct, 2),
-            "delta_pct": round(delta_pct, 1),
-        })
+        out.append(
+            {
+                "transition": trans,
+                "baseline_pct": round(b_pct, 2),
+                "current_pct": round(c_pct, 2),
+                "delta_pct": round(delta_pct, 1),
+            }
+        )
     out.sort(key=lambda x: abs(x["delta_pct"]), reverse=True)
     return out[:top_n]
 
@@ -158,9 +162,13 @@ def build_explanation(
 
     # Biggest tool rise (if not already mentioned and significant)
     rises = [t for t in tool_frequency_diffs if t["delta_pct"] > 20]
-    if rises and (not drops or rises[0]["tool"] != (drops[0]["tool"] if drops else None)):
+    if rises and (
+        not drops or rises[0]["tool"] != (drops[0]["tool"] if drops else None)
+    ):
         top_rise = rises[0]
-        parts.append(f"Tool '{top_rise['tool']}' usage increasing by {top_rise['delta_pct']:.0f}%")
+        parts.append(
+            f"Tool '{top_rise['tool']}' usage increasing by {top_rise['delta_pct']:.0f}%"
+        )
 
     # Latency
     base_p95 = baseline_fp.p95_latency_ms

@@ -19,17 +19,18 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import DSPy - fail only at instantiation time
 try:
-    from dspy.utils.callback import BaseCallback
     import dspy
+    from dspy.utils.callback import BaseCallback
+
     _DSPY_AVAILABLE = True
 except ImportError:
     _DSPY_AVAILABLE = False
@@ -59,6 +60,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _DSPY_AVAILABLE:
+
     class DSPyTracer(BaseCallback):
         """
         Explicit DSPy tracer for EU AI Act compliance.
@@ -99,6 +101,7 @@ if _DSPY_AVAILABLE:
             track_optimizer: bool = False,
         ):
             import os
+
             super().__init__()
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
@@ -223,7 +226,9 @@ if _DSPY_AVAILABLE:
                 if lm_metadata:
                     self.model_names.append(lm_metadata.get("model", "unknown"))
                     self.total_prompt_tokens += lm_metadata.get("prompt_tokens", 0)
-                    self.total_completion_tokens += lm_metadata.get("completion_tokens", 0)
+                    self.total_completion_tokens += lm_metadata.get(
+                        "completion_tokens", 0
+                    )
 
                 # Build execution record
                 execution_record = {
@@ -243,7 +248,9 @@ if _DSPY_AVAILABLE:
                 # Track errors
                 if exception is not None:
                     self.error_count += 1
-                    logger.warning(f"DSPy module failed: {call_data['module_type']} - {exception}")
+                    logger.warning(
+                        f"DSPy module failed: {call_data['module_type']} - {exception}"
+                    )
 
                 self.module_executions.append(execution_record)
                 self.tool_sequence.append(call_data["module_type"])
@@ -300,7 +307,10 @@ if _DSPY_AVAILABLE:
             try:
                 for key, value in outputs.items():
                     # Check for common reasoning field names
-                    if any(term in key.lower() for term in ["thought", "rationale", "reasoning", "chain"]):
+                    if any(
+                        term in key.lower()
+                        for term in ["thought", "rationale", "reasoning", "chain"]
+                    ):
                         if value:
                             reasoning.append(str(value))
             except Exception as e:
@@ -329,7 +339,9 @@ if _DSPY_AVAILABLE:
                     usage = outputs["usage"]
                     if isinstance(usage, dict):
                         metadata["prompt_tokens"] = usage.get("prompt_tokens", 0)
-                        metadata["completion_tokens"] = usage.get("completion_tokens", 0)
+                        metadata["completion_tokens"] = usage.get(
+                            "completion_tokens", 0
+                        )
                         metadata["total_tokens"] = usage.get("total_tokens", 0)
 
                 # Try to get model info from dspy settings
@@ -388,7 +400,9 @@ if _DSPY_AVAILABLE:
             """
             try:
                 completed_at = datetime.utcnow()
-                latency_ms = int((completed_at - self.started_at).total_seconds() * 1000)
+                latency_ms = int(
+                    (completed_at - self.started_at).total_seconds() * 1000
+                )
 
                 # Compute output metrics
                 total_output_length = sum(
@@ -397,7 +411,7 @@ if _DSPY_AVAILABLE:
                 )
                 output_structure = {
                     "modules": len(self.module_executions),
-                    "reasoning_steps": len(self.reasoning_steps)
+                    "reasoning_steps": len(self.reasoning_steps),
                 }
                 output_structure_hash = _compute_structure_hash(output_structure)
 
@@ -408,7 +422,9 @@ if _DSPY_AVAILABLE:
                     "environment": self.environment,
                     "started_at": self.started_at,
                     "completed_at": completed_at,
-                    "task_input_hash": self.task_input_hash[:32] if self.task_input_hash else "none",
+                    "task_input_hash": self.task_input_hash[:32]
+                    if self.task_input_hash
+                    else "none",
                     "tool_sequence": json.dumps(self.tool_sequence),
                     "tool_call_count": len(self.tool_sequence),
                     "output_length": total_output_length,
@@ -422,25 +438,27 @@ if _DSPY_AVAILABLE:
                 }
 
                 # EU AI Act compliance: Full LM traceability
-                payload["dspy_audit_trail"] = json.dumps({
-                    "module_executions": [
-                        {
-                            "module_type": exec_rec["module_type"],
-                            "signature_string": exec_rec["signature_string"],
-                            "input_fields": exec_rec["input_fields"],
-                            "output_fields": exec_rec["output_fields"],
-                            "latency_ms": exec_rec["latency_ms"],
-                            "lm_metadata": exec_rec["lm_metadata"],
-                            "error": exec_rec["error"],
-                        }
-                        for exec_rec in self.module_executions
-                    ],
-                    "reasoning_steps": self.reasoning_steps,
-                    "model_names": list(set(self.model_names)),  # Deduplicate
-                    "total_prompt_tokens": self.total_prompt_tokens,
-                    "total_completion_tokens": self.total_completion_tokens,
-                    "optimizer_run": self.track_optimizer,
-                })
+                payload["dspy_audit_trail"] = json.dumps(
+                    {
+                        "module_executions": [
+                            {
+                                "module_type": exec_rec["module_type"],
+                                "signature_string": exec_rec["signature_string"],
+                                "input_fields": exec_rec["input_fields"],
+                                "output_fields": exec_rec["output_fields"],
+                                "latency_ms": exec_rec["latency_ms"],
+                                "lm_metadata": exec_rec["lm_metadata"],
+                                "error": exec_rec["error"],
+                            }
+                            for exec_rec in self.module_executions
+                        ],
+                        "reasoning_steps": self.reasoning_steps,
+                        "model_names": list(set(self.model_names)),  # Deduplicate
+                        "total_prompt_tokens": self.total_prompt_tokens,
+                        "total_completion_tokens": self.total_completion_tokens,
+                        "optimizer_run": self.track_optimizer,
+                    }
+                )
 
                 enqueue_run(payload)
                 logger.info(
@@ -458,8 +476,8 @@ else:
     # Stub when DSPy is not installed
     class DSPyTracer:
         """Stub when DSPy is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
-                "DSPyTracer requires dspy. "
-                "Install with: pip install dspy-ai"
+                "DSPyTracer requires dspy. Install with: pip install dspy-ai"
             )

@@ -24,13 +24,14 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import AutoGen - fail only at instantiation time
 try:
     import autogen
+
     _AUTOGEN_AVAILABLE = True
 except ImportError:
     _AUTOGEN_AVAILABLE = False
@@ -60,6 +61,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _AUTOGEN_AVAILABLE:
+
     class AutoGenTracer:
         """
         Explicit AutoGen tracer that patches agent.generate_reply().
@@ -92,6 +94,7 @@ if _AUTOGEN_AVAILABLE:
             agent_id: Optional[str] = None,
         ):
             import os
+
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
             self.session_id = agent_id or str(uuid4())
@@ -116,7 +119,7 @@ if _AUTOGEN_AVAILABLE:
                 logger.debug(f"Agent {agent.name} already instrumented")
                 return
 
-            if not hasattr(agent, 'generate_reply'):
+            if not hasattr(agent, "generate_reply"):
                 logger.warning(f"Agent {agent.name} has no generate_reply method")
                 return
 
@@ -142,7 +145,7 @@ if _AUTOGEN_AVAILABLE:
             original_method: Any,
             messages: Any,
             sender: Any,
-            config: Any
+            config: Any,
         ) -> Any:
             """Wrapped version of generate_reply that tracks calls."""
             started_at = datetime.utcnow()
@@ -159,19 +162,27 @@ if _AUTOGEN_AVAILABLE:
 
             try:
                 # Call the original method
-                response = original_method(messages=messages, sender=sender, config=config)
+                response = original_method(
+                    messages=messages, sender=sender, config=config
+                )
 
                 # Try to extract tool calls from the response
                 if isinstance(response, dict):
                     # Check for function calls in the response
                     if "function_call" in response:
-                        func_name = response["function_call"].get("name", "unknown_function")
+                        func_name = response["function_call"].get(
+                            "name", "unknown_function"
+                        )
                         tool_sequence.append(func_name)
                         tool_call_count = 1
-                    elif "tool_calls" in response and isinstance(response["tool_calls"], list):
+                    elif "tool_calls" in response and isinstance(
+                        response["tool_calls"], list
+                    ):
                         for tool_call in response["tool_calls"]:
                             if isinstance(tool_call, dict) and "function" in tool_call:
-                                func_name = tool_call["function"].get("name", "unknown_function")
+                                func_name = tool_call["function"].get(
+                                    "name", "unknown_function"
+                                )
                                 tool_sequence.append(func_name)
                         tool_call_count = len(tool_sequence)
 
@@ -221,8 +232,8 @@ else:
     # Stub when AutoGen is not installed
     class AutoGenTracer:
         """Stub when AutoGen is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
-                "AutoGenTracer requires pyautogen. "
-                "Install with: pip install pyautogen"
+                "AutoGenTracer requires pyautogen. Install with: pip install pyautogen"
             )

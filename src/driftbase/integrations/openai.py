@@ -24,13 +24,14 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import OpenAI - fail only at instantiation time
 try:
     import openai
+
     _OPENAI_AVAILABLE = True
 except ImportError:
     _OPENAI_AVAILABLE = False
@@ -60,6 +61,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _OPENAI_AVAILABLE:
+
     class OpenAITracer:
         """
         Explicit OpenAI tracer that monkey-patches openai.chat.completions.create.
@@ -92,6 +94,7 @@ if _OPENAI_AVAILABLE:
             agent_id: Optional[str] = None,
         ):
             import os
+
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
             self.session_id = agent_id or str(uuid4())
@@ -108,7 +111,9 @@ if _OPENAI_AVAILABLE:
             """Enter context manager - patch openai.chat.completions.create."""
             try:
                 # Store the original method
-                self.original_create = openai.resources.chat.completions.Completions.create
+                self.original_create = (
+                    openai.resources.chat.completions.Completions.create
+                )
 
                 # Create the patched method
                 @functools.wraps(self.original_create)
@@ -127,7 +132,9 @@ if _OPENAI_AVAILABLE:
         def __exit__(self, exc_type, exc_val, exc_tb):
             """Exit context manager - restore original method."""
             if self._patched and self.original_create is not None:
-                openai.resources.chat.completions.Completions.create = self.original_create
+                openai.resources.chat.completions.Completions.create = (
+                    self.original_create
+                )
                 self._patched = False
                 logger.debug("OpenAI client unpatched")
             return False
@@ -169,39 +176,44 @@ if _OPENAI_AVAILABLE:
                 if response is not None:
                     try:
                         # Extract tool calls
-                        if hasattr(response, 'choices') and len(response.choices) > 0:
+                        if hasattr(response, "choices") and len(response.choices) > 0:
                             choice = response.choices[0]
-                            if hasattr(choice, 'message'):
+                            if hasattr(choice, "message"):
                                 message = choice.message
 
                                 # Extract text content
-                                if hasattr(message, 'content') and message.content:
+                                if hasattr(message, "content") and message.content:
                                     output_text = message.content
 
                                 # Extract tool calls
-                                if hasattr(message, 'tool_calls') and message.tool_calls:
+                                if (
+                                    hasattr(message, "tool_calls")
+                                    and message.tool_calls
+                                ):
                                     for tool_call in message.tool_calls:
-                                        if hasattr(tool_call, 'function'):
+                                        if hasattr(tool_call, "function"):
                                             tool_name = tool_call.function.name
                                             tool_sequence.append(tool_name)
                                     tool_call_count = len(tool_sequence)
 
                         # Extract token usage
-                        if hasattr(response, 'usage'):
+                        if hasattr(response, "usage"):
                             usage = response.usage
-                            total_tokens = getattr(usage, 'total_tokens', 0)
-                            prompt_tokens = getattr(usage, 'prompt_tokens', 0)
-                            completion_tokens = getattr(usage, 'completion_tokens', 0)
+                            total_tokens = getattr(usage, "total_tokens", 0)
+                            prompt_tokens = getattr(usage, "prompt_tokens", 0)
+                            completion_tokens = getattr(usage, "completion_tokens", 0)
 
                     except Exception as e:
                         logger.debug(f"Failed to extract response data: {e}")
 
                 output_length = len(output_text)
-                output_structure_hash = _compute_structure_hash({
-                    "model": model,
-                    "tool_calls": tool_sequence,
-                    "output_length": output_length
-                })
+                output_structure_hash = _compute_structure_hash(
+                    {
+                        "model": model,
+                        "tool_calls": tool_sequence,
+                        "output_length": output_length,
+                    }
+                )
 
                 payload = {
                     "session_id": self.session_id,
@@ -235,8 +247,8 @@ else:
     # Stub when OpenAI is not installed
     class OpenAITracer:
         """Stub when OpenAI is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
-                "OpenAITracer requires openai. "
-                "Install with: pip install openai"
+                "OpenAITracer requires openai. Install with: pip install openai"
             )

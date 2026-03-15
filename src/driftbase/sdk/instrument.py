@@ -1,8 +1,10 @@
 import logging
 from functools import wraps
+
 from driftbase.sdk.track import track
 
 logger = logging.getLogger(__name__)
+
 
 def instrument_openai(version: str = "auto"):
     """
@@ -12,14 +14,18 @@ def instrument_openai(version: str = "auto"):
     try:
         import openai
     except ImportError:
-        logger.warning("[Driftbase] OpenAI package not found. Skipping auto-instrumentation.")
+        logger.warning(
+            "[Driftbase] OpenAI package not found. Skipping auto-instrumentation."
+        )
         return
 
     try:
         # Target the synchronous chat completions create method
         original_create = openai.resources.chat.completions.Completions.create
     except AttributeError:
-        logger.warning("[Driftbase] Incompatible OpenAI version. Skipping instrumentation.")
+        logger.warning(
+            "[Driftbase] Incompatible OpenAI version. Skipping instrumentation."
+        )
         return
 
     # Wrap it using your existing track decorator

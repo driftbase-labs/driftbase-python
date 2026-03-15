@@ -15,7 +15,9 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 _EMBEDDING_MODEL_AVAILABLE = False
-EmbeddingModel: Optional[type] = None  # Alias for TextEmbedding for backwards compatibility
+EmbeddingModel: Optional[type] = (
+    None  # Alias for TextEmbedding for backwards compatibility
+)
 TextEmbedding: Optional[type] = None
 _warned = False
 
@@ -25,7 +27,10 @@ def _optional_import() -> None:
     if _warned or _EMBEDDING_MODEL_AVAILABLE:
         return
     try:
-        from light_embed import TextEmbedding as _TextEmbedding  # type: ignore[import-not-found]
+        from light_embed import (
+            TextEmbedding as _TextEmbedding,  # type: ignore[import-not-found]
+        )
+
         TextEmbedding = _TextEmbedding  # noqa: PLW0603
         EmbeddingModel = _TextEmbedding  # alias
         _EMBEDDING_MODEL_AVAILABLE = True

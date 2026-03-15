@@ -9,8 +9,9 @@ import os
 import sys
 
 import click
-from driftbase.cli._deps import safe_import_rich
+
 from driftbase.backends.factory import get_backend
+from driftbase.cli._deps import safe_import_rich
 
 # Lazy import of heavy [analyze] dependencies
 Console, Panel, Table = safe_import_rich()
@@ -20,6 +21,7 @@ def _get_version() -> str:
     """Read version from package metadata (setuptools_scm at build time). Fallback when run from source."""
     try:
         from importlib.metadata import version
+
         return version("driftbase")
     except Exception:
         return "0.0.0.dev0"
@@ -31,6 +33,7 @@ def _console_no_color(no_color_flag: bool) -> bool:
         return True
     try:
         from driftbase.config import get_settings
+
         return not get_settings().DRIFTBASE_OUTPUT_COLOR
     except Exception:
         return False
@@ -38,7 +41,11 @@ def _console_no_color(no_color_flag: bool) -> bool:
 
 @click.group()
 @click.version_option(version=_get_version(), prog_name="driftbase")
-@click.option("--no-color", is_flag=True, help="Disable colored output (overrides DRIFTBASE_OUTPUT_COLOR).")
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colored output (overrides DRIFTBASE_OUTPUT_COLOR).",
+)
 @click.pass_context
 def cli(ctx: click.Context, no_color: bool) -> None:
     """Behavioral watchdog for AI agents — versions, diff, watch, inspect, report."""
@@ -46,13 +53,13 @@ def cli(ctx: click.Context, no_color: bool) -> None:
     ctx.obj["console"] = Console(no_color=_console_no_color(no_color))
 
 
-from driftbase.cli.cli_diff import cmd_diff
-from driftbase.cli.cli_inspect import cmd_inspect
-from driftbase.cli.cli_report import cmd_report
-from driftbase.cli.cli_push import cmd_push
 from driftbase.cli.cli_demo import cmd_demo
-from driftbase.cli.cli_init import cmd_init
+from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_export import export_command, import_command
+from driftbase.cli.cli_init import cmd_init
+from driftbase.cli.cli_inspect import cmd_inspect
+from driftbase.cli.cli_push import cmd_push
+from driftbase.cli.cli_report import cmd_report
 
 cli.add_command(cmd_init)
 cli.add_command(cmd_diff)
@@ -69,6 +76,7 @@ def _mask_secret(value: str) -> str:
     if not value or len(value) < 8:
         return value
     import re
+
     s = value.strip()
     if s.startswith("sk-") and len(s) > 20:
         return "sk-***[REDACTED]"
@@ -81,12 +89,14 @@ def _mask_secret(value: str) -> str:
 
 def _load_config_file() -> dict[str, str]:
     """Load KEY=value from DRIFTBASE_CONFIG_PATH or ~/.driftbase/config."""
-    config_path = os.environ.get("DRIFTBASE_CONFIG_PATH") or os.path.expanduser("~/.driftbase/config")
+    config_path = os.environ.get("DRIFTBASE_CONFIG_PATH") or os.path.expanduser(
+        "~/.driftbase/config"
+    )
     if not os.path.isfile(config_path):
         return {}
     out: dict[str, str] = {}
     try:
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -114,6 +124,7 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
 
     try:
         from driftbase.config import get_settings
+
         settings = get_settings()
         if "DRIFTBASE_DB_PATH" in os.environ:
             db_path = settings.DRIFTBASE_DB_PATH
@@ -147,7 +158,9 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
 
     backend_raw, backend_source = _get("DRIFTBASE_BACKEND", "sqlite")
 
-    deployment_version, deployment_version_source = _get("DRIFTBASE_DEPLOYMENT_VERSION", "")
+    deployment_version, deployment_version_source = _get(
+        "DRIFTBASE_DEPLOYMENT_VERSION", ""
+    )
     if not deployment_version:
         deployment_version = "—"
 
@@ -166,24 +179,75 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
     if not hypothesis_rules:
         try:
             from driftbase.local.hypothesis_engine import _rules_path
+
             hypothesis_rules = str(_rules_path())
         except Exception:
             hypothesis_rules = "(bundled)"
-            
+
     rate_prompt_raw, rate_prompt_source = _get("DRIFTBASE_RATE_PROMPT_1M", "2.50")
     rate_comp_raw, rate_comp_source = _get("DRIFTBASE_RATE_COMPLETION_1M", "10.00")
 
     return [
-        ("DRIFTBASE_DB_PATH", _mask_secret(db_path), db_path_source, "Path to the local SQLite database."),
-        ("DRIFTBASE_BACKEND", _mask_secret(backend_raw), backend_source, "Storage backend (e.g. sqlite)."),
-        ("DRIFTBASE_DEPLOYMENT_VERSION", _mask_secret(deployment_version), deployment_version_source, "Default deployment version when not passed to @track()."),
-        ("DRIFTBASE_ENVIRONMENT", _mask_secret(environment), environment_source, "Default environment (e.g. production)."),
-        ("DRIFTBASE_DRIFT_THRESHOLD", threshold_val, threshold_source, "Drift score threshold for diff/report (default 0.20)."),
-        ("DRIFTBASE_MIN_SAMPLES", str(min_samples), min_samples_source, "Minimum runs to compute a fingerprint (default 10)."),
-        ("DRIFTBASE_SCRUB_PII", scrub_pii, scrub_source, "Whether to scrub PII before hashing (default false)."),
-        ("DRIFTBASE_HYPOTHESIS_RULES", _mask_secret(hypothesis_rules), hypothesis_rules_source, "Path to hypothesis rules YAML (default: bundled)."),
-        ("DRIFTBASE_RATE_PROMPT_1M", rate_prompt_raw, rate_prompt_source, "EUR per 1M prompt tokens (default 2.50)."),
-        ("DRIFTBASE_RATE_COMPLETION_1M", rate_comp_raw, rate_comp_source, "EUR per 1M completion tokens (default 10.00)."),
+        (
+            "DRIFTBASE_DB_PATH",
+            _mask_secret(db_path),
+            db_path_source,
+            "Path to the local SQLite database.",
+        ),
+        (
+            "DRIFTBASE_BACKEND",
+            _mask_secret(backend_raw),
+            backend_source,
+            "Storage backend (e.g. sqlite).",
+        ),
+        (
+            "DRIFTBASE_DEPLOYMENT_VERSION",
+            _mask_secret(deployment_version),
+            deployment_version_source,
+            "Default deployment version when not passed to @track().",
+        ),
+        (
+            "DRIFTBASE_ENVIRONMENT",
+            _mask_secret(environment),
+            environment_source,
+            "Default environment (e.g. production).",
+        ),
+        (
+            "DRIFTBASE_DRIFT_THRESHOLD",
+            threshold_val,
+            threshold_source,
+            "Drift score threshold for diff/report (default 0.20).",
+        ),
+        (
+            "DRIFTBASE_MIN_SAMPLES",
+            str(min_samples),
+            min_samples_source,
+            "Minimum runs to compute a fingerprint (default 10).",
+        ),
+        (
+            "DRIFTBASE_SCRUB_PII",
+            scrub_pii,
+            scrub_source,
+            "Whether to scrub PII before hashing (default false).",
+        ),
+        (
+            "DRIFTBASE_HYPOTHESIS_RULES",
+            _mask_secret(hypothesis_rules),
+            hypothesis_rules_source,
+            "Path to hypothesis rules YAML (default: bundled).",
+        ),
+        (
+            "DRIFTBASE_RATE_PROMPT_1M",
+            rate_prompt_raw,
+            rate_prompt_source,
+            "EUR per 1M prompt tokens (default 2.50).",
+        ),
+        (
+            "DRIFTBASE_RATE_COMPLETION_1M",
+            rate_comp_raw,
+            rate_comp_source,
+            "EUR per 1M completion tokens (default 10.00).",
+        ),
     ]
 
 
@@ -245,8 +309,21 @@ def cmd_db_stats(ctx: click.Context) -> None:
 
 
 @cli.command("runs")
-@click.option("--version", "-v", required=True, metavar="VERSION", help="Deployment version to list runs for.")
-@click.option("--limit", "-n", type=int, default=50, metavar="N", help="Maximum number of runs to show (default 50).")
+@click.option(
+    "--version",
+    "-v",
+    required=True,
+    metavar="VERSION",
+    help="Deployment version to list runs for.",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=50,
+    metavar="N",
+    help="Maximum number of runs to show (default 50).",
+)
 @click.pass_context
 def cmd_runs(ctx: click.Context, version: str, limit: int) -> None:
     """List runs for a deployment version from the local backend."""
@@ -306,8 +383,16 @@ def cmd_versions(ctx: click.Context) -> None:
 
 
 @cli.command("reset")
-@click.option("--version", "-v", required=True, metavar="VERSION", help="Deployment version whose runs to delete.")
-@click.option("--yes", "-y", is_flag=True, default=False, help="Skip confirmation prompt.")
+@click.option(
+    "--version",
+    "-v",
+    required=True,
+    metavar="VERSION",
+    help="Deployment version whose runs to delete.",
+)
+@click.option(
+    "--yes", "-y", is_flag=True, default=False, help="Skip confirmation prompt."
+)
 @click.pass_context
 def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
     """Delete all runs for a deployment version."""
@@ -330,12 +415,41 @@ def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
 
 
 @cli.command("watch")
-@click.option("--against", "-a", required=True, metavar="VERSION", help="Baseline version to compare against.")
-@click.option("--interval", "-i", type=float, default=5.0, help="Poll interval in seconds (default 5).")
-@click.option("--min-runs", type=int, default=10, help="Minimum runs before computing (default 10).")
-@click.option("--last", "-n", type=int, default=20, help="Number of recent runs for current window (default 20).")
+@click.option(
+    "--against",
+    "-a",
+    required=True,
+    metavar="VERSION",
+    help="Baseline version to compare against.",
+)
+@click.option(
+    "--interval",
+    "-i",
+    type=float,
+    default=5.0,
+    help="Poll interval in seconds (default 5).",
+)
+@click.option(
+    "--min-runs",
+    type=int,
+    default=10,
+    help="Minimum runs before computing (default 10).",
+)
+@click.option(
+    "--last",
+    "-n",
+    type=int,
+    default=20,
+    help="Number of recent runs for current window (default 20).",
+)
 @click.option("--environment", "-e", default=None, help="Filter by environment.")
-@click.option("--threshold", "-t", type=float, default=0.20, help="Drift threshold (default 0.20).")
+@click.option(
+    "--threshold",
+    "-t",
+    type=float,
+    default=0.20,
+    help="Drift threshold (default 0.20).",
+)
 @click.pass_context
 def cmd_watch(
     ctx: click.Context,

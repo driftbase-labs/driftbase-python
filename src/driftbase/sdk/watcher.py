@@ -15,15 +15,16 @@ import logging
 import time
 from datetime import datetime
 from typing import Any, Callable, Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler
     from langchain_core.outputs import LLMResult
+
     _LANGCHAIN_AVAILABLE = True
 except ImportError:
     _LANGCHAIN_AVAILABLE = False
@@ -62,8 +63,11 @@ class DriftbaseWatcher:
         environment: Optional[str] = None,
     ):
         import os
+
         self.deployment_version = deployment_version
-        self.environment = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+        self.environment = environment or os.getenv(
+            "DRIFTBASE_ENVIRONMENT", "production"
+        )
         self.session_id = str(uuid4())
         logger.info(
             f"DriftbaseWatcher initialized: version={self.deployment_version}, "
@@ -72,23 +76,24 @@ class DriftbaseWatcher:
 
     def observe(self, func: Callable) -> Callable:
         """Decorator that observes function execution and records behavioral metadata."""
-        import asyncio
         import inspect
 
         if inspect.iscoroutinefunction(func):
+
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 return await self._observe_execution_async(func, args, kwargs)
+
             return async_wrapper
         else:
+
             @functools.wraps(func)
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 return self._observe_execution(func, args, kwargs)
+
             return sync_wrapper
 
-    def _observe_execution(
-        self, func: Callable, args: tuple, kwargs: dict
-    ) -> Any:
+    def _observe_execution(self, func: Callable, args: tuple, kwargs: dict) -> Any:
         """Internal method to observe synchronous function execution."""
         start_time = time.perf_counter()
         started_at = datetime.utcnow()
@@ -182,18 +187,21 @@ class DriftbaseWatcher:
             try:
                 enqueue_run(payload)
             except Exception as e:
-                _log_track_error("watcher_observe_async", f"Failed to enqueue run: {e!r}")
+                _log_track_error(
+                    "watcher_observe_async", f"Failed to enqueue run: {e!r}"
+                )
 
         return result
 
 
 if _LANGCHAIN_AVAILABLE:
+
     class DriftbaseCallbackHandler(BaseCallbackHandler):
         """LangChain callback handler for capturing agent behavioral metadata.
-        
+
         This handler tracks tool calls during LangChain/LangGraph agent execution
         and records behavioral fingerprints to local SQLite.
-        
+
         When run_ctx is provided (e.g. from the @track() decorator), tool names
         are appended to run_ctx.tool_calls and the handler does not persist runs
         itself; the decorator builds and enqueues the payload.
@@ -207,9 +215,12 @@ if _LANGCHAIN_AVAILABLE:
         ):
             super().__init__()
             import os
+
             self.run_ctx = run_ctx
             self.deployment_version = deployment_version
-            self.environment = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+            self.environment = environment or os.getenv(
+                "DRIFTBASE_ENVIRONMENT", "production"
+            )
             self.session_id = str(uuid4())
 
             self.active_runs: dict[str, dict] = {}
@@ -226,6 +237,7 @@ if _LANGCHAIN_AVAILABLE:
             messages = output.get("messages", []) if isinstance(output, dict) else []
             try:
                 from langchain_core.messages import AIMessage
+
                 for m in reversed(messages):
                     if isinstance(m, AIMessage):
                         content = m.content
@@ -258,9 +270,11 @@ if _LANGCHAIN_AVAILABLE:
                 parent_srid = str(parent_run_id)
                 self._run_to_root[srid] = self._run_to_root.get(parent_srid, srid)
 
-        def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
+        def on_tool_start(
+            self, serialized: dict, input_str: str, **kwargs: Any
+        ) -> None:
             """Called when a tool starts execution.
-            
+
             BUG FIX: The tool name is extracted from multiple possible locations:
             1. serialized["name"] - standard LangChain format
             2. kwargs.get("name") - alternative format
@@ -277,12 +291,15 @@ if _LANGCHAIN_AVAILABLE:
                     tool_name = "unknown"
                     logger.warning(
                         "Could not extract tool name from serialized=%s, kwargs keys=%s",
-                        serialized, list(kwargs.keys()),
+                        serialized,
+                        list(kwargs.keys()),
                     )
-                self.run_ctx.tool_calls.append({
-                    "name": tool_name,
-                    "input_hash": _hash_content(input_str)[:16],
-                })
+                self.run_ctx.tool_calls.append(
+                    {
+                        "name": tool_name,
+                        "input_hash": _hash_content(input_str)[:16],
+                    }
+                )
                 return
 
             run_id = kwargs.get("run_id")
@@ -294,31 +311,37 @@ if _LANGCHAIN_AVAILABLE:
                 root = self._run_to_root.get(str(run_id))
             if root is None or root not in self.active_runs:
                 return
-            
+
             state = self.active_runs[root]
-            
+
             # FIX: Extract tool name from multiple possible locations
             tool_name = None
-            
+
             # Try serialized["name"] first (most common)
             if "name" in serialized and serialized["name"]:
                 tool_name = serialized["name"]
-            
+
             # Try kwargs["name"] as fallback
             if not tool_name and "name" in kwargs and kwargs["name"]:
                 tool_name = kwargs["name"]
-            
+
             # Try extracting from serialized["id"] list (e.g., ["langchain", "tools", "base", "StructuredTool"])
             # The actual tool name might be in a different location
-            if not tool_name and "id" in serialized and isinstance(serialized["id"], list):
+            if (
+                not tool_name
+                and "id" in serialized
+                and isinstance(serialized["id"], list)
+            ):
                 # Sometimes the tool name is the last component or in a "name" field elsewhere
                 pass  # serialized["id"] contains class path, not tool name
-            
+
             # Default to unknown_tool only if all extraction methods fail
             if not tool_name:
                 tool_name = "unknown_tool"
-                logger.warning(f"Could not extract tool name from serialized={serialized}, kwargs keys={list(kwargs.keys())}")
-            
+                logger.warning(
+                    f"Could not extract tool name from serialized={serialized}, kwargs keys={list(kwargs.keys())}"
+                )
+
             state["tool_start_times"][tool_name] = time.perf_counter()
             if run_id is not None:
                 state["tool_run_id_to_name"][str(run_id)] = tool_name
@@ -393,6 +416,7 @@ if _LANGCHAIN_AVAILABLE:
             response_text = self._extract_final_ai_content(output)
             cluster_id = "resolved"
             from driftbase.sdk.semantic import is_semantic_available
+
             if is_semantic_available():
                 pass  # TODO: use embedding model for cluster_id when implemented
 
@@ -423,8 +447,10 @@ if _LANGCHAIN_AVAILABLE:
                 _log_track_error("callback_handler", f"Failed to save run: {e!r}")
 
 else:
+
     class DriftbaseCallbackHandler:
         """Stub when LangChain is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
                 "DriftbaseCallbackHandler requires langchain-core. "

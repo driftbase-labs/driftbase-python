@@ -39,7 +39,9 @@ def _make_run_dict(
     }
 
 
-def _make_run_dicts(version: str, n: int, tool_sequences: list[str] | None = None) -> list[dict]:
+def _make_run_dicts(
+    version: str, n: int, tool_sequences: list[str] | None = None
+) -> list[dict]:
     """Create n run dicts for a version. If tool_sequences provided, cycle through them."""
     if tool_sequences is None:
         tool_sequences = ['["tool_a","tool_b"]', '["tool_a"]', '["tool_b","tool_a"]']

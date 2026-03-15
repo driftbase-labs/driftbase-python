@@ -8,14 +8,11 @@ from driftbase.integrations import LlamaIndexTracer
 
 # Example with LlamaIndex (requires: pip install llama-index)
 try:
-    from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document
+    from llama_index.core import Document, SimpleDirectoryReader, VectorStoreIndex
     from llama_index.core.settings import Settings
 
     # Initialize the tracer
-    tracer = LlamaIndexTracer(
-        version="v1.0",
-        agent_id="rag-engine"
-    )
+    tracer = LlamaIndexTracer(version="v1.0", agent_id="rag-engine")
 
     # Add the tracer to LlamaIndex's callback manager
     Settings.callback_manager.add_handler(tracer)
@@ -25,15 +22,15 @@ try:
     documents = [
         Document(
             text="LlamaIndex is a data framework for LLM applications. It provides tools for ingesting, structuring, and accessing private or domain-specific data.",
-            metadata={"source": "llamaindex_intro.txt", "category": "overview"}
+            metadata={"source": "llamaindex_intro.txt", "category": "overview"},
         ),
         Document(
             text="LlamaIndex supports various data sources including APIs, PDFs, SQL databases, and vector stores. It provides a unified interface for data ingestion.",
-            metadata={"source": "llamaindex_data.txt", "category": "features"}
+            metadata={"source": "llamaindex_data.txt", "category": "features"},
         ),
         Document(
             text="Query engines in LlamaIndex enable natural language querying over your indexed data. They combine retrieval and synthesis for accurate answers.",
-            metadata={"source": "llamaindex_query.txt", "category": "usage"}
+            metadata={"source": "llamaindex_query.txt", "category": "usage"},
         ),
     ]
 
@@ -67,15 +64,17 @@ try:
     print(f"  - Queries: {len(tracer.queries)}")
     print(f"  - Retrieved nodes: {len(tracer.retrieved_nodes)}")
     print(f"  - LLM calls: {tracer.llm_calls}")
-    print(f"  - Total tokens: {tracer.total_prompt_tokens + tracer.total_completion_tokens}")
+    print(
+        f"  - Total tokens: {tracer.total_prompt_tokens + tracer.total_completion_tokens}"
+    )
     print(f"  - Tool sequence: {tracer.tool_sequence}")
 
     # Inspect events
     print("\nEvent breakdown:")
     for i, event in enumerate(tracer.events[:10], 1):  # Show first 10
         print(f"  {i}. {event['event_type']} ({event['latency_ms']}ms)")
-        if event['metadata']:
-            for key, value in list(event['metadata'].items())[:3]:
+        if event["metadata"]:
+            for key, value in list(event["metadata"].items())[:3]:
                 print(f"      {key}: {value}")
 
     # Inspect retrieved nodes (GDPR-compliant - content hashed)

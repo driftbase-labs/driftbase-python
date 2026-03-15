@@ -61,8 +61,8 @@ def _render_dimension_card(
         context_html += "</div>"
 
     return f"""
-    <div style="background:white; border:1px solid {COLORS['gray_border']}; border-radius:8px; padding:16px;">
-        <div style="font-size:14px; color:{COLORS['gray']}; font-weight:500; margin-bottom:8px;">
+    <div style="background:white; border:1px solid {COLORS["gray_border"]}; border-radius:8px; padding:16px;">
+        <div style="font-size:14px; color:{COLORS["gray"]}; font-weight:500; margin-bottom:8px;">
             {_escape_html(name)}
         </div>
         <div style="font-size:28px; font-weight:600; color:{style_color}; margin-bottom:4px;">
@@ -115,10 +115,10 @@ def generate_html_report(
     if hypotheses:
         top = hypotheses[0]
         most_likely_cause_html = f"""
-        <div style="margin-top:20px; padding:16px; background:{COLORS['gray_light']}; border-radius:6px;">
+        <div style="margin-top:20px; padding:16px; background:{COLORS["gray_light"]}; border-radius:6px;">
             <div style="font-weight:600; margin-bottom:8px; color:#111827;">Most likely cause:</div>
-            <div style="margin-bottom:6px; color:#111827;">→ {_escape_html(top['observation'])}</div>
-            <div style="font-size:14px; color:{COLORS['gray']};">{_escape_html(top['likely_cause'])}</div>
+            <div style="margin-bottom:6px; color:#111827;">→ {_escape_html(top["observation"])}</div>
+            <div style="font-size:14px; color:{COLORS["gray"]};">{_escape_html(top["likely_cause"])}</div>
         </div>
         """
 
@@ -155,7 +155,9 @@ def generate_html_report(
         baseline_esc = getattr(report, "baseline_escalation_rate", 0.0) * 100
         current_esc = getattr(report, "current_escalation_rate", 0.0) * 100
         if baseline_esc > 0 or current_esc > 0:
-            decision_context.append(f"escalation rate: {baseline_esc:.0f}% → {current_esc:.0f}%")
+            decision_context.append(
+                f"escalation rate: {baseline_esc:.0f}% → {current_esc:.0f}%"
+            )
             if current_esc > baseline_esc * 1.5:
                 multiplier = current_esc / max(baseline_esc, 1)
                 decision_context.append(f"routing {multiplier:.1f}× more to humans")
@@ -209,7 +211,9 @@ def generate_html_report(
         top_change = tool_frequency_diffs[0]
         delta = top_change.get("delta_pct", 0)
         if abs(delta) > 20:
-            tool_context.append(f"top change: {top_change['tool'][:20]} ({delta:+.0f}%)")
+            tool_context.append(
+                f"top change: {top_change['tool'][:20]} ({delta:+.0f}%)"
+            )
 
     # Use semantic_drift as a proxy for tool distribution changes
     tool_score = getattr(report, "semantic_drift", 0.0)
@@ -232,12 +236,12 @@ def generate_html_report(
         for hyp in hypotheses[1:]:
             additional_analysis_html += f"""
             <div style="margin-bottom:20px;">
-                <div style="margin-bottom:6px; color:#111827;">→ {_escape_html(hyp['observation'])}</div>
+                <div style="margin-bottom:6px; color:#111827;">→ {_escape_html(hyp["observation"])}</div>
                 <div style="font-size:14px; color:#6b7280; margin-bottom:4px; margin-left:16px;">
-                    <strong>Likely cause:</strong> {_escape_html(hyp['likely_cause'])}
+                    <strong>Likely cause:</strong> {_escape_html(hyp["likely_cause"])}
                 </div>
                 <div style="font-size:14px; color:#6b7280; margin-left:16px;">
-                    <strong>Recommended action:</strong> {_escape_html(hyp['recommended_action'])}
+                    <strong>Recommended action:</strong> {_escape_html(hyp["recommended_action"])}
                 </div>
             </div>
             """
@@ -263,13 +267,23 @@ def generate_html_report(
         """
         for i, row in enumerate(tool_frequency_diffs[:15]):
             delta = row.get("delta_pct", 0)
-            color = COLORS["red"] if delta > 10 else COLORS["green"] if delta < -10 else COLORS["gray"]
-            border = "" if i == len(tool_frequency_diffs[:15]) - 1 else "border-bottom:1px solid #f3f4f6;"
+            color = (
+                COLORS["red"]
+                if delta > 10
+                else COLORS["green"]
+                if delta < -10
+                else COLORS["gray"]
+            )
+            border = (
+                ""
+                if i == len(tool_frequency_diffs[:15]) - 1
+                else "border-bottom:1px solid #f3f4f6;"
+            )
             tool_table_html += f"""
                         <tr style="{border}">
-                            <td style="padding:12px; font-size:14px; color:#111827;">{_escape_html(row['tool'])}</td>
-                            <td style="padding:12px; text-align:right; font-size:14px; color:#6b7280;">{row['baseline_pct']:.0f}%</td>
-                            <td style="padding:12px; text-align:right; font-size:14px; color:#6b7280;">{row['current_pct']:.0f}%</td>
+                            <td style="padding:12px; font-size:14px; color:#111827;">{_escape_html(row["tool"])}</td>
+                            <td style="padding:12px; text-align:right; font-size:14px; color:#6b7280;">{row["baseline_pct"]:.0f}%</td>
+                            <td style="padding:12px; text-align:right; font-size:14px; color:#6b7280;">{row["current_pct"]:.0f}%</td>
                             <td style="padding:12px; text-align:right; font-size:14px; font-weight:600; color:{color};">{delta:+.0f}%</td>
                         </tr>
             """
@@ -325,22 +339,22 @@ def generate_html_report(
 <body>
     <div class="container">
         <!-- Header -->
-        <div style="background:white; border-radius:12px; padding:24px; margin-bottom:24px; border:1px solid {COLORS['gray_border']};">
+        <div style="background:white; border-radius:12px; padding:24px; margin-bottom:24px; border:1px solid {COLORS["gray_border"]};">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                 <div>
                     <div style="font-size:24px; font-weight:700; color:#111827; margin-bottom:4px;">
                         DRIFTBASE
                     </div>
-                    <div style="font-size:16px; color:{COLORS['gray']};">
+                    <div style="font-size:16px; color:{COLORS["gray"]};">
                         {_escape_html(baseline_label)} → {_escape_html(current_label)} · {baseline_n} vs {current_n} runs
                     </div>
                 </div>
-                <div style="text-align:right; font-size:13px; color:{COLORS['gray']};">
+                <div style="text-align:right; font-size:13px; color:{COLORS["gray"]};">
                     {timestamp}
                 </div>
             </div>
-            <div style="margin-top:20px; padding-top:20px; border-top:1px solid {COLORS['gray_border']};">
-                <div style="font-size:14px; color:{COLORS['gray']}; margin-bottom:4px;">Overall drift</div>
+            <div style="margin-top:20px; padding-top:20px; border-top:1px solid {COLORS["gray_border"]};">
+                <div style="font-size:14px; color:{COLORS["gray"]}; margin-bottom:4px;">Overall drift</div>
                 <div style="font-size:32px; font-weight:700; color:#111827;">
                     {report.drift_score:.2f}{ci_display}
                 </div>
@@ -375,11 +389,11 @@ def generate_html_report(
         {additional_analysis_html}
 
         <!-- Footer -->
-        <div style="margin-top:40px; padding-top:20px; border-top:1px solid {COLORS['gray_border']}; text-align:center; font-size:13px; color:{COLORS['gray']};">
+        <div style="margin-top:40px; padding-top:20px; border-top:1px solid {COLORS["gray_border"]}; text-align:center; font-size:13px; color:{COLORS["gray"]};">
             {footer}
         </div>
 
-        <div style="margin-top:20px; text-align:center; font-size:12px; color:{COLORS['gray']};">
+        <div style="margin-top:20px; text-align:center; font-size:12px; color:{COLORS["gray"]};">
             Generated by <strong>Driftbase</strong> · Behavioral drift monitoring for AI agents
         </div>
     </div>
@@ -423,33 +437,49 @@ def generate_eu_ai_act_report(
 
     # Map verdict to compliance language
     compliance_status_map = {
-        "green": ("COMPLIANT", "System behavior remains within acceptable bounds per Article 72 monitoring requirements.", COLORS["green"]),
-        "blue": ("ACCEPTABLE", "Minor behavioral variations detected. Continued monitoring recommended.", COLORS["blue"]),
-        "yellow": ("REVIEW REQUIRED", "Significant behavioral changes detected. Human review required per Article 72(2).", COLORS["yellow"]),
-        "red": ("NON-COMPLIANT", "Critical behavioral drift detected. Immediate corrective action required per Article 72(3).", COLORS["red"]),
+        "green": (
+            "COMPLIANT",
+            "System behavior remains within acceptable bounds per Article 72 monitoring requirements.",
+            COLORS["green"],
+        ),
+        "blue": (
+            "ACCEPTABLE",
+            "Minor behavioral variations detected. Continued monitoring recommended.",
+            COLORS["blue"],
+        ),
+        "yellow": (
+            "REVIEW REQUIRED",
+            "Significant behavioral changes detected. Human review required per Article 72(2).",
+            COLORS["yellow"],
+        ),
+        "red": (
+            "NON-COMPLIANT",
+            "Critical behavioral drift detected. Immediate corrective action required per Article 72(3).",
+            COLORS["red"],
+        ),
     }
 
     compliance_title, compliance_text, compliance_color = compliance_status_map.get(
         verdict_result.style,
-        ("UNDER REVIEW", "Compliance status pending assessment.", COLORS["gray"])
+        ("UNDER REVIEW", "Compliance status pending assessment.", COLORS["gray"]),
     )
 
     # Section 1: Cover Page
     cover_section = f"""
-    <div style="background:white; border-radius:12px; padding:40px; margin-bottom:24px; border:1px solid {COLORS['gray_border']};">
+    <div style="background:white; border-radius:12px; padding:40px; margin-bottom:24px; border:1px solid {COLORS["gray_border"]};">
         <div style="text-align:center; margin-bottom:32px;">
             <div style="font-size:28px; font-weight:700; color:#111827; margin-bottom:8px;">
                 EU AI ACT COMPLIANCE REPORT
             </div>
-            <div style="font-size:16px; color:{COLORS['gray']}; margin-bottom:24px;">
+            <div style="font-size:16px; color:{COLORS["gray"]}; margin-bottom:24px;">
                 Article 72: Post-Market Monitoring
             </div>
-            <div style="padding:16px; background:{COLORS['gray_light']}; border-radius:8px; text-align:left;">
-                <div style="font-size:14px; color:{COLORS['gray']}; margin-bottom:8px;"><strong>Comparison:</strong></div>
+            <div style="padding:16px; background:{COLORS["gray_light"]}; border-radius:8px; text-align:left;">
+                <div style="font-size:14px; color:{COLORS["gray"]}; margin-bottom:8px;"><strong>Comparison:</strong></div>
                 <div style="font-size:18px; color:#111827; margin-bottom:12px;">
                     {_escape_html(baseline_label)} ({baseline_n} runs) → {_escape_html(current_label)} ({current_n} runs)
                 </div>
-                <div style="font-size:13px; color:{COLORS['gray']};">
+                <div style="font-size:13px; color:{COLORS["gray"]};">
                     <strong>Generated:</strong> {timestamp}<br>
                     <strong>Compliance Framework:</strong> EU AI Act (Regulation 2024/1689)<br>
                     <strong>Monitoring Tool:</strong> Driftbase v0.2.6
@@ -487,22 +517,34 @@ def generate_eu_ai_act_report(
     evidence_rows = []
 
     # Decision drift evidence
-    decision_status = "✓ Compliant" if report.decision_drift < 0.2 else "⚠ Review Required" if report.decision_drift < 0.5 else "✗ Non-Compliant"
-    decision_color = COLORS["green"] if report.decision_drift < 0.2 else COLORS["yellow"] if report.decision_drift < 0.5 else COLORS["red"]
+    decision_status = (
+        "✓ Compliant"
+        if report.decision_drift < 0.2
+        else "⚠ Review Required"
+        if report.decision_drift < 0.5
+        else "✗ Non-Compliant"
+    )
+    decision_color = (
+        COLORS["green"]
+        if report.decision_drift < 0.2
+        else COLORS["yellow"]
+        if report.decision_drift < 0.5
+        else COLORS["red"]
+    )
     baseline_esc = getattr(report, "baseline_escalation_rate", 0.0) * 100
     current_esc = getattr(report, "current_escalation_rate", 0.0) * 100
     evidence_rows.append(f"""
-        <tr style="border-bottom:1px solid {COLORS['gray_border']};">
+        <tr style="border-bottom:1px solid {COLORS["gray_border"]};">
             <td style="padding:16px; font-size:14px; color:#111827; font-weight:500;">
                 Decision Consistency<br>
-                <span style="font-size:12px; color:{COLORS['gray']}; font-weight:400;">Article 72(2)(a)</span>
+                <span style="font-size:12px; color:{COLORS["gray"]}; font-weight:400;">Article 72(2)(a)</span>
             </td>
             <td style="padding:16px; font-size:14px; color:#374151;">
                 Monitor output decision patterns for unexpected changes that may indicate degradation
             </td>
             <td style="padding:16px;">
                 <div style="font-size:14px; color:#111827; margin-bottom:4px;">Drift score: <strong>{report.decision_drift:.2f}</strong></div>
-                <div style="font-size:13px; color:{COLORS['gray']};">Escalation: {baseline_esc:.0f}% → {current_esc:.0f}%</div>
+                <div style="font-size:13px; color:{COLORS["gray"]};">Escalation: {baseline_esc:.0f}% → {current_esc:.0f}%</div>
             </td>
             <td style="padding:16px; text-align:center; font-weight:600; color:{decision_color};">
                 {decision_status}
@@ -511,22 +553,34 @@ def generate_eu_ai_act_report(
     """)
 
     # Latency evidence
-    latency_status = "✓ Compliant" if report.latency_drift < 0.15 else "⚠ Review Required" if report.latency_drift < 0.4 else "✗ Non-Compliant"
-    latency_color = COLORS["green"] if report.latency_drift < 0.15 else COLORS["yellow"] if report.latency_drift < 0.4 else COLORS["red"]
+    latency_status = (
+        "✓ Compliant"
+        if report.latency_drift < 0.15
+        else "⚠ Review Required"
+        if report.latency_drift < 0.4
+        else "✗ Non-Compliant"
+    )
+    latency_color = (
+        COLORS["green"]
+        if report.latency_drift < 0.15
+        else COLORS["yellow"]
+        if report.latency_drift < 0.4
+        else COLORS["red"]
+    )
     baseline_p95 = getattr(report, "baseline_p95_latency_ms", 0.0)
     current_p95 = getattr(report, "current_p95_latency_ms", 0.0)
     evidence_rows.append(f"""
-        <tr style="border-bottom:1px solid {COLORS['gray_border']};">
+        <tr style="border-bottom:1px solid {COLORS["gray_border"]};">
             <td style="padding:16px; font-size:14px; color:#111827; font-weight:500;">
                 Performance Monitoring<br>
-                <span style="font-size:12px; color:{COLORS['gray']}; font-weight:400;">Article 72(2)(c)</span>
+                <span style="font-size:12px; color:{COLORS["gray"]}; font-weight:400;">Article 72(2)(c)</span>
             </td>
             <td style="padding:16px; font-size:14px; color:#374151;">
                 Track system response times and computational efficiency
             </td>
             <td style="padding:16px;">
                 <div style="font-size:14px; color:#111827; margin-bottom:4px;">Drift score: <strong>{report.latency_drift:.2f}</strong></div>
-                <div style="font-size:13px; color:{COLORS['gray']};">p95 latency: {baseline_p95:.0f}ms → {current_p95:.0f}ms</div>
+                <div style="font-size:13px; color:{COLORS["gray"]};">p95 latency: {baseline_p95:.0f}ms → {current_p95:.0f}ms</div>
             </td>
             <td style="padding:16px; text-align:center; font-weight:600; color:{latency_color};">
                 {latency_status}
@@ -535,22 +589,34 @@ def generate_eu_ai_act_report(
     """)
 
     # Error rate evidence
-    error_status = "✓ Compliant" if report.error_drift < 0.1 else "⚠ Review Required" if report.error_drift < 0.3 else "✗ Non-Compliant"
-    error_color = COLORS["green"] if report.error_drift < 0.1 else COLORS["yellow"] if report.error_drift < 0.3 else COLORS["red"]
+    error_status = (
+        "✓ Compliant"
+        if report.error_drift < 0.1
+        else "⚠ Review Required"
+        if report.error_drift < 0.3
+        else "✗ Non-Compliant"
+    )
+    error_color = (
+        COLORS["green"]
+        if report.error_drift < 0.1
+        else COLORS["yellow"]
+        if report.error_drift < 0.3
+        else COLORS["red"]
+    )
     baseline_err = getattr(report, "baseline_error_rate", 0.0) * 100
     current_err = getattr(report, "current_error_rate", 0.0) * 100
     evidence_rows.append(f"""
-        <tr style="border-bottom:1px solid {COLORS['gray_border']};">
+        <tr style="border-bottom:1px solid {COLORS["gray_border"]};">
             <td style="padding:16px; font-size:14px; color:#111827; font-weight:500;">
                 Reliability & Errors<br>
-                <span style="font-size:12px; color:{COLORS['gray']}; font-weight:400;">Article 72(2)(b)</span>
+                <span style="font-size:12px; color:{COLORS["gray"]}; font-weight:400;">Article 72(2)(b)</span>
             </td>
             <td style="padding:16px; font-size:14px; color:#374151;">
                 Detect increases in failure rates or error conditions
             </td>
             <td style="padding:16px;">
                 <div style="font-size:14px; color:#111827; margin-bottom:4px;">Drift score: <strong>{report.error_drift:.2f}</strong></div>
-                <div style="font-size:13px; color:{COLORS['gray']};">Error rate: {baseline_err:.1f}% → {current_err:.1f}%</div>
+                <div style="font-size:13px; color:{COLORS["gray"]};">Error rate: {baseline_err:.1f}% → {current_err:.1f}%</div>
             </td>
             <td style="padding:16px; text-align:center; font-weight:600; color:{error_color};">
                 {error_status}
@@ -560,20 +626,32 @@ def generate_eu_ai_act_report(
 
     # Tool usage evidence (semantic drift as proxy)
     tool_score = getattr(report, "semantic_drift", 0.0)
-    tool_status = "✓ Compliant" if tool_score < 0.15 else "⚠ Review Required" if tool_score < 0.4 else "✗ Non-Compliant"
-    tool_color = COLORS["green"] if tool_score < 0.15 else COLORS["yellow"] if tool_score < 0.4 else COLORS["red"]
+    tool_status = (
+        "✓ Compliant"
+        if tool_score < 0.15
+        else "⚠ Review Required"
+        if tool_score < 0.4
+        else "✗ Non-Compliant"
+    )
+    tool_color = (
+        COLORS["green"]
+        if tool_score < 0.15
+        else COLORS["yellow"]
+        if tool_score < 0.4
+        else COLORS["red"]
+    )
     evidence_rows.append(f"""
         <tr>
             <td style="padding:16px; font-size:14px; color:#111827; font-weight:500;">
                 Behavioral Patterns<br>
-                <span style="font-size:12px; color:{COLORS['gray']}; font-weight:400;">Article 72(2)(d)</span>
+                <span style="font-size:12px; color:{COLORS["gray"]}; font-weight:400;">Article 72(2)(d)</span>
             </td>
             <td style="padding:16px; font-size:14px; color:#374151;">
                 Monitor reasoning patterns and tool usage for unexpected variations
             </td>
             <td style="padding:16px;">
                 <div style="font-size:14px; color:#111827; margin-bottom:4px;">Drift score: <strong>{tool_score:.2f}</strong></div>
-                <div style="font-size:13px; color:{COLORS['gray']};">Tool distribution analyzed</div>
+                <div style="font-size:13px; color:{COLORS["gray"]};">Tool distribution analyzed</div>
             </td>
             <td style="padding:16px; text-align:center; font-weight:600; color:{tool_color};">
                 {tool_status}
@@ -582,14 +660,14 @@ def generate_eu_ai_act_report(
     """)
 
     evidence_table = f"""
-    <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS['gray_border']};">
+    <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS["gray_border"]};">
         <h2 style="font-size:20px; font-weight:600; color:#111827; margin-bottom:20px;">
             Article 72 Monitoring Evidence
         </h2>
         <div style="overflow-x:auto;">
             <table style="width:100%; border-collapse:collapse; background:white;">
                 <thead>
-                    <tr style="background:{COLORS['gray_light']}; border-bottom:2px solid {COLORS['gray_border']};">
+                    <tr style="background:{COLORS["gray_light"]}; border-bottom:2px solid {COLORS["gray_border"]};">
                         <th style="padding:12px; text-align:left; font-size:13px; font-weight:600; color:#111827;">Requirement</th>
                         <th style="padding:12px; text-align:left; font-size:13px; font-weight:600; color:#111827;">Regulatory Obligation</th>
                         <th style="padding:12px; text-align:left; font-size:13px; font-weight:600; color:#111827;">Evidence</th>
@@ -606,56 +684,56 @@ def generate_eu_ai_act_report(
 
     # Section 4: Detailed Behavioral Metrics
     metrics_section = f"""
-    <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS['gray_border']};">
+    <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS["gray_border"]};">
         <h2 style="font-size:20px; font-weight:600; color:#111827; margin-bottom:20px;">
             Detailed Behavioral Metrics
         </h2>
 
-        <div style="margin-bottom:24px; padding:16px; background:{COLORS['gray_light']}; border-radius:8px;">
+        <div style="margin-bottom:24px; padding:16px; background:{COLORS["gray_light"]}; border-radius:8px;">
             <div style="font-size:14px; color:#111827; font-weight:600; margin-bottom:8px;">Overall Drift Score</div>
             <div style="font-size:32px; font-weight:700; color:#111827;">
                 {report.drift_score:.3f}
             </div>
-            <div style="font-size:13px; color:{COLORS['gray']}; margin-top:4px;">
+            <div style="font-size:13px; color:{COLORS["gray"]}; margin-top:4px;">
                 Composite measure of behavioral change across all dimensions
             </div>
         </div>
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:16px; margin-bottom:24px;">
-            <div style="padding:16px; border:1px solid {COLORS['gray_border']}; border-radius:8px;">
-                <div style="font-size:13px; color:{COLORS['gray']}; margin-bottom:4px;">Decision Drift</div>
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Decision Drift</div>
                 <div style="font-size:24px; font-weight:600; color:#111827;">{report.decision_drift:.3f}</div>
-                <div style="font-size:12px; color:{COLORS['gray']}; margin-top:8px;">
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
                     Output decision pattern consistency (Art. 72(2)(a))
                 </div>
             </div>
 
-            <div style="padding:16px; border:1px solid {COLORS['gray_border']}; border-radius:8px;">
-                <div style="font-size:13px; color:{COLORS['gray']}; margin-bottom:4px;">Latency Drift</div>
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Latency Drift</div>
                 <div style="font-size:24px; font-weight:600; color:#111827;">{report.latency_drift:.3f}</div>
-                <div style="font-size:12px; color:{COLORS['gray']}; margin-top:8px;">
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
                     Response time distribution changes (Art. 72(2)(c))
                 </div>
             </div>
 
-            <div style="padding:16px; border:1px solid {COLORS['gray_border']}; border-radius:8px;">
-                <div style="font-size:13px; color:{COLORS['gray']}; margin-bottom:4px;">Error Drift</div>
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Error Drift</div>
                 <div style="font-size:24px; font-weight:600; color:#111827;">{report.error_drift:.3f}</div>
-                <div style="font-size:12px; color:{COLORS['gray']}; margin-top:8px;">
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
                     Failure rate and reliability changes (Art. 72(2)(b))
                 </div>
             </div>
 
-            <div style="padding:16px; border:1px solid {COLORS['gray_border']}; border-radius:8px;">
-                <div style="font-size:13px; color:{COLORS['gray']}; margin-bottom:4px;">Semantic Drift</div>
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Semantic Drift</div>
                 <div style="font-size:24px; font-weight:600; color:#111827;">{tool_score:.3f}</div>
-                <div style="font-size:12px; color:{COLORS['gray']}; margin-top:8px;">
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
                     Reasoning and tool usage patterns (Art. 72(2)(d))
                 </div>
             </div>
         </div>
 
-        <div style="padding:16px; background:#eff6ff; border-left:4px solid {COLORS['blue']}; border-radius:4px;">
+        <div style="padding:16px; background:#eff6ff; border-left:4px solid {COLORS["blue"]}; border-radius:4px;">
             <div style="font-weight:600; color:#1e40af; margin-bottom:8px;">📊 Statistical Methodology</div>
             <div style="font-size:14px; color:#1e3a8a; line-height:1.6;">
                 Drift scores computed using Kolmogorov-Smirnov test with bootstrap confidence intervals (95% CI).
@@ -672,35 +750,35 @@ def generate_eu_ai_act_report(
         causal_rows = ""
         for i, hyp in enumerate(hypotheses[:5], 1):
             causal_rows += f"""
-            <tr style="border-bottom:1px solid {COLORS['gray_border']};">
-                <td style="padding:16px; text-align:center; font-weight:600; color:{COLORS['gray']};">{i}</td>
+            <tr style="border-bottom:1px solid {COLORS["gray_border"]};">
+                <td style="padding:16px; text-align:center; font-weight:600; color:{COLORS["gray"]};">{i}</td>
                 <td style="padding:16px;">
                     <div style="font-size:14px; color:#111827; margin-bottom:4px;">
-                        {_escape_html(hyp['observation'])}
+                        {_escape_html(hyp["observation"])}
                     </div>
                 </td>
                 <td style="padding:16px;">
                     <div style="font-size:14px; color:#374151;">
-                        {_escape_html(hyp['likely_cause'])}
+                        {_escape_html(hyp["likely_cause"])}
                     </div>
                 </td>
                 <td style="padding:16px;">
                     <div style="font-size:14px; color:#374151;">
-                        {_escape_html(hyp['recommended_action'])}
+                        {_escape_html(hyp["recommended_action"])}
                     </div>
                 </td>
             </tr>
             """
 
         causal_section = f"""
-        <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS['gray_border']};">
+        <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS["gray_border"]};">
             <h2 style="font-size:20px; font-weight:600; color:#111827; margin-bottom:20px;">
                 Root Cause Analysis
             </h2>
             <div style="overflow-x:auto;">
                 <table style="width:100%; border-collapse:collapse;">
                     <thead>
-                        <tr style="background:{COLORS['gray_light']}; border-bottom:2px solid {COLORS['gray_border']};">
+                        <tr style="background:{COLORS["gray_light"]}; border-bottom:2px solid {COLORS["gray_border"]};">
                             <th style="padding:12px; text-align:center; font-size:13px; font-weight:600; color:#111827; width:50px;">#</th>
                             <th style="padding:12px; text-align:left; font-size:13px; font-weight:600; color:#111827;">Observation</th>
                             <th style="padding:12px; text-align:left; font-size:13px; font-weight:600; color:#111827;">Likely Cause</th>
@@ -720,22 +798,22 @@ def generate_eu_ai_act_report(
     if include_signature:
         # Generate a preliminary report without signature to hash
         content_to_hash = f"{baseline_label}|{current_label}|{report.drift_score}|{report.decision_drift}|{report.latency_drift}|{report.error_drift}|{timestamp}"
-        sha256_hash = hashlib.sha256(content_to_hash.encode('utf-8')).hexdigest()
+        sha256_hash = hashlib.sha256(content_to_hash.encode("utf-8")).hexdigest()
 
         signature_section = f"""
-        <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS['gray_border']};">
+        <div style="background:white; border-radius:12px; padding:32px; margin-bottom:24px; border:1px solid {COLORS["gray_border"]};">
             <h2 style="font-size:20px; font-weight:600; color:#111827; margin-bottom:20px;">
                 Document Integrity
             </h2>
-            <div style="padding:20px; background:{COLORS['gray_light']}; border-radius:8px; font-family:monospace;">
-                <div style="font-size:13px; color:{COLORS['gray']}; margin-bottom:8px; font-family:sans-serif;">
+            <div style="padding:20px; background:{COLORS["gray_light"]}; border-radius:8px; font-family:monospace;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:8px; font-family:sans-serif;">
                     SHA-256 Hash:
                 </div>
                 <div style="font-size:14px; color:#111827; word-break:break-all;">
                     {sha256_hash}
                 </div>
             </div>
-            <div style="margin-top:16px; font-size:13px; color:{COLORS['gray']}; line-height:1.6;">
+            <div style="margin-top:16px; font-size:13px; color:{COLORS["gray"]}; line-height:1.6;">
                 This cryptographic hash can be used to verify document integrity. Any modification to the report
                 data will produce a different hash value, ensuring tamper detection for regulatory audits.
             </div>
@@ -744,7 +822,7 @@ def generate_eu_ai_act_report(
 
     # Section 7: Legal Footer
     footer_section = f"""
-    <div style="background:{COLORS['gray_light']}; border-radius:12px; padding:24px; margin-bottom:24px;">
+    <div style="background:{COLORS["gray_light"]}; border-radius:12px; padding:24px; margin-bottom:24px;">
         <div style="font-size:13px; color:#111827; font-weight:600; margin-bottom:12px;">
             ⚖️ LEGAL DISCLAIMER
         </div>
@@ -794,7 +872,7 @@ def generate_eu_ai_act_report(
         {signature_section}
         {footer_section}
 
-        <div style="margin-top:20px; padding-top:20px; border-top:1px solid {COLORS['gray_border']}; text-align:center; font-size:12px; color:{COLORS['gray']};">
+        <div style="margin-top:20px; padding-top:20px; border-top:1px solid {COLORS["gray_border"]}; text-align:center; font-size:12px; color:{COLORS["gray"]};">
             Generated by <strong>Driftbase v0.2.6</strong> · Open-source behavioral drift monitoring · No data left your machine
         </div>
     </div>

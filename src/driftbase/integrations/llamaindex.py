@@ -22,13 +22,14 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import LlamaIndex - fail only at instantiation time
 try:
     from llama_index.core.callbacks import BaseCallbackHandler, CBEventType
+
     _LLAMAINDEX_AVAILABLE = True
 except ImportError:
     _LLAMAINDEX_AVAILABLE = False
@@ -59,6 +60,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _LLAMAINDEX_AVAILABLE:
+
     class LlamaIndexTracer(BaseCallbackHandler):
         """
         Explicit LlamaIndex tracer for RAG and agentic workflows.
@@ -97,6 +99,7 @@ if _LLAMAINDEX_AVAILABLE:
             agent_id: Optional[str] = None,
         ):
             import os
+
             super().__init__(event_starts_to_ignore=[], event_ends_to_ignore=[])
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
@@ -251,7 +254,9 @@ if _LLAMAINDEX_AVAILABLE:
             try:
                 # FUNCTION_CALL - capture tool/function invocations
                 if event_type == CBEventType.FUNCTION_CALL:
-                    name = payload.get("function_call") or payload.get("name") or "unknown"
+                    name = (
+                        payload.get("function_call") or payload.get("name") or "unknown"
+                    )
                     if isinstance(name, dict):
                         name = name.get("name", "unknown")
                     metadata["function_name"] = str(name)
@@ -284,7 +289,9 @@ if _LLAMAINDEX_AVAILABLE:
                             if hasattr(raw, "usage"):
                                 usage = raw.usage
                                 prompt_tokens = getattr(usage, "prompt_tokens", 0)
-                                completion_tokens = getattr(usage, "completion_tokens", 0)
+                                completion_tokens = getattr(
+                                    usage, "completion_tokens", 0
+                                )
                                 metadata["prompt_tokens"] = prompt_tokens
                                 metadata["completion_tokens"] = completion_tokens
                                 self.total_prompt_tokens += prompt_tokens
@@ -294,7 +301,9 @@ if _LLAMAINDEX_AVAILABLE:
                 elif event_type == CBEventType.EMBEDDING:
                     chunks = payload.get("chunks") or payload.get("texts")
                     if chunks:
-                        metadata["chunk_count"] = len(chunks) if isinstance(chunks, list) else 1
+                        metadata["chunk_count"] = (
+                            len(chunks) if isinstance(chunks, list) else 1
+                        )
 
                 # QUERY - capture query metadata
                 elif event_type == CBEventType.QUERY:
@@ -389,7 +398,9 @@ if _LLAMAINDEX_AVAILABLE:
             """
             try:
                 completed_at = datetime.utcnow()
-                latency_ms = int((completed_at - self.started_at).total_seconds() * 1000)
+                latency_ms = int(
+                    (completed_at - self.started_at).total_seconds() * 1000
+                )
 
                 # Compute output metrics
                 total_output_length = sum(
@@ -409,7 +420,9 @@ if _LLAMAINDEX_AVAILABLE:
                     "environment": self.environment,
                     "started_at": self.started_at,
                     "completed_at": completed_at,
-                    "task_input_hash": self.task_input_hash[:32] if self.task_input_hash else "none",
+                    "task_input_hash": self.task_input_hash[:32]
+                    if self.task_input_hash
+                    else "none",
                     "tool_sequence": json.dumps(self.tool_sequence),
                     "tool_call_count": len(self.tool_sequence),
                     "output_length": total_output_length,
@@ -423,21 +436,23 @@ if _LLAMAINDEX_AVAILABLE:
                 }
 
                 # LlamaIndex-specific audit trail
-                payload["llamaindex_audit_trail"] = json.dumps({
-                    "events": [
-                        {
-                            "event_type": event["event_type"],
-                            "latency_ms": event["latency_ms"],
-                            "metadata": event["metadata"],
-                        }
-                        for event in self.events
-                    ],
-                    "queries": self.queries,
-                    "retrieved_nodes": self.retrieved_nodes,
-                    "llm_calls": self.llm_calls,
-                    "total_prompt_tokens": self.total_prompt_tokens,
-                    "total_completion_tokens": self.total_completion_tokens,
-                })
+                payload["llamaindex_audit_trail"] = json.dumps(
+                    {
+                        "events": [
+                            {
+                                "event_type": event["event_type"],
+                                "latency_ms": event["latency_ms"],
+                                "metadata": event["metadata"],
+                            }
+                            for event in self.events
+                        ],
+                        "queries": self.queries,
+                        "retrieved_nodes": self.retrieved_nodes,
+                        "llm_calls": self.llm_calls,
+                        "total_prompt_tokens": self.total_prompt_tokens,
+                        "total_completion_tokens": self.total_completion_tokens,
+                    }
+                )
 
                 enqueue_run(payload)
                 logger.info(
@@ -455,6 +470,7 @@ else:
     # Stub when LlamaIndex is not installed
     class LlamaIndexTracer:
         """Stub when LlamaIndex is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
                 "LlamaIndexTracer requires llama-index. "

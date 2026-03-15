@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 try:
     from langchain_core.callbacks import BaseCallbackHandler
     from langchain_core.outputs import LLMResult
+
     _LANGCHAIN_AVAILABLE = True
 except ImportError:
     _LANGCHAIN_AVAILABLE = False
@@ -59,6 +60,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _LANGCHAIN_AVAILABLE:
+
     class LangGraphTracer(BaseCallbackHandler):
         """
         Explicit LangGraph tracer that captures tool calls, latency, token usage, and outcomes.
@@ -83,6 +85,7 @@ if _LANGCHAIN_AVAILABLE:
         ):
             super().__init__()
             import os
+
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
             self.session_id = agent_id or str(uuid4())
@@ -129,7 +132,9 @@ if _LANGCHAIN_AVAILABLE:
                 parent_srid = str(parent_run_id)
                 self._run_to_root[srid] = self._run_to_root.get(parent_srid, srid)
 
-        def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
+        def on_tool_start(
+            self, serialized: dict, input_str: str, **kwargs: Any
+        ) -> None:
             """Called when a tool starts execution."""
             run_id = kwargs.get("run_id")
             parent_run_id = kwargs.get("parent_run_id")
@@ -153,7 +158,9 @@ if _LANGCHAIN_AVAILABLE:
                 tool_name = kwargs["name"]
             if not tool_name:
                 tool_name = "unknown_tool"
-                logger.warning(f"Could not extract tool name from serialized={serialized}")
+                logger.warning(
+                    f"Could not extract tool name from serialized={serialized}"
+                )
 
             # Record start time for latency tracking
             state["tool_start_times"][tool_name] = time.perf_counter()
@@ -200,7 +207,9 @@ if _LANGCHAIN_AVAILABLE:
 
             logger.warning(f"LangGraph tool error: {error}")
 
-        def on_llm_start(self, serialized: dict, prompts: list[str], **kwargs: Any) -> None:
+        def on_llm_start(
+            self, serialized: dict, prompts: list[str], **kwargs: Any
+        ) -> None:
             """Called when an LLM starts."""
             pass  # Track token usage in on_llm_end
 
@@ -221,12 +230,14 @@ if _LANGCHAIN_AVAILABLE:
             state = self.active_runs[root]
 
             # Extract token usage from LLM response
-            if hasattr(response, 'llm_output') and response.llm_output:
-                token_usage = response.llm_output.get('token_usage', {})
+            if hasattr(response, "llm_output") and response.llm_output:
+                token_usage = response.llm_output.get("token_usage", {})
                 if token_usage:
                     state["total_tokens"] += token_usage.get("total_tokens", 0)
                     state["prompt_tokens"] += token_usage.get("prompt_tokens", 0)
-                    state["completion_tokens"] += token_usage.get("completion_tokens", 0)
+                    state["completion_tokens"] += token_usage.get(
+                        "completion_tokens", 0
+                    )
 
         def on_chain_end(self, outputs: dict, **kwargs: Any) -> None:
             """Called when a graph completes - save the run if it's a root graph."""
@@ -287,6 +298,7 @@ else:
     # Stub when LangChain is not installed
     class LangGraphTracer:
         """Stub when LangChain is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
                 "LangGraphTracer requires langchain-core. "

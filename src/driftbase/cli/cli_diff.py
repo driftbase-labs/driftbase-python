@@ -6,24 +6,29 @@ All computation runs locally unless --remote is specified. Output via rich Conso
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
-import os
 from collections import Counter
 from datetime import datetime
 from typing import Any, Optional
 
 import click
+
 from driftbase.backends.base import StorageBackend
 from driftbase.cli._deps import safe_import_rich
 from driftbase.local.diff import compute_drift
 from driftbase.local.fingerprinter import build_fingerprint_from_runs
+from driftbase.local.local_store import (
+    BehavioralFingerprint,
+    DriftReport,
+    run_dict_to_agent_run,
+)
 from driftbase.local.rootcause import (
     build_explanation,
-    top_sequence_shifts,
     tool_frequency_diff,
+    top_sequence_shifts,
 )
-from driftbase.local.local_store import AgentRun, BehavioralFingerprint, DriftReport, run_dict_to_agent_run
 from driftbase.pricing import calculate_cost_per_10k, get_rates_for_display
 
 # Lazy import of heavy [analyze] dependencies
@@ -36,12 +41,28 @@ DEFAULT_THRESHOLD = 0.20
 @click.command(name="diff")
 @click.argument("baseline", required=False)
 @click.argument("current", required=False)
-@click.option("--last", "-n", type=int, metavar="N", help="Use last N runs as current (use with --against).")
+@click.option(
+    "--last",
+    "-n",
+    type=int,
+    metavar="N",
+    help="Use last N runs as current (use with --against).",
+)
 @click.option("--against", metavar="VERSION", help="Baseline version (with --last).")
 @click.option("--environment", "-e", default=None, help="Filter by environment.")
-@click.option("--threshold", "-t", type=float, default=0.20, help="Drift threshold (default 0.20).")
-@click.option("--json", "json_output", is_flag=True, help="Machine-readable output for CI.")
-@click.option("--remote", is_flag=True, help="Compute diff using the Driftbase Pro cloud engine.")
+@click.option(
+    "--threshold",
+    "-t",
+    type=float,
+    default=0.20,
+    help="Drift threshold (default 0.20).",
+)
+@click.option(
+    "--json", "json_output", is_flag=True, help="Machine-readable output for CI."
+)
+@click.option(
+    "--remote", is_flag=True, help="Compute diff using the Driftbase Pro cloud engine."
+)
 @click.pass_context
 def cmd_diff(
     ctx: click.Context,
@@ -61,22 +82,24 @@ def cmd_diff(
     # Handle Cloud Diff
     if remote:
         if not baseline or not current:
-            console.print("[bold red]Error:[/] --remote requires explicit baseline and current versions (e.g. driftbase diff v1.0 v2.0 --remote)")
+            console.print(
+                "[bold red]Error:[/] --remote requires explicit baseline and current versions (e.g. driftbase diff v1.0 v2.0 --remote)"
+            )
             ctx.exit(1)
-            
+
         import httpx
-        
+
         api_key = os.getenv("DRIFTBASE_API_KEY")
         if not api_key:
             console.print("[bold red]Error:[/] DRIFTBASE_API_KEY missing.")
             ctx.exit(1)
 
         api_url = os.getenv("DRIFTBASE_API_URL", "http://localhost:8000")
-        
+
         payload = {
             "baseline_version": baseline,
             "current_version": current,
-            "environment": environment or "production"
+            "environment": environment or "production",
         }
 
         try:
@@ -84,7 +107,7 @@ def cmd_diff(
                 f"{api_url}/diff",
                 json=payload,
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10.0
+                timeout=10.0,
             )
             response.raise_for_status()
             data = response.json()
@@ -94,36 +117,46 @@ def cmd_diff(
 
         score = data.get("drift_score", 0.0)
         severity = data.get("severity", "unknown")
-        
+
         # Financial calculation
         rate_p = float(os.getenv("DRIFTBASE_RATE_PROMPT_1M", "2.50"))
         rate_c = float(os.getenv("DRIFTBASE_RATE_COMPLETION_1M", "10.00"))
-        
+
         b_p_tok = data.get("baseline_prompt_tokens", 0)
         b_c_tok = data.get("baseline_completion_tokens", 0)
         c_p_tok = data.get("current_prompt_tokens", 0)
         c_c_tok = data.get("current_completion_tokens", 0)
-        
+
         b_cost_10k = ((b_p_tok * rate_p) + (b_c_tok * rate_c)) * 10000 / 1000000
         c_cost_10k = ((c_p_tok * rate_p) + (c_c_tok * rate_c)) * 10000 / 1000000
         delta_cost = c_cost_10k - b_cost_10k
-        
+
         console.print(f"\n[bold]Drift Analysis (Cloud):[/] {baseline} ➔ {current}")
-        console.print(f"Sample size: {data.get('baseline_sample_count', 0)} vs {data.get('current_sample_count', 0)}")
+        console.print(
+            f"Sample size: {data.get('baseline_sample_count', 0)} vs {data.get('current_sample_count', 0)}"
+        )
         console.print(f"Jensen-Shannon Divergence: [bold]{score}[/]")
-        
+
         cost_color = "red" if delta_cost > 0 else "green"
         cost_sign = "+" if delta_cost > 0 else ""
-        console.print(f"Cost Impact (per 10k runs): [{cost_color}]{cost_sign}€{delta_cost:.2f}[/]")
-        
+        console.print(
+            f"Cost Impact (per 10k runs): [{cost_color}]{cost_sign}€{delta_cost:.2f}[/]"
+        )
+
         if severity == "high":
-            console.print("\n[bold red]✖ High behavioral drift detected. Deployment blocked.[/]")
+            console.print(
+                "\n[bold red]✖ High behavioral drift detected. Deployment blocked.[/]"
+            )
             ctx.exit(1)
         elif severity == "medium":
-            console.print("\n[bold yellow]! Medium behavioral drift detected. Proceed with caution.[/]")
+            console.print(
+                "\n[bold yellow]! Medium behavioral drift detected. Proceed with caution.[/]"
+            )
             ctx.exit(0)
         else:
-            console.print("\n[bold green]✓ Agent behavior is stable. Deployment approved.[/]")
+            console.print(
+                "\n[bold green]✓ Agent behavior is stable. Deployment approved.[/]"
+            )
             ctx.exit(0)
 
     # Handle Local Diff
@@ -144,7 +177,9 @@ def cmd_diff(
         )
         ctx.exit(code)
 
-    if (baseline == "local" or current == "local") and (baseline is None or current is None):
+    if (baseline == "local" or current == "local") and (
+        baseline is None or current is None
+    ):
         backend = get_backend()
         versions = backend.get_versions()
         if not versions:
@@ -200,7 +235,9 @@ def get_runs_for_version(
 ) -> list[dict[str, Any]]:
     """Get runs for a version. Use version='local' for last N runs (no version filter)."""
     if version == "local":
-        return backend.get_runs(deployment_version=None, environment=environment, limit=limit)
+        return backend.get_runs(
+            deployment_version=None, environment=environment, limit=limit
+        )
     return backend.get_runs(
         deployment_version=version, environment=environment, limit=limit
     )
@@ -319,8 +356,11 @@ def render_diff_report(
             f"([{cost_color}]{cost_sign}{delta_cost:.2f} €[/])"
         )
         from driftbase.pricing import get_rates_for_display
+
         rate_p, rate_c = get_rates_for_display()
-        console.print(f"  [dim]Rates: €{rate_p:.2f}/1M prompt, €{rate_c:.2f}/1M completion (DRIFTBASE_RATE_* to override)[/]")
+        console.print(
+            f"  [dim]Rates: €{rate_p:.2f}/1M prompt, €{rate_c:.2f}/1M completion (DRIFTBASE_RATE_* to override)[/]"
+        )
     console.print()
 
     dims = [
@@ -335,9 +375,7 @@ def render_diff_report(
 
         if score >= 0.5:
             symbol = "⚠"
-        elif score >= 0.2:
-            symbol = "·"
-        elif score >= 0.1:
+        elif score >= 0.2 or score >= 0.1:
             symbol = "·"
         else:
             symbol = "✓"
@@ -350,14 +388,18 @@ def render_diff_report(
                 context = f"\n    └─ escalation rate jumped from {baseline_esc:.0f}% → {current_esc:.0f}%"
                 if current_esc > baseline_esc * 1.5:
                     multiplier = current_esc / max(baseline_esc, 1)
-                    context += f"\n    └─ agent is routing {multiplier:.1f}× more to humans"
+                    context += (
+                        f"\n    └─ agent is routing {multiplier:.1f}× more to humans"
+                    )
             else:
                 context = "\n    └─ outcome distribution changed"
         elif dim_key == "latency_drift" and score > 0.15:
             baseline_p95 = getattr(report, "baseline_p95_latency_ms", 0.0)
             current_p95 = getattr(report, "current_p95_latency_ms", 0.0)
             if baseline_p95 > 0:
-                context = f"\n    └─ p95 increased {baseline_p95:.0f}ms → {current_p95:.0f}ms"
+                context = (
+                    f"\n    └─ p95 increased {baseline_p95:.0f}ms → {current_p95:.0f}ms"
+                )
             else:
                 pct_change = score * 100
                 context = f"\n    └─ p95 +{pct_change:.0f}%"
@@ -367,7 +409,9 @@ def render_diff_report(
             if score < 0.05:
                 context = "\n    └─ stable"
             elif baseline_err > 0 or current_err > 0:
-                context = f"\n    └─ error rate {baseline_err:.1f}% → {current_err:.1f}%"
+                context = (
+                    f"\n    └─ error rate {baseline_err:.1f}% → {current_err:.1f}%"
+                )
             else:
                 err_pct = score * 50
                 context = f"\n    └─ error rate +{err_pct:.1f}%"
@@ -394,7 +438,7 @@ def render_diff_report(
         top_hypothesis = hypotheses[0]
         verdict_content += f"\n\n[bold]Most likely cause:[/]\n  → {top_hypothesis['observation']}\n  [dim]{top_hypothesis['likely_cause']}[/]"
 
-    verdict_content += f"\n\n[bold]Next steps:[/]\n" + "\n".join(
+    verdict_content += "\n\n[bold]Next steps:[/]\n" + "\n".join(
         f"  □ {step}" for step in verdict_result.next_steps
     )
 
@@ -503,7 +547,12 @@ def diff_local(
     environment: Optional[str] = None,
     threshold: float = DEFAULT_THRESHOLD,
     min_samples_warning: int = MIN_SAMPLES_WARNING,
-) -> tuple[Optional[DriftReport], Optional[BehavioralFingerprint], Optional[BehavioralFingerprint], Optional[str]]:
+) -> tuple[
+    Optional[DriftReport],
+    Optional[BehavioralFingerprint],
+    Optional[BehavioralFingerprint],
+    Optional[str],
+]:
     """
     Compute drift between two run sets from the local backend.
     """
@@ -538,19 +587,23 @@ def diff_local(
     min_runs_needed = 2
     if len(baseline_run_dicts) < min_runs_needed:
         return (
-            None, None, None,
+            None,
+            None,
+            None,
             f"\nNot enough runs to diff.\n"
             f"{baseline_label}: {len(baseline_run_dicts)} runs (need {min_runs_needed})\n"
             f"{current_label}: {len(current_run_dicts)} runs\n\n"
-            f"Run your agent more, then try again."
+            f"Run your agent more, then try again.",
         )
     if len(current_run_dicts) < min_runs_needed:
         return (
-            None, None, None,
+            None,
+            None,
+            None,
             f"\nNot enough runs to diff.\n"
             f"{baseline_label}: {len(baseline_run_dicts)} runs\n"
             f"{current_label}: {len(current_run_dicts)} runs (need {min_runs_needed})\n\n"
-            f"Run your agent more, then try again."
+            f"Run your agent more, then try again.",
         )
 
     baseline_fp = fingerprint_from_runs(
@@ -562,7 +615,9 @@ def diff_local(
     if baseline_fp is None or current_fp is None:
         return None, None, None, "Failed to build fingerprints"
 
-    report = compute_drift(baseline_fp, current_fp, baseline_run_dicts, current_run_dicts)
+    report = compute_drift(
+        baseline_fp, current_fp, baseline_run_dicts, current_run_dicts
+    )
     return report, baseline_fp, current_fp, None
 
 
@@ -582,6 +637,7 @@ def run_diff(
     """Run diff and print via rich. Returns 0 on success, 1 on error or above threshold (for CI)."""
     if backend is None:
         from driftbase.backends.factory import get_backend
+
         backend = get_backend()
 
     if console is None:
@@ -635,15 +691,27 @@ def run_diff(
         current_label = "local"
 
     if last_n and against_version:
-        current_run_dicts = get_runs_for_version(backend, "local", limit=last_n, environment=environment)
-        baseline_run_dicts = get_runs_for_version(backend, against_version, limit=5000, environment=environment)
+        current_run_dicts = get_runs_for_version(
+            backend, "local", limit=last_n, environment=environment
+        )
+        baseline_run_dicts = get_runs_for_version(
+            backend, against_version, limit=5000, environment=environment
+        )
     elif current_version == "local":
-        baseline_run_dicts = get_runs_for_version(backend, baseline_version, limit=5000, environment=environment)
-        current_run_dicts = get_runs_for_version(backend, "local", limit=500, environment=environment)
+        baseline_run_dicts = get_runs_for_version(
+            backend, baseline_version, limit=5000, environment=environment
+        )
+        current_run_dicts = get_runs_for_version(
+            backend, "local", limit=500, environment=environment
+        )
     else:
-        baseline_run_dicts = get_runs_for_version(backend, baseline_version, limit=5000, environment=environment)
-        current_run_dicts = get_runs_for_version(backend, current_version, limit=5000, environment=environment)
-    
+        baseline_run_dicts = get_runs_for_version(
+            backend, baseline_version, limit=5000, environment=environment
+        )
+        current_run_dicts = get_runs_for_version(
+            backend, current_version, limit=5000, environment=environment
+        )
+
     baseline_tools = tool_usage_distribution(baseline_run_dicts)
     current_tools = tool_usage_distribution(current_run_dicts)
 
@@ -686,7 +754,10 @@ def run_diff(
             "tool_frequency_diffs": tool_frequency_diffs,
             "top_sequence_shifts": top_sequence_shifts_list,
             "tool_changes": {
-                t: {"baseline_pct": baseline_tools.get(t, 0) * 100, "current_pct": current_tools.get(t, 0) * 100}
+                t: {
+                    "baseline_pct": baseline_tools.get(t, 0) * 100,
+                    "current_pct": current_tools.get(t, 0) * 100,
+                }
                 for t in sorted(set(baseline_tools.keys()) | set(current_tools.keys()))
             },
             "computed_ms": round(elapsed_ms, 1),
@@ -743,6 +814,7 @@ def run_watch(
     """Poll backend and print live diff via rich; exit on Ctrl+C."""
     if backend is None:
         from driftbase.backends.factory import get_backend
+
         backend = get_backend()
 
     if console is None:
@@ -787,7 +859,9 @@ def run_watch(
             console.print(
                 f"[bold]DRIFTBASE WATCH[/] — live · every {interval_seconds}s · against [cyan]{against_version}[/]"
             )
-            console.print(f"[dim]Last updated: {now} · {n_current} runs in current window[/]")
+            console.print(
+                f"[dim]Last updated: {now} · {n_current} runs in current window[/]"
+            )
             console.rule(style="dim")
 
             if err:
@@ -804,8 +878,11 @@ def run_watch(
                     baseline_run_dicts, current_run_dicts, top_n=3
                 )
                 explanation = build_explanation(
-                    report, baseline_fp, current_fp,
-                    tool_frequency_diffs, threshold,
+                    report,
+                    baseline_fp,
+                    current_fp,
+                    tool_frequency_diffs,
+                    threshold,
                 )
                 baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
                 current_cost_10k = calculate_cost_per_10k(current_run_dicts)

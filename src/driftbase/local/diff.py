@@ -66,7 +66,9 @@ def _threshold_multiplier(sample_size: int, min_samples: int = MIN_SAMPLES) -> f
 
     # Logarithmic scaling to soften the penalty as N approaches min_samples
     try:
-        penalty = (math.log(min_samples) - math.log(sample_size)) / math.log(min_samples)
+        penalty = (math.log(min_samples) - math.log(sample_size)) / math.log(
+            min_samples
+        )
         return 1.0 + penalty
     except ValueError:
         return 2.0  # Fallback for edge cases like N=0 or 1
@@ -111,8 +113,12 @@ def _compute_drift_score(
     curr_dist = json.loads(current.tool_sequence_distribution)
     decision_drift = _jensen_shannon_divergence(base_dist, curr_dist)
 
-    base_sem = json.loads(getattr(baseline, "semantic_cluster_distribution", "{}") or "{}")
-    curr_sem = json.loads(getattr(current, "semantic_cluster_distribution", "{}") or "{}")
+    base_sem = json.loads(
+        getattr(baseline, "semantic_cluster_distribution", "{}") or "{}"
+    )
+    curr_sem = json.loads(
+        getattr(current, "semantic_cluster_distribution", "{}") or "{}"
+    )
     semantic_drift = _jensen_shannon_divergence(base_sem, curr_sem)
 
     base_p95 = max(baseline.p95_latency_ms, 1)
@@ -123,7 +129,9 @@ def _compute_drift_score(
     error_drift = min(1.0, error_delta_raw * 2.0)
 
     base_out = max(baseline.avg_output_length, 1.0)
-    output_delta_raw = abs(current.avg_output_length - baseline.avg_output_length) / base_out
+    output_delta_raw = (
+        abs(current.avg_output_length - baseline.avg_output_length) / base_out
+    )
     output_drift = min(1.0, output_delta_raw)
 
     sigma_latency = _sigmoid_contribution(latency_delta_raw, k=2.0, c=1.0)
@@ -185,8 +193,12 @@ def compute_drift(
     curr_dist = json.loads(current.tool_sequence_distribution)
     decision_drift = _jensen_shannon_divergence(base_dist, curr_dist)
 
-    base_sem = json.loads(getattr(baseline, "semantic_cluster_distribution", "{}") or "{}")
-    curr_sem = json.loads(getattr(current, "semantic_cluster_distribution", "{}") or "{}")
+    base_sem = json.loads(
+        getattr(baseline, "semantic_cluster_distribution", "{}") or "{}"
+    )
+    curr_sem = json.loads(
+        getattr(current, "semantic_cluster_distribution", "{}") or "{}"
+    )
     semantic_drift = _jensen_shannon_divergence(base_sem, curr_sem)
     escalation_base = base_sem.get("escalated", 0.0)
     escalation_curr = curr_sem.get("escalated", 0.0)
@@ -200,7 +212,9 @@ def compute_drift(
     error_drift = min(1.0, error_delta_raw * 2.0)
 
     base_out = max(baseline.avg_output_length, 1.0)
-    output_delta_raw = abs(current.avg_output_length - baseline.avg_output_length) / base_out
+    output_delta_raw = (
+        abs(current.avg_output_length - baseline.avg_output_length) / base_out
+    )
     output_drift = min(1.0, output_delta_raw)
 
     sigma_latency = _sigmoid_contribution(latency_delta_raw, k=2.0, c=1.0)
@@ -258,7 +272,12 @@ def compute_drift(
     n_bootstrap = 500
     max_bootstrap_n = 200
 
-    if baseline_runs is not None and current_runs is not None and len(baseline_runs) > 0 and len(current_runs) > 0:
+    if (
+        baseline_runs is not None
+        and current_runs is not None
+        and len(baseline_runs) > 0
+        and len(current_runs) > 0
+    ):
         report.sample_size_warning = min(len(baseline_runs), len(current_runs)) < 30
         report.confidence_interval_pct = 95
         report.bootstrap_iterations = n_bootstrap
@@ -269,10 +288,14 @@ def compute_drift(
         # Cap for bootstrap performance
         if len(baseline_agents) > max_bootstrap_n:
             rng = np.random.default_rng(42)
-            baseline_agents = list(rng.choice(baseline_agents, size=max_bootstrap_n, replace=False))
+            baseline_agents = list(
+                rng.choice(baseline_agents, size=max_bootstrap_n, replace=False)
+            )
         if len(current_agents) > max_bootstrap_n:
             rng = np.random.default_rng(43)
-            current_agents = list(rng.choice(current_agents, size=max_bootstrap_n, replace=False))
+            current_agents = list(
+                rng.choice(current_agents, size=max_bootstrap_n, replace=False)
+            )
 
         n_b, n_c = len(baseline_agents), len(current_agents)
         all_runs = baseline_agents + current_agents

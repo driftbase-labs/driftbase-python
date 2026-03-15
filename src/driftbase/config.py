@@ -16,11 +16,13 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
 # Load .env file if present (idempotent - safe to call multiple times)
 def _load_dotenv():
     """Load .env file for local development (production uses real env vars)."""
     try:
         from dotenv import load_dotenv
+
         env_path = Path.cwd() / ".env"
         if env_path.exists():
             load_dotenv(dotenv_path=env_path, override=False)
@@ -29,6 +31,7 @@ def _load_dotenv():
         logger.debug("python-dotenv not available, skipping .env load")
     except Exception as e:
         logger.debug("Failed to load .env: %s", e)
+
 
 # Load .env on module import (idempotent)
 _load_dotenv()
@@ -141,7 +144,7 @@ class Settings:
     @property
     def DRIFTBASE_SCRUB_PII(self) -> bool:
         """
-        Enable PII scrubbing by default. 
+        Enable PII scrubbing by default.
         Critical for EU AI Act and GDPR compliance.
         Set DRIFTBASE_SCRUB_PII=0 to disable.
         """

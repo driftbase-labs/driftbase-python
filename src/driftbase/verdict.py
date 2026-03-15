@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from driftbase.local.local_store import DriftReport
@@ -81,8 +81,8 @@ def _generate_next_steps(
     if highest_dim == "decision_drift" or report.decision_drift > 0.25:
         steps.append("Review system prompt changes between versions")
         if report.escalation_rate_delta > 0.1:
-            multiplier = (
-                report.escalation_rate_delta / max(0.01, 0.08)
+            multiplier = report.escalation_rate_delta / max(
+                0.01, 0.08
             )  # assuming ~8% baseline
             steps.append(
                 f"Investigate escalation logic - rate jumped {multiplier:.1f}× from baseline"
@@ -178,7 +178,12 @@ def compute_verdict(
                 "Investigate root cause before promoting this version."
             ),
             next_steps=_generate_next_steps(
-                report, highest_dim, baseline_label, current_label, baseline_tools, current_tools
+                report,
+                highest_dim,
+                baseline_label,
+                current_label,
+                baseline_tools,
+                current_tools,
             ),
             exit_code=1,
         )
@@ -189,8 +194,8 @@ def compute_verdict(
         if report.decision_drift > 0.25:
             if report.escalation_rate_delta > 0.08:
                 esc_pct_base = 8.0  # assumed baseline
-                esc_pct_curr = (esc_pct_base + report.escalation_rate_delta * 100)
-                dimension_context = f" Your agent is escalating to humans {esc_pct_curr/esc_pct_base:.1f}× more often than baseline."
+                esc_pct_curr = esc_pct_base + report.escalation_rate_delta * 100
+                dimension_context = f" Your agent is escalating to humans {esc_pct_curr / esc_pct_base:.1f}× more often than baseline."
             else:
                 dimension_context = (
                     " Decision layer behavior changed - check outcome routing."
@@ -199,10 +204,12 @@ def compute_verdict(
             from_ms = 100  # placeholder - would need actual baseline p95
             to_ms = from_ms * (1 + highest_score)
             dimension_context = (
-                f" Latency increased {highest_score*100:.0f}% (p95 ~{to_ms:.0f}ms)."
+                f" Latency increased {highest_score * 100:.0f}% (p95 ~{to_ms:.0f}ms)."
             )
         elif highest_dim == "error_drift":
-            dimension_context = f" Error rate changed by {report.error_drift*50:.1f}%."
+            dimension_context = (
+                f" Error rate changed by {report.error_drift * 50:.1f}%."
+            )
 
         return VerdictResult(
             verdict=Verdict.REVIEW,
@@ -212,7 +219,12 @@ def compute_verdict(
                 "Review changes before promoting to production."
             ),
             next_steps=_generate_next_steps(
-                report, highest_dim, baseline_label, current_label, baseline_tools, current_tools
+                report,
+                highest_dim,
+                baseline_label,
+                current_label,
+                baseline_tools,
+                current_tools,
             ),
             exit_code=1,
         )
@@ -248,15 +260,15 @@ def compute_verdict(
 
 
 def generate_markdown_report(
-    version_a: str, 
-    version_b: str, 
-    report: "DriftReport", 
+    version_a: str,
+    version_b: str,
+    report: DriftReport,
     result: VerdictResult,
     cost_delta_eur: float = 0.0,
-    cost_pct: float = 0.0
+    cost_pct: float = 0.0,
 ) -> str:
     """Generate a clean, PR-ready Markdown block for CI/CD pipelines."""
-    
+
     status_text = {
         Verdict.SHIP: "[PASS]",
         Verdict.MONITOR: "[WARN]",
@@ -274,9 +286,9 @@ Comparing `{version_a}` vs `{version_b}`
 ### Dimension Breakdown
 | Metric | Score | Status |
 |---|---|---|
-| Decision Logic | `{report.decision_drift:.2f}` | {'PASS' if report.decision_drift < 0.25 else 'WARN'} |
-| Latency Profile | `{report.latency_drift:.2f}` | {'PASS' if report.latency_drift < 0.20 else 'WARN'} |
-| Error Rates | `{report.error_drift:.2f}` | {'PASS' if report.error_drift < 0.15 else 'WARN'} |
+| Decision Logic | `{report.decision_drift:.2f}` | {"PASS" if report.decision_drift < 0.25 else "WARN"} |
+| Latency Profile | `{report.latency_drift:.2f}` | {"PASS" if report.latency_drift < 0.20 else "WARN"} |
+| Error Rates | `{report.error_drift:.2f}` | {"PASS" if report.error_drift < 0.15 else "WARN"} |
 """
 
     if cost_pct > 5.0:
@@ -287,7 +299,7 @@ Comparing `{version_a}` vs `{version_b}`
     md += "### Next Steps\n"
     for step in result.next_steps:
         md += f"- {step}\n"
-        
+
     md += "\n> *Generated locally. 100% Data Sovereignty maintained.*\n"
     md += "> *Automate PR comments and CI/CD gates with Driftbase Pro: https://driftbase.io/pro*"
     return md

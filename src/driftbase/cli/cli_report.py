@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import math
-import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -19,7 +18,7 @@ from driftbase.cli.cli_diff import (
     get_runs_for_version,
     tool_usage_distribution,
 )
-from driftbase.local.hypothesis_engine import generate_hypotheses, format_hypotheses
+from driftbase.local.hypothesis_engine import format_hypotheses, generate_hypotheses
 
 FOOTER = "No raw content was captured or stored"
 
@@ -82,11 +81,31 @@ def _build_report_data(
     sample_size_warning = getattr(report, "sample_size_warning", False)
 
     summary_table = [
-        {"metric": "Overall drift", "score": round(overall_drift, 2), "status": _status_label(overall_drift, threshold, is_overall=True)},
-        {"metric": "Decision drift", "score": round(decision_drift, 2), "status": _status_label(decision_drift, threshold)},
-        {"metric": "Latency drift", "score": round(latency_drift, 2), "status": _status_label(latency_drift, threshold)},
-        {"metric": "Tool drift", "score": round(tool_drift_jsd, 2), "status": _status_label(tool_drift_jsd, threshold)},
-        {"metric": "Error drift", "score": round(error_drift, 2), "status": _status_label(error_drift, threshold)},
+        {
+            "metric": "Overall drift",
+            "score": round(overall_drift, 2),
+            "status": _status_label(overall_drift, threshold, is_overall=True),
+        },
+        {
+            "metric": "Decision drift",
+            "score": round(decision_drift, 2),
+            "status": _status_label(decision_drift, threshold),
+        },
+        {
+            "metric": "Latency drift",
+            "score": round(latency_drift, 2),
+            "status": _status_label(latency_drift, threshold),
+        },
+        {
+            "metric": "Tool drift",
+            "score": round(tool_drift_jsd, 2),
+            "status": _status_label(tool_drift_jsd, threshold),
+        },
+        {
+            "metric": "Error drift",
+            "score": round(error_drift, 2),
+            "status": _status_label(error_drift, threshold),
+        },
     ]
 
     # What changed: bullets
@@ -95,8 +114,14 @@ def _build_report_data(
     b_err = baseline_fp.error_rate
     c_err = current_fp.error_rate
     if b_err != c_err:
-        pct = ((c_err - b_err) / b_err * 100) if b_err > 0 else (100.0 if c_err > 0 else 0)
-        what_changed.append(f"**Error rate** {'increased' if c_err > b_err else 'decreased'} from {b_err:.1%} → {c_err:.1%} ({pct:+.0f}%)")
+        pct = (
+            ((c_err - b_err) / b_err * 100)
+            if b_err > 0
+            else (100.0 if c_err > 0 else 0)
+        )
+        what_changed.append(
+            f"**Error rate** {'increased' if c_err > b_err else 'decreased'} from {b_err:.1%} → {c_err:.1%} ({pct:+.0f}%)"
+        )
     # Tool with biggest drop/rise
     all_tools = sorted(set(baseline_tools.keys()) | set(current_tools.keys()))
     for tool in all_tools:
@@ -109,15 +134,21 @@ def _build_report_data(
         delta_pct = ((c - b) / b) * 100
         if abs(delta_pct) >= 15:
             direction = "more" if delta_pct > 0 else "less"
-            what_changed.append(f"**{tool}** called {abs(delta_pct):.0f}% {direction} frequently")
+            what_changed.append(
+                f"**{tool}** called {abs(delta_pct):.0f}% {direction} frequently"
+            )
     # P95 latency
     b_p95 = baseline_fp.p95_latency_ms
     c_p95 = current_fp.p95_latency_ms
     delta_ms = c_p95 - b_p95
     if abs(delta_ms) >= 10:
-        what_changed.append(f"**p95 latency** {'increased' if delta_ms > 0 else 'decreased'} by {abs(delta_ms)}ms ({b_p95}ms → {c_p95}ms)")
+        what_changed.append(
+            f"**p95 latency** {'increased' if delta_ms > 0 else 'decreased'} by {abs(delta_ms)}ms ({b_p95}ms → {c_p95}ms)"
+        )
 
-    hypotheses = generate_hypotheses(report, baseline_tools, current_tools, baseline_n, current_n)
+    hypotheses = generate_hypotheses(
+        report, baseline_tools, current_tools, baseline_n, current_n
+    )
     root_cause_text = format_hypotheses(hypotheses)
     recommendation = (
         "⚠️ **Do not promote to production** until drift is investigated."
@@ -160,7 +191,11 @@ def format_markdown(data: dict[str, Any]) -> str:
         lines.append(f"| {row['metric']} | {row['score']} | {row['status']} |")
     ci_lower = data.get("drift_score_lower")
     ci_upper = data.get("drift_score_upper")
-    if ci_lower is not None and ci_upper is not None and data.get("bootstrap_iterations", 0) > 0:
+    if (
+        ci_lower is not None
+        and ci_upper is not None
+        and data.get("bootstrap_iterations", 0) > 0
+    ):
         lines.append("")
         lines.append(f"95% confidence interval: [{ci_lower:.2f} – {ci_upper:.2f}]")
     lines.extend(["", "### What Changed", ""])
@@ -169,7 +204,19 @@ def format_markdown(data: dict[str, Any]) -> str:
             lines.append(f"- {bullet}")
     else:
         lines.append("- No major changes detected.")
-    lines.extend(["", "### Root Cause Analysis", "", data["root_cause_analysis"], "", "### Recommendation", "", data["recommendation"], ""])
+    lines.extend(
+        [
+            "",
+            "### Root Cause Analysis",
+            "",
+            data["root_cause_analysis"],
+            "",
+            "### Recommendation",
+            "",
+            data["recommendation"],
+            "",
+        ]
+    )
     lines.extend(["---", f"*Generated by Driftbase · {data['footer']}*"])
     return "\n".join(lines)
 
@@ -188,14 +235,22 @@ def format_html_legacy(data: dict[str, Any]) -> str:
     ci_line = ""
     ci_lower = data.get("drift_score_lower")
     ci_upper = data.get("drift_score_upper")
-    if ci_lower is not None and ci_upper is not None and data.get("bootstrap_iterations", 0) > 0:
-        ci_line = f"<p class=\"meta\">95% confidence interval: [{ci_lower:.2f} – {ci_upper:.2f}]</p>"
-    bullets_html = "".join(
-        f"<li>{b.replace('**', '')}</li>" for b in data["what_changed"]
-    ) if data["what_changed"] else "<li>No major changes detected.</li>"
+    if (
+        ci_lower is not None
+        and ci_upper is not None
+        and data.get("bootstrap_iterations", 0) > 0
+    ):
+        ci_line = f'<p class="meta">95% confidence interval: [{ci_lower:.2f} – {ci_upper:.2f}]</p>'
+    bullets_html = (
+        "".join(f"<li>{b.replace('**', '')}</li>" for b in data["what_changed"])
+        if data["what_changed"]
+        else "<li>No major changes detected.</li>"
+    )
     rc_html = data["root_cause_analysis"].replace("\n", "<br>\n")
     rec = data["recommendation"].replace("**", "")  # drop markdown bold for plain HTML
-    rec_html = rec.replace("⚠️", "<strong>⚠️</strong>").replace("✅", "<strong>✅</strong>")
+    rec_html = rec.replace("⚠️", "<strong>⚠️</strong>").replace(
+        "✅", "<strong>✅</strong>"
+    )
     css = """
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #24292f; }
     h1 { font-size: 1.35rem; margin-bottom: 0.25rem; }
@@ -210,17 +265,17 @@ def format_html_legacy(data: dict[str, Any]) -> str:
     """
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Driftbase Report — {data['baseline_version']} → {data['current_version']}</title><style>{css}</style></head>
+<head><meta charset="utf-8"><title>Driftbase Report — {data["baseline_version"]} → {data["current_version"]}</title><style>{css}</style></head>
 <body>
-<h1>Driftbase Behavioral Report — {data['baseline_version']} → {data['current_version']}</h1>
-<p class="meta">Generated: {data['generated_at_utc']} · Runs: {data['baseline_version']} (n={data['baseline_n']}), {data['current_version']} (n={data['current_n']})</p>
+<h1>Driftbase Behavioral Report — {data["baseline_version"]} → {data["current_version"]}</h1>
+<p class="meta">Generated: {data["generated_at_utc"]} · Runs: {data["baseline_version"]} (n={data["baseline_n"]}), {data["current_version"]} (n={data["current_n"]})</p>
 <h2>Summary</h2>
 <table><thead><tr><th>Metric</th><th>Score</th><th>Status</th></tr></thead><tbody>{rows_html}</tbody></table>
 {ci_line}
 <h2>What Changed</h2><ul>{bullets_html}</ul>
 <h2>Root Cause Analysis</h2><p>{rc_html}</p>
 <h2>Recommendation</h2><div class="recommendation">{rec_html}</div>
-<hr><p class="footer">Generated by Driftbase · {data['footer']}</p>
+<hr><p class="footer">Generated by Driftbase · {data["footer"]}</p>
 </body>
 </html>"""
 
@@ -238,7 +293,7 @@ def format_html_verdict(
 ) -> str:
     """Generate modern HTML report using verdict engine and new design."""
     from driftbase.local.hypothesis_engine import generate_hypotheses
-    from driftbase.reports.html import generate_html_report, generate_eu_ai_act_report
+    from driftbase.reports.html import generate_eu_ai_act_report, generate_html_report
     from driftbase.verdict import compute_verdict
 
     baseline_n = baseline_fp.sample_count
@@ -305,13 +360,17 @@ def run_report(
 ) -> int:
     """Generate shareable report; print to stdout or write to file. Returns 0 on success, 1 on error."""
     import time
+
     from rich.console import Console as RichConsole
     from rich.panel import Panel
+
     from driftbase.local.rootcause import tool_frequency_diff
+
     _console = console if console is not None else RichConsole()
 
     if backend is None:
         from driftbase.backends.factory import get_backend
+
         backend = get_backend()
 
     t0 = time.perf_counter()
@@ -339,14 +398,20 @@ def run_report(
         )
         return 1
 
-    baseline_run_dicts = get_runs_for_version(backend, baseline_version, limit=5000, environment=environment)
-    current_run_dicts = get_runs_for_version(backend, current_version, limit=5000, environment=environment)
+    baseline_run_dicts = get_runs_for_version(
+        backend, baseline_version, limit=5000, environment=environment
+    )
+    current_run_dicts = get_runs_for_version(
+        backend, current_version, limit=5000, environment=environment
+    )
     baseline_tools = tool_usage_distribution(baseline_run_dicts)
     current_tools = tool_usage_distribution(current_run_dicts)
 
     # For HTML format, use new verdict-based generator
     if fmt == "html":
-        tool_frequency_diffs = tool_frequency_diff(baseline_run_dicts, current_run_dicts)
+        tool_frequency_diffs = tool_frequency_diff(
+            baseline_run_dicts, current_run_dicts
+        )
         out = format_html_verdict(
             report,
             baseline_fp,
@@ -363,6 +428,7 @@ def run_report(
         final_output_path = output_path
         if output_path is None and template == "eu-ai-act":
             from datetime import datetime
+
             timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
             final_output_path = f"drift-report-eu-ai-act-{baseline_version}-{current_version}-{timestamp}.html"
 
@@ -402,12 +468,41 @@ def run_report(
 @click.command(name="report")
 @click.argument("baseline")
 @click.argument("current")
-@click.option("--format", "-f", "fmt", type=click.Choice(["markdown", "json", "html"]), default="markdown", help="Output format.")
-@click.option("--output", "-o", "output_path", metavar="PATH", help="Write report to file instead of stdout.")
-@click.option("--threshold", "-t", type=float, default=0.20, help="Drift threshold for recommendation (default 0.20).")
+@click.option(
+    "--format",
+    "-f",
+    "fmt",
+    type=click.Choice(["markdown", "json", "html"]),
+    default="markdown",
+    help="Output format.",
+)
+@click.option(
+    "--output",
+    "-o",
+    "output_path",
+    metavar="PATH",
+    help="Write report to file instead of stdout.",
+)
+@click.option(
+    "--threshold",
+    "-t",
+    type=float,
+    default=0.20,
+    help="Drift threshold for recommendation (default 0.20).",
+)
 @click.option("--environment", "-e", default=None, help="Filter by environment.")
-@click.option("--template", type=click.Choice(["standard", "eu-ai-act"]), default="standard", help="Report template (HTML format only).")
-@click.option("--sign", is_flag=True, default=False, help="Include SHA256 integrity hash (eu-ai-act template only).")
+@click.option(
+    "--template",
+    type=click.Choice(["standard", "eu-ai-act"]),
+    default="standard",
+    help="Report template (HTML format only).",
+)
+@click.option(
+    "--sign",
+    is_flag=True,
+    default=False,
+    help="Include SHA256 integrity hash (eu-ai-act template only).",
+)
 @click.pass_context
 def cmd_report(
     ctx: click.Context,

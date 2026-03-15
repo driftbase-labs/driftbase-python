@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentRun:
     """Single agent run for fingerprinting (matches backend run dict shape)."""
+
     id: str
     session_id: str
     deployment_version: str
@@ -47,6 +48,7 @@ class AgentRun:
 @dataclass
 class BehavioralFingerprint:
     """Behavioral fingerprint for a deployment version / time window."""
+
     id: str = ""
     deployment_version: str = ""
     environment: str = ""
@@ -68,6 +70,7 @@ class BehavioralFingerprint:
 @dataclass
 class DriftReport:
     """Drift comparison result between two fingerprints."""
+
     baseline_fingerprint_id: str = ""
     current_fingerprint_id: str = ""
     drift_score: float = 0.0
@@ -77,7 +80,9 @@ class DriftReport:
     error_drift: float = 0.0
     output_drift: float = 0.0
     semantic_drift: float = 0.0
-    escalation_rate_delta: float = 0.0  # current_escalated_frac - baseline_escalated_frac
+    escalation_rate_delta: float = (
+        0.0  # current_escalated_frac - baseline_escalated_frac
+    )
     summary: str = ""
     # Bootstrap confidence interval (95%)
     drift_score_lower: float = 0.0
@@ -131,7 +136,9 @@ def run_dict_to_agent_run(d: dict[str, Any]) -> AgentRun:
 
 
 def _log_dir() -> str:
-    return os.path.dirname(os.path.expanduser(os.getenv("DRIFTBASE_DB_PATH", "~/.driftbase/runs.db")))
+    return os.path.dirname(
+        os.path.expanduser(os.getenv("DRIFTBASE_DB_PATH", "~/.driftbase/runs.db"))
+    )
 
 
 def _log_track_error(context: str, message: str) -> None:
@@ -146,14 +153,18 @@ def _log_track_error(context: str, message: str) -> None:
         pass
 
 
-_write_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue(maxsize=int(os.getenv("DRIFTBASE_MAX_QUEUE_SIZE", "1000")))
+_write_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue(
+    maxsize=int(os.getenv("DRIFTBASE_MAX_QUEUE_SIZE", "1000"))
+)
 _worker: Optional[threading.Thread] = None
 _drop_counter: int = 0
 _batch_counter: int = 0  # Track batches written to trigger periodic pruning
 
 BATCH_SIZE = 10
 BATCH_TIMEOUT_S = 0.05  # 50ms
-PRUNE_EVERY_N_BATCHES = 100  # Only prune once every 100 batches to avoid excessive COUNT queries
+PRUNE_EVERY_N_BATCHES = (
+    100  # Only prune once every 100 batches to avoid excessive COUNT queries
+)
 
 
 def _flush_batch(batch: list[dict[str, Any]]) -> None:
@@ -180,7 +191,7 @@ def _prune_if_needed() -> None:
     try:
         backend = get_backend()
         # Check if backend has prune_if_needed method (SQLite backend)
-        if hasattr(backend, 'prune_if_needed'):
+        if hasattr(backend, "prune_if_needed"):
             backend.prune_if_needed()
     except Exception as e:
         logger.debug("Retention pruning failed: %s", e)

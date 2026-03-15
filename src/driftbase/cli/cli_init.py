@@ -5,10 +5,10 @@ Guides through framework selection and generates copy-paste code snippets.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import click
+
 from driftbase.cli._deps import safe_import_rich
 
 # Lazy import of rich dependencies
@@ -100,7 +100,9 @@ def {agent_function}(input_data):
 output = {agent_function}(input_data)"""
 
 
-def _print_snippet_with_highlighting(console: Console, code: str, use_color: bool) -> None:
+def _print_snippet_with_highlighting(
+    console: Console, code: str, use_color: bool
+) -> None:
     """Print code snippet with syntax highlighting if possible."""
     if not use_color:
         console.print("\n" + code + "\n")
@@ -108,6 +110,7 @@ def _print_snippet_with_highlighting(console: Console, code: str, use_color: boo
 
     try:
         from rich.syntax import Syntax
+
         syntax = Syntax(code, "python", theme="monokai", line_numbers=False)
         console.print()
         console.print(syntax)
@@ -143,53 +146,86 @@ def cmd_init(ctx: click.Context) -> None:
     # Welcome message
     if use_color:
         console.print()
-        console.print(Panel(
-            "[bold]Welcome to Driftbase![/]\n\n"
-            "Driftbase tracks behavioral drift across agent versions.\n"
-            "When you deploy a new prompt, model, or tool — Driftbase detects\n"
-            "if your agent's behavior changed unexpectedly.\n\n"
-            "[dim]This wizard will help you add tracking to your agent in 60 seconds.[/]",
-            title="[bold cyan]🚀 Getting Started[/]",
-            border_style="cyan",
-        ))
+        console.print(
+            Panel(
+                "[bold]Welcome to Driftbase![/]\n\n"
+                "Driftbase tracks behavioral drift across agent versions.\n"
+                "When you deploy a new prompt, model, or tool — Driftbase detects\n"
+                "if your agent's behavior changed unexpectedly.\n\n"
+                "[dim]This wizard will help you add tracking to your agent in 60 seconds.[/]",
+                title="[bold cyan]🚀 Getting Started[/]",
+                border_style="cyan",
+            )
+        )
         console.print()
     else:
         console.print("\n=== Welcome to Driftbase! ===\n")
         console.print("Driftbase tracks behavioral drift across agent versions.")
-        console.print("When you deploy a new prompt, model, or tool — Driftbase detects")
+        console.print(
+            "When you deploy a new prompt, model, or tool — Driftbase detects"
+        )
         console.print("if your agent's behavior changed unexpectedly.\n")
-        console.print("This wizard will help you add tracking to your agent in 60 seconds.\n")
+        console.print(
+            "This wizard will help you add tracking to your agent in 60 seconds.\n"
+        )
 
     # Prompt 1: Framework
-    console.print("[bold]Step 1/3: Which framework are you using?[/]" if use_color else "Step 1/3: Which framework are you using?")
+    console.print(
+        "[bold]Step 1/3: Which framework are you using?[/]"
+        if use_color
+        else "Step 1/3: Which framework are you using?"
+    )
     framework = click.prompt(
         "Framework",
-        type=click.Choice(['langchain', 'langgraph', 'openai', 'autogen', 'crewai', 'other'], case_sensitive=False),
-        default='other',
+        type=click.Choice(
+            ["langchain", "langgraph", "openai", "autogen", "crewai", "other"],
+            case_sensitive=False,
+        ),
+        default="other",
         show_choices=True,
     )
 
     # Prompt 2: Version
-    console.print("\n[bold]Step 2/3: What is your baseline version?[/]" if use_color else "\nStep 2/3: What is your baseline version?")
-    console.print("[dim]This is the version identifier for your current agent (e.g., v1.0, baseline, prod-2024-03)[/]" if use_color else "This is the version identifier for your current agent (e.g., v1.0, baseline, prod-2024-03)")
+    console.print(
+        "\n[bold]Step 2/3: What is your baseline version?[/]"
+        if use_color
+        else "\nStep 2/3: What is your baseline version?"
+    )
+    console.print(
+        "[dim]This is the version identifier for your current agent (e.g., v1.0, baseline, prod-2024-03)[/]"
+        if use_color
+        else "This is the version identifier for your current agent (e.g., v1.0, baseline, prod-2024-03)"
+    )
     version = click.prompt(
         "Version",
         type=str,
-        default='v1.0',
+        default="v1.0",
     )
 
     # Prompt 3: Agent function name (only for "other")
-    if framework == 'other':
-        console.print("\n[bold]Step 3/3: What is your agent function name?[/]" if use_color else "\nStep 3/3: What is your agent function name?")
-        console.print("[dim]The function you want to track (e.g., run_agent, process_request)[/]" if use_color else "The function you want to track (e.g., run_agent, process_request)")
+    if framework == "other":
+        console.print(
+            "\n[bold]Step 3/3: What is your agent function name?[/]"
+            if use_color
+            else "\nStep 3/3: What is your agent function name?"
+        )
+        console.print(
+            "[dim]The function you want to track (e.g., run_agent, process_request)[/]"
+            if use_color
+            else "The function you want to track (e.g., run_agent, process_request)"
+        )
         agent_function = click.prompt(
             "Function name",
             type=str,
-            default='run_agent',
+            default="run_agent",
         )
     else:
-        agent_function = 'run_agent'  # Not used for framework integrations
-        console.print("\n[bold]Step 3/3: Configuration complete![/]" if use_color else "\nStep 3/3: Configuration complete!")
+        agent_function = "run_agent"  # Not used for framework integrations
+        console.print(
+            "\n[bold]Step 3/3: Configuration complete![/]"
+            if use_color
+            else "\nStep 3/3: Configuration complete!"
+        )
 
     # Generate code snippet
     code_snippet = _get_code_snippet(framework, version, agent_function)
@@ -197,10 +233,12 @@ def cmd_init(ctx: click.Context) -> None:
     # Display the code snippet
     console.print()
     if use_color:
-        console.print(Panel(
-            "[bold]Copy and paste this code into your agent:[/]",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                "[bold]Copy and paste this code into your agent:[/]",
+                border_style="green",
+            )
+        )
     else:
         console.print("=== Copy and paste this code into your agent: ===\n")
 
@@ -217,46 +255,66 @@ def cmd_init(ctx: click.Context) -> None:
 
     # Print next steps checklist
     if use_color:
-        console.print(Panel(
-            "[bold]Next steps:[/]\n\n"
-            "  [green]☐[/]  1. Add the code snippet above to your agent\n"
-            "  [green]☐[/]  2. Run your agent at least 50 times to collect baseline data\n"
-            "  [green]☐[/]  3. Verify runs are being captured:\n"
-            f"       [cyan]driftbase runs --version {version}[/]\n"
-            "  [green]☐[/]  4. After deploying a new version (e.g., v2.0), compare drift:\n"
-            f"       [cyan]driftbase diff {version} v2.0[/]\n\n"
-            "[dim]💡 Tip: Driftbase stores all data locally in ~/.driftbase/runs.db\n"
-            "   No data leaves your machine unless you use --remote.[/]",
-            title="[bold yellow]✓ Setup Complete![/]",
-            border_style="yellow",
-        ))
+        console.print(
+            Panel(
+                "[bold]Next steps:[/]\n\n"
+                "  [green]☐[/]  1. Add the code snippet above to your agent\n"
+                "  [green]☐[/]  2. Run your agent at least 50 times to collect baseline data\n"
+                "  [green]☐[/]  3. Verify runs are being captured:\n"
+                f"       [cyan]driftbase runs --version {version}[/]\n"
+                "  [green]☐[/]  4. After deploying a new version (e.g., v2.0), compare drift:\n"
+                f"       [cyan]driftbase diff {version} v2.0[/]\n\n"
+                "[dim]💡 Tip: Driftbase stores all data locally in ~/.driftbase/runs.db\n"
+                "   No data leaves your machine unless you use --remote.[/]",
+                title="[bold yellow]✓ Setup Complete![/]",
+                border_style="yellow",
+            )
+        )
     else:
         console.print("=== Next steps: ===\n")
         console.print("  ☐  1. Add the code snippet above to your agent")
-        console.print("  ☐  2. Run your agent at least 50 times to collect baseline data")
+        console.print(
+            "  ☐  2. Run your agent at least 50 times to collect baseline data"
+        )
         console.print("  ☐  3. Verify runs are being captured:")
         console.print(f"       driftbase runs --version {version}")
-        console.print("  ☐  4. After deploying a new version (e.g., v2.0), compare drift:")
+        console.print(
+            "  ☐  4. After deploying a new version (e.g., v2.0), compare drift:"
+        )
         console.print(f"       driftbase diff {version} v2.0")
-        console.print("\n💡 Tip: Driftbase stores all data locally in ~/.driftbase/runs.db")
+        console.print(
+            "\n💡 Tip: Driftbase stores all data locally in ~/.driftbase/runs.db"
+        )
         console.print("   No data leaves your machine unless you use --remote.\n")
 
     console.print()
 
     # Additional info based on framework
-    if framework in ['langchain', 'langgraph']:
+    if framework in ["langchain", "langgraph"]:
         if use_color:
-            console.print("[dim]📚 LangChain/LangGraph users: The tracer is a standard BaseCallbackHandler.[/]")
-            console.print("[dim]   You can also use it with LangSmith, it won't conflict.[/]\n")
+            console.print(
+                "[dim]📚 LangChain/LangGraph users: The tracer is a standard BaseCallbackHandler.[/]"
+            )
+            console.print(
+                "[dim]   You can also use it with LangSmith, it won't conflict.[/]\n"
+            )
         else:
-            console.print("📚 LangChain/LangGraph users: The tracer is a standard BaseCallbackHandler.")
+            console.print(
+                "📚 LangChain/LangGraph users: The tracer is a standard BaseCallbackHandler."
+            )
             console.print("   You can also use it with LangSmith, it won't conflict.\n")
-    elif framework == 'openai':
+    elif framework == "openai":
         if use_color:
-            console.print("[dim]📚 OpenAI users: The context manager patches calls only within the 'with' block.[/]")
-            console.print("[dim]   Your existing code outside the block is unaffected.[/]\n")
+            console.print(
+                "[dim]📚 OpenAI users: The context manager patches calls only within the 'with' block.[/]"
+            )
+            console.print(
+                "[dim]   Your existing code outside the block is unaffected.[/]\n"
+            )
         else:
-            console.print("📚 OpenAI users: The context manager patches calls only within the 'with' block.")
+            console.print(
+                "📚 OpenAI users: The context manager patches calls only within the 'with' block."
+            )
             console.print("   Your existing code outside the block is unaffected.\n")
 
     if use_color:

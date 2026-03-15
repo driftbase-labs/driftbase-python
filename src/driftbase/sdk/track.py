@@ -16,15 +16,16 @@ import logging
 import os
 import re
 import sys
-import time
 import threading
-import requests
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from driftbase.local.local_store import _log_track_error, enqueue_run
+import requests
+
 from driftbase.config import get_settings
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 # Ensure logger doesn't pollute the user's stdout by default
 logger = logging.getLogger("driftbase")
@@ -38,11 +39,16 @@ OUTCOME_ERROR = "error"
 
 # Pre-compiled regexes for zero-latency PII scrubbing (GDPR/EU AI Act)
 PII_PATTERNS = [
-    (re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'), '[EMAIL]'),
-    (re.compile(r'\b(?:\d[ -]*?){13,16}\b'), '[CREDIT_CARD]'),
-    (re.compile(r'\b(?:[A-Z]{2}[0-9]{2})(?:[ ]?[0-9a-zA-Z]{4}){3,5}\b'), '[IBAN]'),
-    (re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'), '[IP_ADDRESS]'),
-    (re.compile(r'\+?\d{1,4}?[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}'), '[PHONE]'),
+    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b"), "[EMAIL]"),
+    (re.compile(r"\b(?:\d[ -]*?){13,16}\b"), "[CREDIT_CARD]"),
+    (re.compile(r"\b(?:[A-Z]{2}[0-9]{2})(?:[ ]?[0-9a-zA-Z]{4}){3,5}\b"), "[IBAN]"),
+    (re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "[IP_ADDRESS]"),
+    (
+        re.compile(
+            r"\+?\d{1,4}?[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}"
+        ),
+        "[PHONE]",
+    ),
 ]
 
 
@@ -70,7 +76,9 @@ class RunContext:
 
     started_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)  # name, order, input_hash, output_hash, latency_ms
+    tool_calls: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # name, order, input_hash, output_hash, latency_ms
     decision_outcome: str = OUTCOME_RESOLVED
     latency_ms: int = 0
     token_usage: Optional[dict[str, int]] = None
@@ -81,7 +89,7 @@ class RunContext:
     output_length: int = 0
     output_structure_hash: str = ""
     error_count: int = 0
-    
+
     # Added for Azure Cloud Dashboard UI
     raw_input: str = ""
     raw_output: str = ""
@@ -103,8 +111,18 @@ def _classify_decision_outcome(result: Any, exception: Optional[BaseException]) 
         return OUTCOME_RESOLVED
     try:
         if isinstance(result, dict):
-            out = (result.get("outcome") or result.get("decision_outcome") or result.get("status") or "").lower()
-            if out in (OUTCOME_ESCALATED, OUTCOME_FALLBACK, OUTCOME_ERROR, OUTCOME_RESOLVED):
+            out = (
+                result.get("outcome")
+                or result.get("decision_outcome")
+                or result.get("status")
+                or ""
+            ).lower()
+            if out in (
+                OUTCOME_ESCALATED,
+                OUTCOME_FALLBACK,
+                OUTCOME_ERROR,
+                OUTCOME_RESOLVED,
+            ):
                 return out
             if result.get("escalated") is True:
                 return OUTCOME_ESCALATED
@@ -114,11 +132,16 @@ def _classify_decision_outcome(result: Any, exception: Optional[BaseException]) 
                 return OUTCOME_ERROR
         if hasattr(result, "outcome"):
             v = getattr(result, "outcome", None)
-            if isinstance(v, str) and v.lower() in (OUTCOME_ESCALATED, OUTCOME_FALLBACK, OUTCOME_ERROR, OUTCOME_RESOLVED):
+            if isinstance(v, str) and v.lower() in (
+                OUTCOME_ESCALATED,
+                OUTCOME_FALLBACK,
+                OUTCOME_ERROR,
+                OUTCOME_RESOLVED,
+            ):
                 return v.lower()
-        if hasattr(result, "escalated") and getattr(result, "escalated") is True:
+        if hasattr(result, "escalated") and result.escalated is True:
             return OUTCOME_ESCALATED
-        if hasattr(result, "fallback") and getattr(result, "fallback") is True:
+        if hasattr(result, "fallback") and result.fallback is True:
             return OUTCOME_FALLBACK
     except Exception:
         pass
@@ -141,18 +164,25 @@ def _detect_framework(func: Callable[..., Any]) -> str:
     try:
         mod = inspect.getmodule(func)
         if mod is not None:
-            if "langgraph" in mod.__name__: return "langgraph"
-            if "langchain" in mod.__name__: return "langchain"
-            if "llama" in mod.__name__.lower() or "llamaindex" in mod.__name__.lower(): return "llamaindex"
-            if "openai" in mod.__name__: return "openai"
+            if "langgraph" in mod.__name__:
+                return "langgraph"
+            if "langchain" in mod.__name__:
+                return "langchain"
+            if "llama" in mod.__name__.lower() or "llamaindex" in mod.__name__.lower():
+                return "llamaindex"
+            if "openai" in mod.__name__:
+                return "openai"
 
         sig = inspect.signature(func)
         hint = sig.return_annotation
         if hint != inspect.Parameter.empty and hint is not None:
             hint_str = getattr(hint, "__name__", str(hint))
-            if "StateGraph" in hint_str or "langgraph" in str(hint).lower(): return "langgraph"
-            if "Runnable" in hint_str or "langchain" in str(hint): return "langchain"
-            if "openai" in str(hint).lower() or "ChatCompletion" in hint_str: return "openai"
+            if "StateGraph" in hint_str or "langgraph" in str(hint).lower():
+                return "langgraph"
+            if "Runnable" in hint_str or "langchain" in str(hint):
+                return "langchain"
+            if "openai" in str(hint).lower() or "ChatCompletion" in hint_str:
+                return "openai"
     except Exception:
         pass
     return "generic"
@@ -204,14 +234,22 @@ def _capture_generic(
             try:
                 if hasattr(result, "tool_calls"):
                     for tc in getattr(result, "tool_calls", []) or []:
-                        name = getattr(tc, "function", tc) if hasattr(tc, "function") else tc
+                        name = (
+                            getattr(tc, "function", tc)
+                            if hasattr(tc, "function")
+                            else tc
+                        )
                         if isinstance(name, dict):
                             ctx.tool_calls.append({"name": name.get("name", "unknown")})
                         else:
-                            ctx.tool_calls.append({"name": getattr(name, "name", str(name))})
+                            ctx.tool_calls.append(
+                                {"name": getattr(name, "name", str(name))}
+                            )
                 elif isinstance(result, dict) and "tool_calls" in result:
                     for tc in result["tool_calls"] or []:
-                        ctx.tool_calls.append({"name": tc.get("function", {}).get("name", "unknown")})
+                        ctx.tool_calls.append(
+                            {"name": tc.get("function", {}).get("name", "unknown")}
+                        )
             except Exception:
                 pass
 
@@ -291,7 +329,9 @@ def _capture_langchain(
 
     sig = inspect.signature(func)
     params = sig.parameters
-    accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    accepts_config = "config" in params or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
     if accepts_config:
         config = kwargs.get("config") or {}
         if not isinstance(config, dict):
@@ -322,7 +362,9 @@ def _capture_langgraph(
 
     sig = inspect.signature(func)
     params = sig.parameters
-    accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    accepts_config = "config" in params or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
     if accepts_config:
         config = kwargs.get("config") or {}
         if not isinstance(config, dict):
@@ -332,7 +374,6 @@ def _capture_langgraph(
         kwargs = {**kwargs, "config": {**config, "callbacks": callbacks}}
 
     return _capture_generic(func, args, kwargs, ctx)
-
 
 
 def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) -> None:
@@ -345,37 +386,39 @@ def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) 
         try:
             p_tokens = (ctx.token_usage or {}).get("prompt", 0)
             c_tokens = (ctx.token_usage or {}).get("completion", 0)
-            
+
             # Since ctx.raw_input and ctx.raw_output were scrubbed in the wrapper,
             # this payload is completely clean and safe for EU enterprise compliance.
             raw_payload = {
                 "status": "error" if ctx.error_count > 0 else "success",
                 "latency": ctx.latency_ms,
                 "payload": {
-                    "model": ctx.model_name if ctx.model_name != "unknown" else ctx.framework,
+                    "model": ctx.model_name
+                    if ctx.model_name != "unknown"
+                    else ctx.framework,
                     "messages": [{"role": "user", "content": ctx.raw_input}],
                     "response": ctx.raw_output,
                     "prompt_tokens": p_tokens,
                     "completion_tokens": c_tokens,
-                    "total_tokens": p_tokens + c_tokens
-                }
+                    "total_tokens": p_tokens + c_tokens,
+                },
             }
 
             headers = {
                 "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             # Hard 2.0s timeout. Never hang the host application.
             requests.post(
-                "https://app-driftbase-eu-92745.azurewebsites.net/api/capture/", 
-                json=raw_payload, 
-                headers=headers, 
-                timeout=2.0
+                "https://app-driftbase-eu-92745.azurewebsites.net/api/capture/",
+                json=raw_payload,
+                headers=headers,
+                timeout=2.0,
             )
         except Exception as e:
             # Silently catch network drops or rate limits.
             logger.debug(f"Cloud dispatch failed: {str(e)}")
-            
+
     threading.Thread(target=_fire_cloud, daemon=True).start()
 
 
@@ -396,12 +439,12 @@ def track(
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
             ctx = RunContext()
             ctx.framework = framework
-            
+
             # 1. SCRUB THE INPUT DATA BEFORE HASHING
             safe_args = _scrub_pii(args)
             safe_kwargs = _scrub_pii(kwargs)
             ctx.task_input_hash = _hash_content((safe_args, safe_kwargs))[:32]
-            
+
             # Capture UI input securely
             msg_data = safe_kwargs.get("messages") or safe_args
             try:
@@ -433,22 +476,32 @@ def track(
                     payload = _build_payload(ctx, session_id or run_id, version, env)
                     enqueue_run(payload)
                 except Exception as enq_err:
-                    _log_track_error("track_decorator", f"run_id={run_id} enqueue error={enq_err!r}")
-                
+                    _log_track_error(
+                        "track_decorator", f"run_id={run_id} enqueue error={enq_err!r}"
+                    )
+
                 _dispatch_to_cloud(ctx, api_key)
                 raise
 
             try:
                 if result is not None:
                     # Parse objects for clean text and tokens
-                    if hasattr(result, "choices") and isinstance(getattr(result, "choices"), list) and len(result.choices) > 0:
-                        ctx.raw_output = getattr(result.choices[0].message, "content", "")
-                        ctx.framework = "openai" # Auto-correct framework
-                        
+                    if (
+                        hasattr(result, "choices")
+                        and isinstance(result.choices, list)
+                        and len(result.choices) > 0
+                    ):
+                        ctx.raw_output = getattr(
+                            result.choices[0].message, "content", ""
+                        )
+                        ctx.framework = "openai"  # Auto-correct framework
+
                         if hasattr(result, "usage") and result.usage:
                             ctx.token_usage = {
                                 "prompt": getattr(result.usage, "prompt_tokens", 0),
-                                "completion": getattr(result.usage, "completion_tokens", 0)
+                                "completion": getattr(
+                                    result.usage, "completion_tokens", 0
+                                ),
                             }
                     # Fallbacks for standard strings and dicts
                     elif isinstance(result, str):
@@ -460,7 +513,7 @@ def track(
                             ctx.raw_output = json.dumps(result, default=str)
                         except Exception:
                             ctx.raw_output = str(result)
-                            
+
                     # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
                     ctx.raw_output = _scrub_pii(ctx.raw_output)
                     ctx.output_length = len(ctx.raw_output)
@@ -470,7 +523,7 @@ def track(
                 enqueue_run(payload)
             except Exception as e:
                 _log_track_error("track_decorator", f"run_id={run_id} error={e!r}")
-            
+
             return result
 
         @functools.wraps(func)
@@ -481,18 +534,18 @@ def track(
             ctx = RunContext()
             ctx.framework = framework
             start = time.perf_counter()
-            
+
             # 1. SCRUB THE INPUT DATA BEFORE HASHING
             safe_args = _scrub_pii(args)
             safe_kwargs = _scrub_pii(kwargs)
             ctx.task_input_hash = _hash_content((safe_args, safe_kwargs))[:32]
-            
+
             msg_data = safe_kwargs.get("messages") or safe_args
             try:
                 ctx.raw_input = json.dumps(msg_data, default=str)
             except Exception:
                 ctx.raw_input = str(msg_data)
-                
+
             try:
                 if framework == "langgraph":
                     result = await _capture_langgraph_async(func, args, kwargs, ctx)
@@ -518,21 +571,32 @@ def track(
                     payload = _build_payload(ctx, session_id or run_id, version, env)
                     enqueue_run(payload)
                 except Exception as enq_err:
-                    _log_track_error("track_decorator_async", f"run_id={run_id} enqueue error={enq_err!r}")
-                
+                    _log_track_error(
+                        "track_decorator_async",
+                        f"run_id={run_id} enqueue error={enq_err!r}",
+                    )
+
                 _dispatch_to_cloud(ctx, api_key)
                 raise
 
             try:
                 if result is not None:
-                    if hasattr(result, "choices") and isinstance(getattr(result, "choices"), list) and len(result.choices) > 0:
-                        ctx.raw_output = getattr(result.choices[0].message, "content", "")
-                        ctx.framework = "openai" 
-                        
+                    if (
+                        hasattr(result, "choices")
+                        and isinstance(result.choices, list)
+                        and len(result.choices) > 0
+                    ):
+                        ctx.raw_output = getattr(
+                            result.choices[0].message, "content", ""
+                        )
+                        ctx.framework = "openai"
+
                         if hasattr(result, "usage") and result.usage:
                             ctx.token_usage = {
                                 "prompt": getattr(result.usage, "prompt_tokens", 0),
-                                "completion": getattr(result.usage, "completion_tokens", 0)
+                                "completion": getattr(
+                                    result.usage, "completion_tokens", 0
+                                ),
                             }
                     elif isinstance(result, str):
                         ctx.raw_output = result
@@ -543,7 +607,7 @@ def track(
                             ctx.raw_output = json.dumps(result, default=str)
                         except Exception:
                             ctx.raw_output = str(result)
-                            
+
                     # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
                     ctx.raw_output = _scrub_pii(ctx.raw_output)
                     ctx.output_length = len(ctx.raw_output)
@@ -552,8 +616,10 @@ def track(
                 payload = _build_payload(ctx, session_id or run_id, version, env)
                 enqueue_run(payload)
             except Exception as e:
-                _log_track_error("track_decorator_async", f"run_id={run_id} error={e!r}")
-            
+                _log_track_error(
+                    "track_decorator_async", f"run_id={run_id} error={e!r}"
+                )
+
             _dispatch_to_cloud(ctx, api_key)
 
         if inspect.iscoroutinefunction(func):
@@ -563,12 +629,22 @@ def track(
     return decorator
 
 
-async def _capture_generic_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
+async def _capture_generic_async(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    ctx: RunContext,
+) -> Any:
     result = await func(*args, **kwargs)
     return result
 
 
-async def _capture_langchain_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
+async def _capture_langchain_async(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    ctx: RunContext,
+) -> Any:
     try:
         from driftbase.sdk.watcher import DriftbaseCallbackHandler
     except ImportError:
@@ -578,11 +654,22 @@ async def _capture_langchain_async(func: Callable[..., Any], args: tuple[Any, ..
     config = kwargs.get("config") or {}
     if not isinstance(config, dict):
         config = {}
-    kwargs = {**kwargs, "config": {**config, "callbacks": list(config.get("callbacks", [])) + [handler]}}
+    kwargs = {
+        **kwargs,
+        "config": {
+            **config,
+            "callbacks": list(config.get("callbacks", [])) + [handler],
+        },
+    }
     return await func(*args, **kwargs)
 
 
-async def _capture_langgraph_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
+async def _capture_langgraph_async(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    ctx: RunContext,
+) -> Any:
     if "langgraph" not in sys.modules:
         return await _capture_generic_async(func, args, kwargs, ctx)
 
@@ -596,7 +683,9 @@ async def _capture_langgraph_async(func: Callable[..., Any], args: tuple[Any, ..
 
     sig = inspect.signature(func)
     params = sig.parameters
-    accepts_config = "config" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    accepts_config = "config" in params or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
     if accepts_config:
         config = kwargs.get("config") or {}
         if not isinstance(config, dict):
@@ -608,7 +697,12 @@ async def _capture_langgraph_async(func: Callable[..., Any], args: tuple[Any, ..
     return await _capture_generic_async(func, args, kwargs, ctx)
 
 
-async def _capture_openai_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
+async def _capture_openai_async(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    ctx: RunContext,
+) -> Any:
     try:
         openai_mod = __import__("openai", fromlist=["resources"])
         resources = getattr(openai_mod, "resources", None)

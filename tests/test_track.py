@@ -48,6 +48,7 @@ class TestTrackLangGraph(unittest.TestCase):
         mock_graph.invoke = invoke_fn
 
         with patch.dict("sys.modules", {"langgraph": MagicMock()}):
+
             @track(version="test_langgraph")
             def run_agent(state, config=None):
                 return mock_graph.invoke(state, config=config)
@@ -61,7 +62,9 @@ class TestTrackLangGraph(unittest.TestCase):
         tool_sequence = last.get("tool_sequence") or "[]"
         tools = json.loads(tool_sequence)
         self.assertIsInstance(tools, list)
-        self.assertIn("mock_tool", tools, f"tool_sequence should contain 'mock_tool', got {tools}")
+        self.assertIn(
+            "mock_tool", tools, f"tool_sequence should contain 'mock_tool', got {tools}"
+        )
 
 
 if __name__ == "__main__":

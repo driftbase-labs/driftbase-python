@@ -23,13 +23,14 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import CrewAI - fail only at instantiation time
 try:
     import crewai
+
     _CREWAI_AVAILABLE = True
 except ImportError:
     _CREWAI_AVAILABLE = False
@@ -59,6 +60,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _CREWAI_AVAILABLE:
+
     class CrewAITracer:
         """
         Explicit CrewAI tracer that patches crew.kickoff().
@@ -89,6 +91,7 @@ if _CREWAI_AVAILABLE:
             agent_id: Optional[str] = None,
         ):
             import os
+
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
             self.session_id = agent_id or str(uuid4())
@@ -113,7 +116,7 @@ if _CREWAI_AVAILABLE:
                 logger.debug("Crew already instrumented")
                 return
 
-            if not hasattr(crew, 'kickoff'):
+            if not hasattr(crew, "kickoff"):
                 logger.warning("Crew has no kickoff method")
                 return
 
@@ -131,7 +134,9 @@ if _CREWAI_AVAILABLE:
 
             logger.info("CrewAI crew instrumented")
 
-        def _traced_kickoff(self, crew: Any, original_method: Any, *args, **kwargs) -> Any:
+        def _traced_kickoff(
+            self, crew: Any, original_method: Any, *args, **kwargs
+        ) -> Any:
             """Wrapped version of kickoff that tracks execution."""
             started_at = datetime.utcnow()
             start_time = time.perf_counter()
@@ -144,10 +149,12 @@ if _CREWAI_AVAILABLE:
 
             try:
                 # Try to extract task information from the crew
-                if hasattr(crew, 'tasks') and crew.tasks:
+                if hasattr(crew, "tasks") and crew.tasks:
                     tasks_info = []
                     for task in crew.tasks:
-                        task_name = getattr(task, 'description', None) or getattr(task, 'name', 'unknown_task')
+                        task_name = getattr(task, "description", None) or getattr(
+                            task, "name", "unknown_task"
+                        )
                         # Truncate long descriptions
                         if isinstance(task_name, str) and len(task_name) > 50:
                             task_name = task_name[:50] + "..."
@@ -213,8 +220,8 @@ else:
     # Stub when CrewAI is not installed
     class CrewAITracer:
         """Stub when CrewAI is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
-                "CrewAITracer requires crewai. "
-                "Install with: pip install crewai"
+                "CrewAITracer requires crewai. Install with: pip install crewai"
             )

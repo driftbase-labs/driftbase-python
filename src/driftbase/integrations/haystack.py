@@ -19,18 +19,20 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Optional, Iterator
+from typing import Any, Optional
 from uuid import uuid4
 
-from driftbase.local.local_store import enqueue_run, _log_track_error
+from driftbase.local.local_store import _log_track_error, enqueue_run
 
 logger = logging.getLogger(__name__)
 
 # Try to import Haystack - fail only at instantiation time
 try:
-    from haystack.tracing import Tracer, Span
+    from haystack.tracing import Span, Tracer
+
     _HAYSTACK_AVAILABLE = True
 except ImportError:
     _HAYSTACK_AVAILABLE = False
@@ -61,6 +63,7 @@ def _compute_structure_hash(content: Any) -> str:
 
 
 if _HAYSTACK_AVAILABLE:
+
     class DriftbaseSpan(Span):
         """
         Custom span implementation for Haystack tracing.
@@ -71,9 +74,9 @@ if _HAYSTACK_AVAILABLE:
         def __init__(
             self,
             operation_name: str,
-            parent_tracer: "HaystackTracer",
+            parent_tracer: HaystackTracer,
             tags: Optional[dict[str, Any]] = None,
-            parent_span: Optional["DriftbaseSpan"] = None,
+            parent_span: Optional[DriftbaseSpan] = None,
         ):
             self.operation_name = operation_name
             self.parent_tracer = parent_tracer
@@ -101,7 +104,9 @@ if _HAYSTACK_AVAILABLE:
             # Track embedder execution but discard vectors
             if key == "output" and "embedding" in str(value).lower():
                 # Log that embedder ran, but don't store the vector array
-                logger.debug(f"Haystack embedder component executed: {self.operation_name}")
+                logger.debug(
+                    f"Haystack embedder component executed: {self.operation_name}"
+                )
                 # Explicitly drop vector data before storage
                 if isinstance(value, dict) and "embedding" in value:
                     # Replace vector array with metadata only
@@ -111,7 +116,7 @@ if _HAYSTACK_AVAILABLE:
                         value_copy["embedding"] = {
                             "type": "vector",
                             "dimensions": len(embedding),
-                            "dropped": True  # Signal that we intentionally discarded this
+                            "dropped": True,  # Signal that we intentionally discarded this
                         }
                     self._tags[key] = value_copy
 
@@ -166,7 +171,7 @@ if _HAYSTACK_AVAILABLE:
                 except Exception as e:
                     logger.warning(f"Failed to process retrieved document: {e}")
 
-        def __enter__(self) -> "DriftbaseSpan":
+        def __enter__(self) -> DriftbaseSpan:
             """Enter span context."""
             self.parent_tracer._span_stack.append(self)
             return self
@@ -177,7 +182,10 @@ if _HAYSTACK_AVAILABLE:
 
             If this is the root span, trigger pipeline completion.
             """
-            if self.parent_tracer._span_stack and self.parent_tracer._span_stack[-1] == self:
+            if (
+                self.parent_tracer._span_stack
+                and self.parent_tracer._span_stack[-1] == self
+            ):
                 self.parent_tracer._span_stack.pop()
 
             # Record component execution
@@ -192,7 +200,9 @@ if _HAYSTACK_AVAILABLE:
             if exc_type is not None:
                 self.parent_tracer.error_count += 1
                 component_data["error"] = str(exc_val)
-                logger.warning(f"Haystack component failed: {self.operation_name} - {exc_val}")
+                logger.warning(
+                    f"Haystack component failed: {self.operation_name} - {exc_val}"
+                )
 
             self.parent_tracer.component_sequence.append(component_data)
             self.parent_tracer.tool_sequence.append(self.operation_name)
@@ -200,7 +210,6 @@ if _HAYSTACK_AVAILABLE:
             # If this is the root span, save the run
             if self.is_root and not self.parent_tracer._span_stack:
                 self.parent_tracer._save_run()
-
 
     class HaystackTracer(Tracer):
         """
@@ -240,6 +249,7 @@ if _HAYSTACK_AVAILABLE:
             record_full_text: bool = False,
         ):
             import os
+
             self.deployment_version = version
             self.environment = os.getenv("DRIFTBASE_ENVIRONMENT", "production")
             self.session_id = agent_id or str(uuid4())
@@ -306,13 +316,17 @@ if _HAYSTACK_AVAILABLE:
             """
             try:
                 completed_at = datetime.utcnow()
-                latency_ms = int((completed_at - self.started_at).total_seconds() * 1000)
+                latency_ms = int(
+                    (completed_at - self.started_at).total_seconds() * 1000
+                )
 
                 # Compute output metrics
-                output_length = sum(chunk.get("content_length", 0) for chunk in self.retrieved_chunks)
+                output_length = sum(
+                    chunk.get("content_length", 0) for chunk in self.retrieved_chunks
+                )
                 output_structure = {
                     "components": len(self.component_sequence),
-                    "retrieved_docs": len(self.retrieved_chunks)
+                    "retrieved_docs": len(self.retrieved_chunks),
                 }
                 output_structure_hash = _compute_structure_hash(output_structure)
 
@@ -323,7 +337,9 @@ if _HAYSTACK_AVAILABLE:
                     "environment": self.environment,
                     "started_at": self.started_at,
                     "completed_at": completed_at,
-                    "task_input_hash": self.task_input_hash[:32] if self.task_input_hash else "none",
+                    "task_input_hash": self.task_input_hash[:32]
+                    if self.task_input_hash
+                    else "none",
                     "tool_sequence": json.dumps(self.tool_sequence),
                     "tool_call_count": len(self.tool_sequence),
                     "output_length": output_length,
@@ -336,20 +352,22 @@ if _HAYSTACK_AVAILABLE:
 
                 # GDPR-compliant RAG audit trail
                 # Documents are hashed by default; full text only if opt-in
-                payload["rag_audit_trail"] = json.dumps({
-                    "component_sequence": [
-                        {
-                            "name": comp["name"],
-                            "started_at": comp["started_at"],
-                            "completed_at": comp["completed_at"],
-                            "error": comp.get("error"),
-                        }
-                        for comp in self.component_sequence
-                    ],
-                    "retrieved_chunks": self.retrieved_chunks,
-                    "retrieved_documents_count": len(self.retrieved_chunks),
-                    "record_full_text": self.record_full_text,
-                })
+                payload["rag_audit_trail"] = json.dumps(
+                    {
+                        "component_sequence": [
+                            {
+                                "name": comp["name"],
+                                "started_at": comp["started_at"],
+                                "completed_at": comp["completed_at"],
+                                "error": comp.get("error"),
+                            }
+                            for comp in self.component_sequence
+                        ],
+                        "retrieved_chunks": self.retrieved_chunks,
+                        "retrieved_documents_count": len(self.retrieved_chunks),
+                        "record_full_text": self.record_full_text,
+                    }
+                )
 
                 enqueue_run(payload)
                 logger.info(
@@ -365,6 +383,7 @@ else:
     # Stub when Haystack is not installed
     class HaystackTracer:
         """Stub when Haystack is not installed."""
+
         def __init__(self, *args: Any, **kwargs: Any):
             raise ImportError(
                 "HaystackTracer requires haystack-ai. "
