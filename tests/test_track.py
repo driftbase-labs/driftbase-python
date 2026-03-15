@@ -9,11 +9,17 @@ import json
 import os
 import tempfile
 import unittest
+import uuid
 from unittest.mock import MagicMock, patch
 
 from driftbase.backends.factory import clear_backend, get_backend
 from driftbase.local.local_store import drain_local_store
 from driftbase.sdk.track import track
+
+
+# Dummy class to trigger LangGraph auto-detection in @track
+class StateGraph:
+    pass
 
 
 class TestTrackLangGraph(unittest.TestCase):
@@ -34,32 +40,52 @@ class TestTrackLangGraph(unittest.TestCase):
         clear_backend()
 
     def test_langgraph_invoke_captures_tool_sequence(self) -> None:
-        """With LangGraph in sys.modules, decorated function that accepts config and forwards to graph.invoke gets tool calls recorded."""
+        """With LangGraph auto-detected, decorated function gets tool calls recorded."""
         mock_graph = MagicMock()
 
         def invoke_fn(state, config=None):
             if config and "callbacks" in config:
+                run_id = uuid.uuid4()
+                tool_run_id = uuid.uuid4()
                 for cb in config["callbacks"]:
-                    # Directly inject the tool call into the context to bypass mock lifecycle complexity
-                    if hasattr(cb, "run_ctx") and cb.run_ctx is not None:
-                        cb.run_ctx.tool_calls.append(
-                            {"name": "mock_tool", "latency_ms": 10}
+                    # Simulate the exact LangChain/LangGraph event lifecycle
+                    if hasattr(cb, "on_chain_start"):
+                        cb.on_chain_start(
+                            serialized={"name": "mock_graph"},
+                            inputs={},
+                            run_id=run_id,
                         )
+                    if hasattr(cb, "on_tool_start"):
+                        cb.on_tool_start(
+                            serialized={"name": "mock_tool"},
+                            input_str="",
+                            run_id=tool_run_id,
+                            parent_run_id=run_id,
+                        )
+                    if hasattr(cb, "on_tool_end"):
+                        cb.on_tool_end(
+                            output="tool output",
+                            run_id=tool_run_id,
+                            parent_run_id=run_id,
+                        )
+                    if hasattr(cb, "on_chain_end"):
+                        cb.on_chain_end(outputs={"result": "ok"}, run_id=run_id)
             return {"result": "ok"}
 
         mock_graph.invoke = invoke_fn
 
         with patch.dict("sys.modules", {"langgraph": MagicMock()}):
-
+            # The StateGraph type hint triggers the LangGraph framework auto-detection!
             @track(version="test_langgraph")
-            def run_agent(state, config=None):
+            def run_agent(state: StateGraph, config=None):
                 return mock_graph.invoke(state, config=config)
 
-            run_agent({"messages": []})
+            run_agent(StateGraph(), config=None)
 
         drain_local_store(timeout=2.0)
         backend = get_backend()
         last = backend.get_last_run()
+
         self.assertIsNotNone(last, "expected one run to be written")
 
         tool_sequence = last.get("tool_sequence") or "[]"
