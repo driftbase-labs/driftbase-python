@@ -42,22 +42,33 @@ class TestTrackLangGraph(unittest.TestCase):
             if config and "callbacks" in config:
                 run_id = uuid.uuid4()
                 tool_run_id = uuid.uuid4()
-                
+
                 for cb in config["callbacks"]:
                     # 1. Start the main chain (required for tools to not be orphaned)
                     if hasattr(cb, "on_chain_start"):
-                        cb.on_chain_start(serialized={"name": "mock_graph"}, inputs=state, run_id=run_id)
-                    
+                        cb.on_chain_start(
+                            serialized={"name": "mock_graph"},
+                            inputs=state,
+                            run_id=run_id,
+                        )
+
                     # 2. Execute the tool, linking it to the parent chain
                     if hasattr(cb, "on_tool_start"):
-                        cb.on_tool_start(serialized={"name": "mock_tool"}, input_str="", run_id=tool_run_id, parent_run_id=run_id)
+                        cb.on_tool_start(
+                            serialized={"name": "mock_tool"},
+                            input_str="",
+                            run_id=tool_run_id,
+                            parent_run_id=run_id,
+                        )
                     if hasattr(cb, "on_tool_end"):
-                        cb.on_tool_end(output="", run_id=tool_run_id, parent_run_id=run_id)
-                        
+                        cb.on_tool_end(
+                            output="", run_id=tool_run_id, parent_run_id=run_id
+                        )
+
                     # 3. End the main chain
                     if hasattr(cb, "on_chain_end"):
                         cb.on_chain_end(outputs={"result": "ok"}, run_id=run_id)
-                        
+
             return {"result": "ok"}
 
         mock_graph.invoke = invoke_fn
@@ -74,10 +85,10 @@ class TestTrackLangGraph(unittest.TestCase):
         backend = get_backend()
         last = backend.get_last_run()
         self.assertIsNotNone(last, "expected one run to be written")
-        
+
         tool_sequence = last.get("tool_sequence") or "[]"
         tools = json.loads(tool_sequence)
-        
+
         self.assertIsInstance(tools, list)
         self.assertIn(
             "mock_tool", tools, f"tool_sequence should contain 'mock_tool', got {tools}"
