@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
@@ -96,7 +96,7 @@ if _LLAMAINDEX_AVAILABLE:
         def __init__(
             self,
             version: str,
-            agent_id: Optional[str] = None,
+            agent_id: str | None = None,
         ):
             import os
 
@@ -130,7 +130,7 @@ if _LLAMAINDEX_AVAILABLE:
         def on_event_start(
             self,
             event_type: Any,
-            payload: Optional[dict] = None,
+            payload: dict | None = None,
             event_id: str = "",
             parent_id: str = "",
             **kwargs: Any,
@@ -172,7 +172,7 @@ if _LLAMAINDEX_AVAILABLE:
         def on_event_end(
             self,
             event_type: Any,
-            payload: Optional[dict] = None,
+            payload: dict | None = None,
             event_id: str = "",
             **kwargs: Any,
         ) -> None:
@@ -219,15 +219,15 @@ if _LLAMAINDEX_AVAILABLE:
             except Exception as e:
                 logger.debug(f"LlamaIndex tracer on_event_end error: {e}")
 
-        def start_trace(self, trace_id: Optional[str] = None) -> None:
+        def start_trace(self, trace_id: str | None = None) -> None:
             """Called when a trace starts (root-level operation)."""
             self.started_at = datetime.utcnow()
             logger.debug(f"LlamaIndex trace started: {trace_id}")
 
         def end_trace(
             self,
-            trace_id: Optional[str] = None,
-            trace_map: Optional[dict] = None,
+            trace_id: str | None = None,
+            trace_map: dict | None = None,
         ) -> None:
             """
             Called when a trace ends (root-level operation completes).
@@ -320,7 +320,7 @@ if _LLAMAINDEX_AVAILABLE:
 
             return metadata
 
-        def _process_retrieved_node(self, node: Any) -> Optional[dict[str, Any]]:
+        def _process_retrieved_node(self, node: Any) -> dict[str, Any] | None:
             """
             Process a retrieved node from LlamaIndex.
 
@@ -366,7 +366,7 @@ if _LLAMAINDEX_AVAILABLE:
                 logger.debug(f"Failed to process retrieved node: {e}")
                 return None
 
-        def _get_operation_name(self, event_type: Any) -> Optional[str]:
+        def _get_operation_name(self, event_type: Any) -> str | None:
             """Map LlamaIndex event types to readable operation names."""
             try:
                 event_type_str = str(event_type)

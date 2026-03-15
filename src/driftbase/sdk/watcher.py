@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 from uuid import uuid4
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
@@ -60,7 +60,7 @@ class DriftbaseWatcher:
     def __init__(
         self,
         deployment_version: str = "unknown",
-        environment: Optional[str] = None,
+        environment: str | None = None,
     ):
         import os
 
@@ -210,8 +210,8 @@ if _LANGCHAIN_AVAILABLE:
         def __init__(
             self,
             deployment_version: str = "unknown",
-            environment: Optional[str] = None,
-            run_ctx: Optional[Any] = None,
+            environment: str | None = None,
+            run_ctx: Any | None = None,
         ):
             super().__init__()
             import os
@@ -413,7 +413,7 @@ if _LANGCHAIN_AVAILABLE:
             output_length = len(str(output))
             output_structure_hash = _compute_structure_hash(output)
 
-            response_text = self._extract_final_ai_content(output)
+            self._extract_final_ai_content(output)
             cluster_id = "resolved"
             from driftbase.sdk.semantic import is_semantic_available
 

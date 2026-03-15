@@ -8,7 +8,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import create_engine, text
@@ -40,8 +40,8 @@ class AgentRunLocal(SQLModel, table=True):
     error_count: int = 0
     retry_count: int = 0
     semantic_cluster: str = "cluster_none"
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
     raw_prompt: str = ""
     raw_output: str = ""
 

@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import uuid4
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
@@ -97,7 +97,7 @@ if _DSPY_AVAILABLE:
         def __init__(
             self,
             version: str,
-            agent_id: Optional[str] = None,
+            agent_id: str | None = None,
             track_optimizer: bool = False,
         ):
             import os
@@ -142,7 +142,7 @@ if _DSPY_AVAILABLE:
             self,
             call_id: str,
             instance: Any,
-            inputs: Dict[str, Any],
+            inputs: dict[str, Any],
         ) -> None:
             """
             Called by DSPy when a module starts execution.
@@ -192,8 +192,8 @@ if _DSPY_AVAILABLE:
         def on_module_end(
             self,
             call_id: str,
-            outputs: Dict[str, Any],
-            exception: Optional[Exception] = None,
+            outputs: dict[str, Any],
+            exception: Exception | None = None,
         ) -> None:
             """
             Called by DSPy when a module completes or fails.
@@ -297,7 +297,7 @@ if _DSPY_AVAILABLE:
                 logger.debug(f"Failed to extract signature string: {e}")
                 return "unknown"
 
-        def _extract_reasoning(self, outputs: Dict[str, Any]) -> list[str]:
+        def _extract_reasoning(self, outputs: dict[str, Any]) -> list[str]:
             """
             Extract reasoning steps from ChainOfThought or ReAct outputs.
 
@@ -307,17 +307,19 @@ if _DSPY_AVAILABLE:
             try:
                 for key, value in outputs.items():
                     # Check for common reasoning field names
-                    if any(
-                        term in key.lower()
-                        for term in ["thought", "rationale", "reasoning", "chain"]
+                    if (
+                        any(
+                            term in key.lower()
+                            for term in ["thought", "rationale", "reasoning", "chain"]
+                        )
+                        and value
                     ):
-                        if value:
-                            reasoning.append(str(value))
+                        reasoning.append(str(value))
             except Exception as e:
                 logger.debug(f"Failed to extract reasoning: {e}")
             return reasoning
 
-        def _extract_lm_metadata(self, outputs: Dict[str, Any]) -> dict[str, Any]:
+        def _extract_lm_metadata(self, outputs: dict[str, Any]) -> dict[str, Any]:
             """
             Extract LM metadata (model name, provider, token counts).
 

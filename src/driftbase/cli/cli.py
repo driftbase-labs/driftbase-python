@@ -397,14 +397,13 @@ def cmd_versions(ctx: click.Context) -> None:
 def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
     """Delete all runs for a deployment version."""
     console: Console = ctx.obj["console"]
-    if not yes:
-        if not click.confirm(
-            f"This will delete all runs for version {version}. Are you sure? [y/N]",
-            default=False,
-        ):
-            console.print("Aborted.")
-            ctx.exit(0)
-            return
+    if not yes and not click.confirm(
+        f"This will delete all runs for version {version}. Are you sure? [y/N]",
+        default=False,
+    ):
+        console.print("Aborted.")
+        ctx.exit(0)
+        return
     try:
         backend = get_backend()
         n = backend.delete_runs(deployment_version=version)

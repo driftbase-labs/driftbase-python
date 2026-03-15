@@ -21,7 +21,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
@@ -91,7 +91,7 @@ if _OPENAI_AVAILABLE:
         def __init__(
             self,
             version: str,
-            agent_id: Optional[str] = None,
+            agent_id: str | None = None,
         ):
             import os
 
@@ -169,8 +169,6 @@ if _OPENAI_AVAILABLE:
                 tool_sequence = []
                 tool_call_count = 0
                 total_tokens = 0
-                prompt_tokens = 0
-                completion_tokens = 0
                 output_text = ""
 
                 if response is not None:
@@ -200,8 +198,8 @@ if _OPENAI_AVAILABLE:
                         if hasattr(response, "usage"):
                             usage = response.usage
                             total_tokens = getattr(usage, "total_tokens", 0)
-                            prompt_tokens = getattr(usage, "prompt_tokens", 0)
-                            completion_tokens = getattr(usage, "completion_tokens", 0)
+                            getattr(usage, "prompt_tokens", 0)
+                            getattr(usage, "completion_tokens", 0)
 
                     except Exception as e:
                         logger.debug(f"Failed to extract response data: {e}")

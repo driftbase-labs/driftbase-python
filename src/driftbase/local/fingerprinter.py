@@ -343,7 +343,7 @@ async def compute_temporal_baseline_drift_async(
     """
     from driftbase.local.diff import compute_drift
 
-    settings = get_settings()
+    get_settings()
     if store is None:
         from driftbase.store import get_store
 

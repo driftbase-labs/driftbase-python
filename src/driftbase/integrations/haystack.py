@@ -22,7 +22,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
@@ -75,8 +75,8 @@ if _HAYSTACK_AVAILABLE:
             self,
             operation_name: str,
             parent_tracer: HaystackTracer,
-            tags: Optional[dict[str, Any]] = None,
-            parent_span: Optional[DriftbaseSpan] = None,
+            tags: dict[str, Any] | None = None,
+            parent_span: DriftbaseSpan | None = None,
         ):
             self.operation_name = operation_name
             self.parent_tracer = parent_tracer
@@ -245,7 +245,7 @@ if _HAYSTACK_AVAILABLE:
         def __init__(
             self,
             version: str,
-            agent_id: Optional[str] = None,
+            agent_id: str | None = None,
             record_full_text: bool = False,
         ):
             import os
@@ -282,8 +282,8 @@ if _HAYSTACK_AVAILABLE:
         def trace(
             self,
             operation_name: str,
-            tags: Optional[dict[str, Any]] = None,
-            parent_span: Optional[DriftbaseSpan] = None,
+            tags: dict[str, Any] | None = None,
+            parent_span: DriftbaseSpan | None = None,
         ) -> Iterator[DriftbaseSpan]:
             """
             Context manager called by Haystack for each component execution.
@@ -304,7 +304,7 @@ if _HAYSTACK_AVAILABLE:
             with span:
                 yield span
 
-        def current_span(self) -> Optional[DriftbaseSpan]:
+        def current_span(self) -> DriftbaseSpan | None:
             """Return the current active span, or None if no span is active."""
             return self._span_stack[-1] if self._span_stack else None
 

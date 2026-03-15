@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import click
 
@@ -350,11 +350,11 @@ def run_report(
     current_version: str,
     *,
     fmt: str = "markdown",
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
     threshold: float = 0.20,
-    environment: Optional[str] = None,
-    backend: Optional[StorageBackend] = None,
-    console: Optional[Any] = None,
+    environment: str | None = None,
+    backend: StorageBackend | None = None,
+    console: Any | None = None,
     template: str = "standard",
     sign: bool = False,
 ) -> int:
@@ -452,10 +452,7 @@ def run_report(
         threshold,
     )
 
-    if fmt == "json":
-        out = format_json(data)
-    else:
-        out = format_markdown(data)
+    out = format_json(data) if fmt == "json" else format_markdown(data)
 
     if output_path:
         with open(output_path, "w", encoding="utf-8") as f:

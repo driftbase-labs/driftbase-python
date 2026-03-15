@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from driftbase.local.local_store import _log_track_error, enqueue_run
@@ -81,7 +81,7 @@ if _LANGCHAIN_AVAILABLE:
         def __init__(
             self,
             version: str,
-            agent_id: Optional[str] = None,
+            agent_id: str | None = None,
         ):
             super().__init__()
             import os

@@ -10,15 +10,15 @@ and embedding-based clustering is disabled. Install with:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _EMBEDDING_MODEL_AVAILABLE = False
-EmbeddingModel: Optional[type] = (
+EmbeddingModel: type | None = (
     None  # Alias for TextEmbedding for backwards compatibility
 )
-TextEmbedding: Optional[type] = None
+TextEmbedding: type | None = None
 _warned = False
 
 

@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Type alias for drift report attributes we need
 DriftReportLike = Any
 
 
-def _bundled_rules_path() -> Optional[Path]:
+def _bundled_rules_path() -> Path | None:
     """Return path to bundled hypothesis_rules.yaml (for _rules_path fallback)."""
     try:
         from importlib.resources import files
@@ -75,10 +75,10 @@ def _load_rules() -> list[dict[str, Any]]:
 def _compute_tool_deltas(
     baseline_tools: dict[str, float],
     current_tools: dict[str, float],
-) -> tuple[Optional[tuple[str, float]], Optional[tuple[str, float]]]:
+) -> tuple[tuple[str, float] | None, tuple[str, float] | None]:
     """Return (biggest_drop, biggest_rise) as (tool_name, delta_pct)."""
-    biggest_drop: Optional[tuple[str, float]] = None
-    biggest_rise: Optional[tuple[str, float]] = None
+    biggest_drop: tuple[str, float] | None = None
+    biggest_rise: tuple[str, float] | None = None
     all_tools = sorted(set(baseline_tools.keys()) | set(current_tools.keys()))
     for tool in all_tools:
         b = baseline_tools.get(tool, 0.0) * 100

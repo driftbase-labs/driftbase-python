@@ -123,7 +123,7 @@ def _compute_drift_score(
 
     base_p95 = max(baseline.p95_latency_ms, 1)
     latency_delta_raw = abs(current.p95_latency_ms - baseline.p95_latency_ms) / base_p95
-    latency_drift = min(1.0, latency_delta_raw)
+    min(1.0, latency_delta_raw)
 
     error_delta_raw = abs(current.error_rate - baseline.error_rate)
     error_drift = min(1.0, error_delta_raw * 2.0)

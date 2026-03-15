@@ -20,7 +20,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import requests
 
@@ -75,14 +75,14 @@ class RunContext:
     """Mutable context for a single tracked run."""
 
     started_at: datetime = field(default_factory=datetime.utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     tool_calls: list[dict[str, Any]] = field(
         default_factory=list
     )  # name, order, input_hash, output_hash, latency_ms
     decision_outcome: str = OUTCOME_RESOLVED
     latency_ms: int = 0
-    token_usage: Optional[dict[str, int]] = None
-    error_type: Optional[str] = None
+    token_usage: dict[str, int] | None = None
+    error_type: str | None = None
     retry_count: int = 0
     framework: str = "generic"
     task_input_hash: str = ""
@@ -104,7 +104,7 @@ def _hash_content(content: Any) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
-def _classify_decision_outcome(result: Any, exception: Optional[BaseException]) -> str:
+def _classify_decision_outcome(result: Any, exception: BaseException | None) -> str:
     if exception is not None:
         return OUTCOME_ERROR
     if result is None:
@@ -174,6 +174,21 @@ def _detect_framework(func: Callable[..., Any]) -> str:
                 return "openai"
 
         sig = inspect.signature(func)
+
+        # Check parameter annotations
+        for param in sig.parameters.values():
+            hint = param.annotation
+            if hint is inspect.Parameter.empty:
+                continue
+            hint_str = str(hint)
+            if "StateGraph" in hint_str or "langgraph" in str(hint).lower():
+                return "langgraph"
+            if "Runnable" in hint_str or "langchain" in str(hint):
+                return "langchain"
+            if "openai" in str(hint).lower() or "ChatCompletion" in hint_str:
+                return "openai"
+
+        # Check return annotation
         hint = sig.return_annotation
         if hint != inspect.Parameter.empty and hint is not None:
             hint_str = getattr(hint, "__name__", str(hint))
@@ -376,7 +391,7 @@ def _capture_langgraph(
     return _capture_generic(func, args, kwargs, ctx)
 
 
-def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) -> None:
+def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: str | None = None) -> None:
     """Silently dispatch payload to Azure if API key exists. Data is already scrubbed."""
     api_key = explicit_api_key or os.getenv("DRIFTBASE_API_KEY")
     if not api_key:
@@ -424,8 +439,8 @@ def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) 
 
 def track(
     version: str = "unknown",
-    environment: Optional[str] = None,
-    api_key: Optional[str] = None,
+    environment: str | None = None,
+    api_key: str | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:

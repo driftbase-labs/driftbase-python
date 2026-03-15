@@ -36,6 +36,8 @@ class TestTrackLangGraph(unittest.TestCase):
 
     def test_langgraph_invoke_captures_tool_sequence(self) -> None:
         """With LangGraph auto-detected, decorated function gets tool calls recorded."""
+        import sys
+
         mock_graph = MagicMock()
         mock_graph.invoke.return_value = {"result": "ok"}
 
@@ -49,10 +51,11 @@ class TestTrackLangGraph(unittest.TestCase):
                 # injecting the tool call into the context the moment it is initialized.
                 ctx.tool_calls.append({"name": "mock_tool", "latency_ms": 42})
 
-        with patch.object(DriftbaseCallbackHandler, "__init__", mocked_init):
+        # Mock sys.modules to pretend langgraph is installed
+        with patch.dict(sys.modules, {"langgraph": MagicMock()}), patch.object(DriftbaseCallbackHandler, "__init__", mocked_init):
             # The 'langgraph' type hint string guarantees the auto-detector triggers perfectly
             @track(version="test_langgraph")
-            def run_agent(state: "langgraph", config=None):
+            def run_agent(state: "langgraph", config=None):  # type: ignore[name-defined]  # noqa: F821, UP037
                 return mock_graph.invoke(state, config=config)
 
             run_agent("dummy_state")

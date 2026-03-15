@@ -9,13 +9,14 @@ adds negligible latency. Backend is chosen by DRIFTBASE_BACKEND (default: sqlite
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import os
 import queue
 import threading
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from driftbase.backends.factory import get_backend
 
@@ -52,8 +53,8 @@ class BehavioralFingerprint:
     id: str = ""
     deployment_version: str = ""
     environment: str = ""
-    window_start: Optional[datetime] = None
-    window_end: Optional[datetime] = None
+    window_start: datetime | None = None
+    window_end: datetime | None = None
     sample_count: int = 0
     tool_sequence_distribution: str = "{}"
     avg_tool_call_count: float = 0.0
@@ -148,15 +149,15 @@ def _log_track_error(context: str, message: str) -> None:
     log_file = os.path.join(log_dir, "errors.log")
     try:
         with open(log_file, "a") as f:
-            f.write("[%s] %s: %s\n" % (datetime.utcnow().isoformat(), context, message))
+            f.write(f"[{datetime.utcnow().isoformat()}] {context}: {message}\n")
     except Exception:
         pass
 
 
-_write_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue(
+_write_queue: queue.Queue[dict[str, Any] | None] = queue.Queue(
     maxsize=int(os.getenv("DRIFTBASE_MAX_QUEUE_SIZE", "1000"))
 )
-_worker: Optional[threading.Thread] = None
+_worker: threading.Thread | None = None
 _drop_counter: int = 0
 _batch_counter: int = 0  # Track batches written to trigger periodic pruning
 
@@ -263,19 +264,15 @@ def enqueue_run(payload: dict[str, Any]) -> None:
 
 def shutdown_local_store() -> None:
     """Signal the worker to stop (e.g. at exit). Pending runs may still be written."""
-    try:
+    with contextlib.suppress(queue.Full):
         _write_queue.put_nowait(None)
-    except queue.Full:
-        pass
 
 
 def drain_local_store(timeout: float = 2.0) -> None:
     """Signal shutdown and block until the write worker has flushed and exited. Use in tests to avoid time.sleep."""
     global _worker
-    try:
+    with contextlib.suppress(queue.Full):
         _write_queue.put_nowait(None)
-    except queue.Full:
-        pass
     if _worker is not None:
         _worker.join(timeout=timeout)
         _worker = None

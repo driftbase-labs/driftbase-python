@@ -11,7 +11,7 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import click
 
@@ -231,7 +231,7 @@ def get_runs_for_version(
     backend: StorageBackend,
     version: str,
     limit: int = 5000,
-    environment: Optional[str] = None,
+    environment: str | None = None,
 ) -> list[dict[str, Any]]:
     """Get runs for a version. Use version='local' for last N runs (no version filter)."""
     if version == "local":
@@ -247,7 +247,7 @@ def fingerprint_from_runs(
     run_dicts: list[dict[str, Any]],
     label: str,
     environment: str = "production",
-) -> Optional[BehavioralFingerprint]:
+) -> BehavioralFingerprint | None:
     """Build a behavioral fingerprint from run dicts (no DB persist)."""
     if not run_dicts:
         return None
@@ -310,9 +310,9 @@ def render_diff_report(
     top_sequence_shifts_list: list[dict[str, Any]],
     explanation: str,
     threshold: float = DEFAULT_THRESHOLD,
-    compute_time_ms: Optional[float] = None,
-    baseline_cost_per_10k: Optional[float] = None,
-    current_cost_per_10k: Optional[float] = None,
+    compute_time_ms: float | None = None,
+    baseline_cost_per_10k: float | None = None,
+    current_cost_per_10k: float | None = None,
 ) -> int:
     """Render drift report using rich Table and Panel (no raw ANSI)."""
     from driftbase.verdict import compute_verdict
@@ -542,16 +542,16 @@ def diff_local(
     baseline_version: str,
     current_version: str,
     *,
-    last_n: Optional[int] = None,
-    against_version: Optional[str] = None,
-    environment: Optional[str] = None,
+    last_n: int | None = None,
+    against_version: str | None = None,
+    environment: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     min_samples_warning: int = MIN_SAMPLES_WARNING,
 ) -> tuple[
-    Optional[DriftReport],
-    Optional[BehavioralFingerprint],
-    Optional[BehavioralFingerprint],
-    Optional[str],
+    DriftReport | None,
+    BehavioralFingerprint | None,
+    BehavioralFingerprint | None,
+    str | None,
 ]:
     """
     Compute drift between two run sets from the local backend.
@@ -625,14 +625,14 @@ def run_diff(
     baseline_version: str,
     current_version: str,
     *,
-    last_n: Optional[int] = None,
-    against_version: Optional[str] = None,
-    environment: Optional[str] = None,
+    last_n: int | None = None,
+    against_version: str | None = None,
+    environment: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     json_output: bool = False,
     use_color: bool = True,
-    backend: Optional[StorageBackend] = None,
-    console: Optional[Console] = None,
+    backend: StorageBackend | None = None,
+    console: Console | None = None,
 ) -> int:
     """Run diff and print via rich. Returns 0 on success, 1 on error or above threshold (for CI)."""
     if backend is None:
@@ -804,12 +804,12 @@ def run_watch(
     interval_seconds: float = 5.0,
     min_runs: int = 10,
     last_n: int = 20,
-    environment: Optional[str] = None,
+    environment: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     use_color: bool = True,
-    backend: Optional[StorageBackend] = None,
-    console: Optional[Console] = None,
-    max_iterations: Optional[int] = None,
+    backend: StorageBackend | None = None,
+    console: Console | None = None,
+    max_iterations: int | None = None,
 ) -> None:
     """Poll backend and print live diff via rich; exit on Ctrl+C."""
     if backend is None:

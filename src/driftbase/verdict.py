@@ -280,7 +280,7 @@ def generate_markdown_report(
 Comparing `{version_a}` vs `{version_b}`
 
 ### {status_text} {result.title}
-**Overall Drift Score:** `{report.drift_score:.2f}` (Threshold: 0.40)  
+**Overall Drift Score:** `{report.drift_score:.2f}` (Threshold: 0.40)
 *{result.explanation}*
 
 ### Dimension Breakdown

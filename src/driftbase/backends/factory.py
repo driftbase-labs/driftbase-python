@@ -8,7 +8,6 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Optional
 
 from driftbase.backends.base import StorageBackend
 from driftbase.backends.sqlite import SQLiteBackend
@@ -16,7 +15,7 @@ from driftbase.backends.sqlite import SQLiteBackend
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_cached_backend: Optional[StorageBackend] = None
+_cached_backend: StorageBackend | None = None
 
 
 def _resolve_db_path_with_fallbacks() -> str:

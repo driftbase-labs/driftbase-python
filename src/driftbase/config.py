@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ def _env_bool(key: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-def _env_int(key: str, default: int, min_val: Optional[int] = None) -> int:
+def _env_int(key: str, default: int, min_val: int | None = None) -> int:
     raw = os.environ.get(key)
     if raw is None:
         return default
@@ -151,7 +150,7 @@ class Settings:
         return _env_bool("DRIFTBASE_SCRUB_PII", True)
 
 
-_settings: Optional[Settings] = None
+_settings: Settings | None = None
 
 
 def get_settings() -> Settings:
