@@ -31,7 +31,7 @@ Driftbase gives you a single drift score, a financial delta in euros, and a root
 | **Root cause hypotheses** | Auto-generated plain-English explanations of what changed |
 | **Zero-egress architecture** | All data stays on your machine — no US servers, GDPR-compliant by design |
 | **EU AI Act compliance** | Generate Article 72 post-market monitoring reports with `--template eu-ai-act` |
-| **Framework-agnostic** | Auto-detects LangChain, LangGraph, OpenAI, AutoGen, CrewAI — zero config |
+| **Framework-agnostic** | Auto-detects LangChain, LangGraph, OpenAI, AutoGen, CrewAI, smolagents, Haystack, DSPy, LlamaIndex — zero config |
 
 ---
 
@@ -127,6 +127,10 @@ Driftbase has native integrations for:
 - **LangGraph** (graph-based workflows)
 - **AutoGen** (multi-agent conversations)
 - **CrewAI** (crew-based agent orchestration)
+- **smolagents** (Hugging Face code-first agents)
+- **Haystack** (deepset RAG pipelines)
+- **DSPy** (programmatic prompt optimization)
+- **LlamaIndex** (data framework for LLM applications)
 
 ### Quick Integration Examples
 
@@ -178,6 +182,110 @@ def run_langgraph_workflow(input_data: dict):
     # ... build your graph
     return graph.invoke(input_data)
 ```
+
+#### smolagents (Hugging Face)
+
+For **code-first agents** that require full auditability (EU AI Act compliance):
+
+```python
+from driftbase.integrations import SmolagentsTracer
+from smolagents import ToolCallingAgent, DuckDuckGoSearchTool
+
+tracer = SmolagentsTracer(version="v1.0", agent_id="research-agent")
+agent = ToolCallingAgent(
+    model=model,
+    tools=[DuckDuckGoSearchTool()],
+    step_callbacks=[tracer]  # Attach the tracer
+)
+result = agent.run("Find the latest AI regulations")
+```
+
+**Why use the explicit tracer?** smolagents generates Python code at runtime and executes it in a sandbox. The `SmolagentsTracer` captures:
+- **Generated code blocks** (full text for local audit trail)
+- **Sandbox execution outputs** (stdout, results, errors)
+- **Planning steps** (model reasoning before code generation)
+- **Action steps** (actual code execution)
+
+This provides **complete traceability** for high-risk AI systems under EU AI Act Article 72.
+
+#### Haystack (deepset)
+
+For **GDPR-compliant RAG pipelines** (German/Dutch enterprise on-premise deployments):
+
+```python
+from driftbase.integrations import HaystackTracer
+from haystack import Pipeline
+from haystack.tracing import enable_tracing
+
+tracer = HaystackTracer(version="v1.0", agent_id="rag-pipeline")
+enable_tracing(tracer)  # Enable BEFORE building pipeline
+
+pipeline = Pipeline()
+# ... add retriever, prompt builder, LLM components
+result = pipeline.run({"query": "What are GDPR requirements?"})
+```
+
+**GDPR-first design:** By default, document content is **SHA256-hashed**, not stored as raw text. This prevents GDPR liability when retrieving employee records or financial data. The tracer captures:
+- **Document metadata** (source, score, content hash)
+- **Component execution sequence** (embedder → retriever → prompt builder → LLM)
+- **Filters applied** (metadata queries for reproducibility)
+- **Retrieval counts** (number of chunks per query)
+
+Set `record_full_text=True` to store raw text (opt-in for companies that accept the privacy risk).
+
+#### DSPy
+
+For **programmatic LM systems** requiring exact model traceability (EU AI Act compliance):
+
+```python
+from driftbase.integrations import DSPyTracer
+import dspy
+
+tracer = DSPyTracer(version="v1.0", agent_id="qa-system")
+dspy.configure(callbacks=[tracer], lm=dspy.LM("openai/gpt-4o"))
+
+class QA(dspy.Module):
+    def forward(self, question):
+        return dspy.Predict("question -> answer")(question=question)
+
+qa = QA()
+result = qa(question="What is DSPy?")
+```
+
+**EU AI Act traceability:** The tracer captures **exact model strings** (e.g., "openai/gpt-4o-mini") and token counts per module. If a provider silently updates model weights and causes failures, European auditors can trace back to the precise model version. The tracer also captures:
+- **Signature strings** ("question -> answer") - documented intent for transparency
+- **Resolved field schemas** (actual input/output structure)
+- **Reasoning steps** (ChainOfThought, ReAct intermediate thoughts)
+- **LM metadata** (model, provider, tokens)
+
+**GDPR data minimization:** `track_optimizer=False` by default. DSPy teleprompters run thousands of LM calls during compilation. Storing these violates data minimization principles and bloats your database. Only production inference is tracked unless you explicitly set `track_optimizer=True` for debugging.
+
+#### LlamaIndex
+
+For **RAG and agentic workflows** with comprehensive event tracking:
+
+```python
+from driftbase.integrations import LlamaIndexTracer
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core.settings import Settings
+
+tracer = LlamaIndexTracer(version="v1.0", agent_id="rag-engine")
+Settings.callback_manager.add_handler(tracer)
+
+documents = SimpleDirectoryReader("data").load_data()
+index = VectorStoreIndex.from_documents(documents)
+query_engine = index.as_query_engine()
+response = query_engine.query("What is LlamaIndex?")
+```
+
+**Comprehensive event capture:** The tracer hooks into LlamaIndex's native callback system and captures every operation:
+- **Query events** (user queries with latency)
+- **Retrieval events** (documents retrieved from index, GDPR-hashed)
+- **LLM events** (generation calls with exact model name and token counts)
+- **Embedding events** (query and document vectorization)
+- **Synthesis events** (response generation from retrieved context)
+
+**Migration from auto-detection:** If you were using the `@track()` decorator with LlamaIndex, switch to the explicit `LlamaIndexTracer` for better event granularity and control. The auto-detection fallback has been removed in favor of the explicit integration.
 
 The `@track` decorator captures:
 - Tool call sequences and parameters (hashed)

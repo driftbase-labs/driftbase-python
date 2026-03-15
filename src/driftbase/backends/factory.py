@@ -1,5 +1,11 @@
 """
-Factory for storage backend: SQLite only (reads DRIFTBASE_DB_PATH).
+Factory for storage backend: SQLite (default) or PostgreSQL (Pro tier).
+
+Security best practices:
+- Auto-loads .env file if present (for local development)
+- Never hardcodes credentials
+- Falls back to SQLite if DATABASE_URL not set
+- Validates DATABASE_URL format for PostgreSQL
 """
 
 from __future__ import annotations
@@ -14,6 +20,25 @@ from driftbase.backends.base import StorageBackend
 from driftbase.backends.sqlite import SQLiteBackend
 
 logger = logging.getLogger(__name__)
+
+# Load .env file if present (idempotent - safe to call multiple times)
+def _load_dotenv():
+    """Load .env file for local development (production uses real env vars)."""
+    try:
+        from dotenv import load_dotenv
+        env_path = Path.cwd() / ".env"
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=False)
+            logger.debug("Loaded environment from .env file")
+    except ImportError:
+        # python-dotenv not installed (shouldn't happen after adding to deps)
+        logger.debug("python-dotenv not available, skipping .env load")
+    except Exception as e:
+        # Don't crash if .env loading fails
+        logger.debug("Failed to load .env: %s", e)
+
+# Load .env on module import (idempotent)
+_load_dotenv()
 
 _lock = threading.Lock()
 _cached_backend: Optional[StorageBackend] = None
@@ -59,7 +84,36 @@ def _resolve_db_path_with_fallbacks() -> str:
 
 
 def _create_backend() -> StorageBackend:
-    """Create SQLite backend from env (caller must hold _lock if mutating _cached_backend)."""
+    """
+    Create storage backend from environment configuration.
+
+    Priority:
+    1. If DATABASE_URL is set → PostgreSQL backend (Pro tier)
+    2. If DRIFTBASE_DB_PATH is set → SQLite at specified path
+    3. Default → SQLite with fallback chain (free tier)
+
+    Returns:
+        StorageBackend instance (SQLite or PostgreSQL)
+    """
+    # Check for PostgreSQL (Pro tier)
+    database_url = os.getenv("DATABASE_URL")
+    if database_url and database_url.strip():
+        logger.info("DATABASE_URL detected, using PostgreSQL backend")
+        try:
+            from driftbase.backends.postgres import PostgreSQLBackend
+            # Use SQLAlchemy by default for better ORM support
+            return PostgreSQLBackend(use_sqlalchemy=True)
+        except ImportError as e:
+            logger.error(
+                "PostgreSQL backend requested but dependencies not installed. "
+                "Install with: pip install 'driftbase[postgres]'"
+            )
+            raise ImportError(
+                "PostgreSQL backend requires additional dependencies. "
+                "Install with: pip install 'driftbase[postgres]'"
+            ) from e
+
+    # Fall back to SQLite (default for free tier)
     env_path = os.getenv("DRIFTBASE_DB_PATH")
     if env_path:
         # User explicitly set the path, use it as-is (expand ~ if present)
@@ -68,6 +122,7 @@ def _create_backend() -> StorageBackend:
         # Use fallback chain for default path
         db_path = _resolve_db_path_with_fallbacks()
 
+    logger.debug("Using SQLite backend at %s", db_path)
     return SQLiteBackend(db_path)
 
 

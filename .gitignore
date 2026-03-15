@@ -134,8 +134,10 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
+# Environments (CRITICAL: Never commit .env - contains secrets)
 .env
+.env.local
+.env.*.local
 .envrc
 .venv
 env/
@@ -194,12 +196,13 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# Cursor
+# Cursor / Claude IDE
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+.claude/
 
 # Marimo
 marimo/_static/
@@ -233,8 +236,5 @@ Thumbs.db
 
 # IDE Workspaces (uncommented for safety)
 .vscode/
-.idea/.claude/
-.env
-agent.py
+.idea/
 test_limit.py
-.env

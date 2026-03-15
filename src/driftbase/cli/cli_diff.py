@@ -24,6 +24,7 @@ from driftbase.local.rootcause import (
     tool_frequency_diff,
 )
 from driftbase.local.local_store import AgentRun, BehavioralFingerprint, DriftReport, run_dict_to_agent_run
+from driftbase.pricing import calculate_cost_per_10k, get_rates_for_display
 
 # Lazy import of heavy [analyze] dependencies
 Console, Panel, Table = safe_import_rich()
@@ -273,6 +274,8 @@ def render_diff_report(
     explanation: str,
     threshold: float = DEFAULT_THRESHOLD,
     compute_time_ms: Optional[float] = None,
+    baseline_cost_per_10k: Optional[float] = None,
+    current_cost_per_10k: Optional[float] = None,
 ) -> int:
     """Render drift report using rich Table and Panel (no raw ANSI)."""
     from driftbase.verdict import compute_verdict
@@ -305,6 +308,19 @@ def render_diff_report(
         if upper - lower > 0.01:
             ci_display = f"  [{lower:.2f}–{upper:.2f}, 95% CI]"
     console.print(f"  Overall drift      [bold]{report.drift_score:.2f}[/]{ci_display}")
+
+    # Cost impact (per 10k runs) when token data is available
+    if baseline_cost_per_10k is not None and current_cost_per_10k is not None:
+        delta_cost = current_cost_per_10k - baseline_cost_per_10k
+        cost_color = "red" if delta_cost > 0 else "green" if delta_cost < 0 else "dim"
+        cost_sign = "+" if delta_cost > 0 else ""
+        console.print(
+            f"  Cost (per 10k runs) [bold]{baseline_cost_per_10k:.2f}[/] €  →  [bold]{current_cost_per_10k:.2f}[/] €  "
+            f"([{cost_color}]{cost_sign}{delta_cost:.2f} €[/])"
+        )
+        from driftbase.pricing import get_rates_for_display
+        rate_p, rate_c = get_rates_for_display()
+        console.print(f"  [dim]Rates: €{rate_p:.2f}/1M prompt, €{rate_c:.2f}/1M completion (DRIFTBASE_RATE_* to override)[/]")
     console.print()
 
     dims = [
@@ -675,11 +691,22 @@ def run_diff(
             },
             "computed_ms": round(elapsed_ms, 1),
         }
+        # Add cost per 10k when token data is available
+        baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
+        current_cost_10k = calculate_cost_per_10k(current_run_dicts)
+        out["cost_per_10k_baseline_eur"] = round(baseline_cost_10k, 2)
+        out["cost_per_10k_current_eur"] = round(current_cost_10k, 2)
+        out["cost_per_10k_delta_eur"] = round(current_cost_10k - baseline_cost_10k, 2)
+        rate_p, rate_c = get_rates_for_display()
+        out["rate_prompt_eur_per_1m"] = rate_p
+        out["rate_completion_eur_per_1m"] = rate_c
         if report.drift_score >= threshold and explanation:
             out["explanation"] = explanation
         console.print(json.dumps(out, indent=2))
         return verdict_result.exit_code
 
+    baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
+    current_cost_10k = calculate_cost_per_10k(current_run_dicts)
     exit_code = render_diff_report(
         console,
         report,
@@ -694,6 +721,8 @@ def run_diff(
         explanation,
         threshold=threshold,
         compute_time_ms=elapsed_ms,
+        baseline_cost_per_10k=baseline_cost_10k,
+        current_cost_per_10k=current_cost_10k,
     )
     return exit_code
 
@@ -778,6 +807,8 @@ def run_watch(
                     report, baseline_fp, current_fp,
                     tool_frequency_diffs, threshold,
                 )
+                baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
+                current_cost_10k = calculate_cost_per_10k(current_run_dicts)
                 render_diff_report(
                     console,
                     report,
@@ -791,6 +822,8 @@ def run_watch(
                     top_sequence_shifts_list,
                     explanation,
                     threshold=threshold,
+                    baseline_cost_per_10k=baseline_cost_10k,
+                    current_cost_per_10k=current_cost_10k,
                 )
 
             console.print("[dim]Ctrl+C to exit.[/]")

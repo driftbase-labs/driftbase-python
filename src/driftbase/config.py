@@ -1,6 +1,10 @@
 """
-Lightweight config via os.environ. No pydantic-settings or .env required.
-Sensible defaults so the SDK works out-of-the-box for local developers.
+Lightweight config via os.environ with automatic .env loading.
+
+Security best practices:
+- Auto-loads .env file if present (for local development)
+- Production environments should use real environment variables
+- Sensible defaults for local developers (SQLite, no DATABASE_URL required)
 """
 
 from __future__ import annotations
@@ -11,6 +15,23 @@ from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Load .env file if present (idempotent - safe to call multiple times)
+def _load_dotenv():
+    """Load .env file for local development (production uses real env vars)."""
+    try:
+        from dotenv import load_dotenv
+        env_path = Path.cwd() / ".env"
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=False)
+            logger.debug("Loaded environment from .env file")
+    except ImportError:
+        logger.debug("python-dotenv not available, skipping .env load")
+    except Exception as e:
+        logger.debug("Failed to load .env: %s", e)
+
+# Load .env on module import (idempotent)
+_load_dotenv()
 
 
 def _env_bool(key: str, default: bool) -> bool:

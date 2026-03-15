@@ -22,6 +22,10 @@ __all__ = [
     "OpenAITracer",
     "AutoGenTracer",
     "CrewAITracer",
+    "SmolagentsTracer",
+    "HaystackTracer",
+    "DSPyTracer",
+    "LlamaIndexTracer",
 ]
 
 
@@ -42,4 +46,16 @@ def __getattr__(name: str):
     elif name == "CrewAITracer":
         from driftbase.integrations.crewai import CrewAITracer
         return CrewAITracer
+    elif name == "SmolagentsTracer":
+        from driftbase.integrations.smolagents import SmolagentsTracer
+        return SmolagentsTracer
+    elif name == "HaystackTracer":
+        from driftbase.integrations.haystack import HaystackTracer
+        return HaystackTracer
+    elif name == "DSPyTracer":
+        from driftbase.integrations.dspy import DSPyTracer
+        return DSPyTracer
+    elif name == "LlamaIndexTracer":
+        from driftbase.integrations.llamaindex import LlamaIndexTracer
+        return LlamaIndexTracer
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

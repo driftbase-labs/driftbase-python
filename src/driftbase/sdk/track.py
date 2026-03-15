@@ -334,67 +334,6 @@ def _capture_langgraph(
     return _capture_generic(func, args, kwargs, ctx)
 
 
-def _capture_llamaindex(
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    ctx: RunContext,
-) -> Any:
-    try:
-        from llama_index.core.callbacks import BaseCallbackHandler, CBEventType
-        from llama_index.core.settings import Settings
-    except ImportError:
-        ctx.framework = "llamaindex"
-        return _capture_generic(func, args, kwargs, ctx)
-
-    class TrackHandler(BaseCallbackHandler):
-        def __init__(self, run_ctx: RunContext) -> None:
-            super().__init__(event_starts_to_ignore=[], event_ends_to_ignore=[])
-            self.ctx = run_ctx
-
-        def on_event_start(
-            self,
-            event_type: Any,
-            payload: Optional[dict] = None,
-            event_id: str = "",
-            parent_id: str = "",
-            **kwargs: Any,
-        ) -> str:
-            payload = payload or {}
-            try:
-                if event_type == CBEventType.FUNCTION_CALL:
-                    name = (payload.get("function_call") or payload.get("name") or "unknown")
-                    if isinstance(name, dict):
-                        name = name.get("name", "unknown")
-                    self.ctx.tool_calls.append({"name": str(name)})
-            except Exception:
-                pass
-            return event_id or ""
-
-        def on_event_end(self, event_type: Any, payload: Optional[dict] = None, event_id: str = "", **kwargs: Any) -> None:
-            pass
-        def start_trace(self, trace_id: Optional[str] = None) -> None:
-            pass
-        def end_trace(self, trace_id: Optional[str] = None, trace_map: Optional[dict] = None) -> None:
-            pass
-
-    handler = TrackHandler(ctx)
-    ctx.framework = "llamaindex"
-    try:
-        cm = getattr(Settings, "callback_manager", None) or getattr(Settings, "_callback_manager", None)
-        if cm is not None and hasattr(cm, "add_handler"):
-            cm.add_handler(handler)
-            try:
-                return _capture_generic(func, args, kwargs, ctx)
-            finally:
-                if hasattr(cm, "remove_handler"):
-                    cm.remove_handler(handler)
-        return _capture_generic(func, args, kwargs, ctx)
-    except Exception:
-        return _capture_generic(func, args, kwargs, ctx)
-
-
-
 
 def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: Optional[str] = None) -> None:
     """Silently dispatch payload to Azure if API key exists. Data is already scrubbed."""
@@ -475,11 +414,11 @@ def track(
                     result = _capture_langgraph(func, args, kwargs, ctx)
                 elif framework == "langchain":
                     result = _capture_langchain(func, args, kwargs, ctx)
-                elif framework == "llamaindex":
-                    result = _capture_llamaindex(func, args, kwargs, ctx)
                 elif framework == "openai":
                     result = _capture_openai(func, args, kwargs, ctx)
                 else:
+                    # Generic capture for all other frameworks
+                    # Note: For LlamaIndex, use the explicit LlamaIndexTracer from driftbase.integrations
                     result = _capture_generic(func, args, kwargs, ctx)
                 ctx.decision_outcome = _classify_decision_outcome(result, None)
             except Exception as e:
@@ -559,11 +498,11 @@ def track(
                     result = await _capture_langgraph_async(func, args, kwargs, ctx)
                 elif framework == "langchain":
                     result = await _capture_langchain_async(func, args, kwargs, ctx)
-                elif framework == "llamaindex":
-                    result = await _capture_llamaindex_async(func, args, kwargs, ctx)
                 elif framework == "openai":
                     result = await _capture_openai_async(func, args, kwargs, ctx)
                 else:
+                    # Generic capture for all other frameworks
+                    # Note: For LlamaIndex, use the explicit LlamaIndexTracer from driftbase.integrations
                     result = await _capture_generic_async(func, args, kwargs, ctx)
                 ctx.latency_ms = int((time.perf_counter() - start) * 1000)
                 ctx.completed_at = datetime.utcnow()
@@ -667,54 +606,6 @@ async def _capture_langgraph_async(func: Callable[..., Any], args: tuple[Any, ..
         kwargs = {**kwargs, "config": {**config, "callbacks": callbacks}}
 
     return await _capture_generic_async(func, args, kwargs, ctx)
-
-
-async def _capture_llamaindex_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:
-    try:
-        from llama_index.core.callbacks import BaseCallbackHandler, CBEventType
-        from llama_index.core.settings import Settings
-    except ImportError:
-        ctx.framework = "llamaindex"
-        return await _capture_generic_async(func, args, kwargs, ctx)
-
-    class TrackHandlerAsync(BaseCallbackHandler):
-        def __init__(self, run_ctx: RunContext) -> None:
-            super().__init__(event_starts_to_ignore=[], event_ends_to_ignore=[])
-            self.ctx = run_ctx
-
-        def on_event_start(self, event_type: Any, payload: Optional[dict] = None, event_id: str = "", parent_id: str = "", **kwargs: Any) -> str:
-            payload = payload or {}
-            try:
-                if event_type == CBEventType.FUNCTION_CALL:
-                    name = (payload.get("function_call") or payload.get("name") or "unknown")
-                    if isinstance(name, dict):
-                        name = name.get("name", "unknown")
-                    self.ctx.tool_calls.append({"name": str(name)})
-            except Exception:
-                pass
-            return event_id or ""
-
-        def on_event_end(self, event_type: Any, payload: Optional[dict] = None, event_id: str = "", **kwargs: Any) -> None:
-            pass
-        def start_trace(self, trace_id: Optional[str] = None) -> None:
-            pass
-        def end_trace(self, trace_id: Optional[str] = None, trace_map: Optional[dict] = None) -> None:
-            pass
-
-    handler = TrackHandlerAsync(ctx)
-    ctx.framework = "llamaindex"
-    try:
-        cm = getattr(Settings, "callback_manager", None) or getattr(Settings, "_callback_manager", None)
-        if cm is not None and hasattr(cm, "add_handler"):
-            cm.add_handler(handler)
-            try:
-                return await _capture_generic_async(func, args, kwargs, ctx)
-            finally:
-                if hasattr(cm, "remove_handler"):
-                    cm.remove_handler(handler)
-        return await _capture_generic_async(func, args, kwargs, ctx)
-    except Exception:
-        return await _capture_generic_async(func, args, kwargs, ctx)
 
 
 async def _capture_openai_async(func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ctx: RunContext) -> Any:

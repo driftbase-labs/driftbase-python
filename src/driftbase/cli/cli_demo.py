@@ -78,5 +78,10 @@ def cmd_demo(ctx: click.Context) -> None:
     time.sleep(1.0) 
     
     console.print("\n[bold green]Success![/] Local database populated.")
-    console.print("Run this command to see the financial and behavioral insights:\n")
+    console.print("Run this command to see drift, cost impact, and behavioral insights:\n")
     console.print("👉 [bold]driftbase diff v1.0 v2.0[/]\n")
+    console.print(
+        "[dim]You'll see: overall drift, cost per 10k runs (€), decisions/latency/errors, "
+        "tool usage, and verdict. Cost uses DRIFTBASE_RATE_PROMPT_1M / DRIFTBASE_RATE_COMPLETION_1M "
+        "(defaults €2.50 / €10.00 per 1M tokens).[/]\n"
+    )
