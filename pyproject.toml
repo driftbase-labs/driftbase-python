@@ -26,10 +26,6 @@ analyze = [
 semantic = [
     "light-embed>=1.0.0",
 ]
-postgres = [
-    "asyncpg>=0.29.0",
-    "sqlalchemy[asyncio]>=2.0.0",
-]
 
 [project.scripts]
 driftbase = "driftbase.cli.main:cli"
@@ -39,3 +35,27 @@ driftbase = ["**/*.yaml", "hypothesis_rules.yaml"]
 
 # This tells setuptools_scm to read the version from Git tags
 [tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+src = ["src", "tests"]
+exclude = [".git", ".venv", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
