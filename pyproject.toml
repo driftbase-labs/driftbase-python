@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "driftbase"
-version = "0.2.7"
+dynamic = ["version"]
 description = "Behavioral drift monitoring for AI agents."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -36,3 +36,6 @@ driftbase = "driftbase.cli.main:cli"
 
 [tool.setuptools.package-data]
 driftbase = ["**/*.yaml", "hypothesis_rules.yaml"]
+
+# This tells setuptools_scm to read the version from Git tags
+[tool.setuptools_scm]
