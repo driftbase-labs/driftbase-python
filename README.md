@@ -322,7 +322,7 @@ driftbase diff v2.0 v2.1 --format html --output report.html
 Driftbase uses the **Kolmogorov-Smirnov test** to measure distributional differences between version populations:
 - **Bootstrap confidence intervals** (95% CI) for stable estimates with small sample sizes
 - **Composite drift score** weighted across dimensions (decisions, latency, errors, tool usage)
-- **Hypothesis engine** that generates plain-English root-cause explanations
+- **Hypothesis engine** that generates plain-English root-cause explanations (see [Hypothesis rules](docs/hypothesis_rules.md) for the two YAML roles and how to override)
 
 This isn't just logging — it's a **statistical behavioral fingerprint**.
 
@@ -415,9 +415,6 @@ export DRIFTBASE_MAX_QUEUE_SIZE=20000
 ```bash
 # Enable PII redaction (default: false)
 export DRIFTBASE_SCRUB_PII=true
-
-# Disable all telemetry capture (default: false)
-export DRIFTBASE_DISABLE_TELEMETRY=true
 ```
 
 ### Financial Configuration
@@ -645,7 +642,7 @@ A: Yes. Driftbase hooks into framework callbacks and captures the final aggregat
 A: Oldest runs are automatically pruned when count exceeds `DRIFTBASE_LOCAL_RETENTION_LIMIT` (default: 100k). Pruning runs in the background every 100 batches.
 
 **Q: Can I disable telemetry in tests?**
-A: Yes. Set `DRIFTBASE_DISABLE_TELEMETRY=true` or use `@track(enabled=False)`.
+A: Yes. Use a separate database for tests (e.g. `export DRIFTBASE_DB_PATH=/tmp/driftbase-test.db`) or point to a throwaway SQLite file. All capture is local; no data is sent unless you run `driftbase push`.
 
 **Q: How accurate is the cost calculation?**
 A: Very accurate. We read token counts directly from LLM responses and multiply by your configured rates (`DRIFTBASE_RATE_PROMPT_1M`, `DRIFTBASE_RATE_COMPLETION_1M`). Default rates are OpenAI list prices.

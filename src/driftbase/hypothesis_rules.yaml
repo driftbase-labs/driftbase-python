@@ -1,4 +1,6 @@
-# Default hypothesis rules for the drift hypothesis engine.
+# Canonical default hypothesis rules (package root).
+# Load order: 1) DRIFTBASE_HYPOTHESIS_RULES env path, 2) this file (bundled), 3) local/hypothesis_rules.yaml.
+# See docs/hypothesis_rules.md for the two-file roles.
 # Override with DRIFTBASE_HYPOTHESIS_RULES to use a custom rule set.
 # Condition keys: overall_drift_min/max, decision_drift_min/max, latency_drift_min,
 # error_drift_min, tool_drift_max, tool_decrease_min_pct, tool_increase_min_pct,

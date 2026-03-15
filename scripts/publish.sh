@@ -1,17 +1,19 @@
 #!/bin/bash
+# Release script for driftbase. Version is inferred from git tags by setuptools-scm.
+# Usage: Set VERSION (e.g. 0.3.1), then run: ./scripts/publish.sh
 set -e
-VERSION=$(grep "^version" pyproject.toml | cut -d'"' -f2)
-CLI_VERSION=$(grep "version_option" src/driftbase/cli/cli.py | grep -o '"[0-9.]*"' | tr -d '"')
-
-if [ "$VERSION" != "$CLI_VERSION" ]; then
-  echo "❌ Version mismatch: pyproject.toml=$VERSION, cli.py=$CLI_VERSION"
+if [ -z "$VERSION" ]; then
+  echo "Usage: VERSION=0.3.1 ./scripts/publish.sh"
   exit 1
 fi
-
-echo "✓ Versions match: $VERSION"
+echo "✓ Releasing v$VERSION (setuptools-scm will use tag for package version)"
 rm -rf dist/
 git add -A
-git commit -m "release: v$VERSION"
+git status
+read -p "Commit and tag v$VERSION? [y/N] " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then exit 1; fi
+git commit -m "release: v$VERSION" || true
 git tag "v$VERSION"
 git push origin main --tags
-echo "✓ Tagged v$VERSION — GitHub Action will publish to PyPI and create release"
+echo "✓ Tagged v$VERSION — GitHub Action will publish to PyPI"

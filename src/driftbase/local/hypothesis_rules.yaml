@@ -1,5 +1,6 @@
-# Default hypothesis rules for drift root-cause analysis.
-# Override with DRIFTBASE_HYPOTHESIS_RULES or replace this file.
+# Fallback hypothesis rules (local/). Used when the bundled root hypothesis_rules.yaml cannot be read.
+# Load order: 1) DRIFTBASE_HYPOTHESIS_RULES env path, 2) driftbase/hypothesis_rules.yaml (root), 3) this file.
+# See docs/hypothesis_rules.md for the two-file roles.
 # Condition keys: overall_drift_min/max, decision_drift_min/max, latency_drift_min,
 # error_drift_min, tool_decrease_min_pct, tool_increase_min_pct, tool_increase_name_contains,
 # baseline_runs_min, current_runs_min. Placeholders: {{tool_name}}, {{delta_pct}}.

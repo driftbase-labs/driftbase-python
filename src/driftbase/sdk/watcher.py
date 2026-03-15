@@ -413,13 +413,14 @@ if _LANGCHAIN_AVAILABLE:
             output_length = len(str(output))
             output_structure_hash = _compute_structure_hash(output)
 
-            self._extract_final_ai_content(output)
+            final_content = self._extract_final_ai_content(output)
             cluster_id = "resolved"
-            from driftbase.sdk.semantic import is_semantic_available
+            if final_content and state.get("error_count", 0) == 0:
+                from driftbase.sdk.semantic import compute_semantic_cluster_id
 
-            if is_semantic_available():
-                pass  # TODO: use embedding model for cluster_id when implemented
-
+                semantic_id = compute_semantic_cluster_id(final_content)
+                if semantic_id is not None:
+                    cluster_id = semantic_id
             payload = {
                 "session_id": self.session_id,
                 "deployment_version": self.deployment_version,
