@@ -15,6 +15,7 @@ dependencies = [
     "PyYAML>=6.0.0",
     "click>=8.0.0",
     "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +50,16 @@ exclude = [".git", ".venv", "__pycache__", "build", "dist"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+    "E501",   # line length handled by formatter
+    "E402",   # allow module level imports after code (needed for CLI setup)
+    "SIM105", # allow standard try-except-pass blocks
+    "SIM115", # allow unmanaged file opening (standard for tempfile in tests)
+    "SIM116", # allow if/elif chains instead of forcing dictionaries
+    "N802",   # allow uppercase function properties (DRIFTBASE_ env vars)
+    "N806",   # allow uppercase variables (Completions class alias)
+    "B904",   # allow raise without 'from'
+]
 
 [tool.ruff.format]
 quote-style = "double"

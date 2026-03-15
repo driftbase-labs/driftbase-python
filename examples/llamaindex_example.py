@@ -8,7 +8,7 @@ from driftbase.integrations import LlamaIndexTracer
 
 # Example with LlamaIndex (requires: pip install llama-index)
 try:
-    from llama_index.core import Document, SimpleDirectoryReader, VectorStoreIndex
+    from llama_index.core import Document, VectorStoreIndex
     from llama_index.core.settings import Settings
 
     # Initialize the tracer
@@ -82,9 +82,9 @@ try:
         print("\nRetrieved nodes (hashed):")
         for i, node in enumerate(tracer.retrieved_nodes[:5], 1):  # Show first 5
             print(f"  {i}. Hash: {node['content_hash'][:16]}...")
-            print(f"     Source: {node['metadata'].get('source', 'unknown')}")
-            print(f"     Score: {node['score']}")
-            print(f"     Length: {node['content_length']} chars")
+            print(f"      Source: {node['metadata'].get('source', 'unknown')}")
+            print(f"      Score: {node['score']}")
+            print(f"      Length: {node['content_length']} chars")
 
     # The run data is automatically saved to ~/.driftbase/runs.db
     # View it with: driftbase diff v1.0 v1.1
