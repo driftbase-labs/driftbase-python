@@ -16,6 +16,15 @@ from driftbase.backends.factory import get_backend
 Console, Panel, Table = safe_import_rich()
 
 
+def _get_version() -> str:
+    """Read version from package metadata (setuptools_scm at build time). Fallback when run from source."""
+    try:
+        from importlib.metadata import version
+        return version("driftbase")
+    except Exception:
+        return "0.0.0.dev0"
+
+
 def _console_no_color(no_color_flag: bool) -> bool:
     """True if output should be uncolored: --no-color wins, else use DRIFTBASE_OUTPUT_COLOR."""
     if no_color_flag:
@@ -28,7 +37,7 @@ def _console_no_color(no_color_flag: bool) -> bool:
 
 
 @click.group()
-@click.version_option(version="0.2.7", prog_name="driftbase")
+@click.version_option(version=_get_version(), prog_name="driftbase")
 @click.option("--no-color", is_flag=True, help="Disable colored output (overrides DRIFTBASE_OUTPUT_COLOR).")
 @click.pass_context
 def cli(ctx: click.Context, no_color: bool) -> None:

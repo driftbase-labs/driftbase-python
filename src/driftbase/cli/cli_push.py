@@ -15,23 +15,34 @@ except ImportError:
 @click.command("push")
 @click.pass_context
 def cmd_push(ctx: click.Context):
-    """Sync local telemetry to Driftbase Pro (removes raw text)."""
+    """Sync local runs to the Driftbase dashboard (Pro).
+
+    Use this after subscribing to Pro to connect your existing local data,
+    or run it anytime to sync new runs. Raw prompts and outputs are stripped
+    before upload (GDPR-compliant). The dashboard shows runs, drift analytics,
+    and version comparisons.
+    """
     console: Console = ctx.obj["console"]
 
     api_key = os.getenv("DRIFTBASE_API_KEY")
     if not api_key:
-        console.print("[bold red]Error:[/] DRIFTBASE_API_KEY environment variable is missing.")
-        console.print("To authenticate with Driftbase Pro, run:")
-        console.print("👉 [bold cyan]export DRIFTBASE_API_KEY='drift_abc123'[/]")
+        console.print("[bold red]Error:[/] DRIFTBASE_API_KEY is required to sync to the dashboard.")
+        console.print("Get your key from the dashboard after subscribing, then run:")
+        console.print("  [bold cyan]export DRIFTBASE_API_KEY='your_key'[/]")
+        console.print("  [bold cyan]driftbase push[/]")
         ctx.exit(1)
 
     api_url = os.getenv("DRIFTBASE_API_URL", "http://localhost:8000")
     
     backend = get_backend()
+    if not hasattr(backend, "get_all_runs"):
+        console.print("[bold red]Error:[/] This backend does not support sync (use local SQLite).")
+        ctx.exit(1)
     runs = backend.get_all_runs()
     
     if not runs:
-        console.print("[yellow]No local runs found to sync. Run 'driftbase demo' first.[/]")
+        console.print("[yellow]No local runs to sync.[/]")
+        console.print("[dim]Run your instrumented agent or 'driftbase demo', then try again.[/]")
         ctx.exit(0)
 
     # Enforce strict European data boundary: drop raw text before it touches the network
@@ -69,12 +80,13 @@ def cmd_push(ctx: click.Context):
             data = response.json()
             progress.update(task, completed=True)
             
-            inserted = data.get("inserted", 0)
+            inserted = data.get("inserted", len(payload_runs))
             tenant = data.get("tenant_id", "unknown")
             
-            console.print(f"\n[bold green]✓ Successfully synced {inserted} new runs.[/]")
+            console.print(f"\n[bold green]✓ Synced {inserted} runs to your dashboard.[/]")
             console.print(f"[dim]Workspace: {tenant}[/]")
-            console.print("[dim]Raw prompts and outputs were stripped to maintain GDPR compliance.[/]")
+            console.print("[dim]View runs, drift analytics, and version comparisons in the dashboard.[/]")
+            console.print("[dim]Raw prompts/outputs were stripped before upload (GDPR).[/]")
 
         except httpx.HTTPStatusError as e:
             console.print(f"\n[bold red]API Error:[/] {e.response.status_code} - {e.response.text}")

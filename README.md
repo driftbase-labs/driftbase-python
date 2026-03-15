@@ -464,7 +464,7 @@ driftbase config
 | `driftbase versions` | List all deployment versions and run counts |
 | `driftbase export` | Export all runs to JSON for backup/archival |
 | `driftbase import <file.json>` | Import runs from JSON (supports merge/replace modes) |
-| `driftbase push` | Sync local database to Driftbase Pro cloud (removes raw text) |
+| `driftbase push` | Sync local runs to dashboard — connect existing data or ongoing sync (Pro) |
 | `driftbase reset -v <version>` | Delete all runs for a deployment version |
 | `driftbase config` | View current configuration and database path |
 | `driftbase db-stats` | Print internal statistics (semantic clusters, etc.) |
@@ -521,6 +521,17 @@ driftbase push
 ```
 
 All sensitive context is stripped before upload — only structural metadata and hashed tool parameters are transmitted.
+
+#### Connecting existing local data to the dashboard
+
+If you’ve been using the SDK locally (runs, diffs, all in SQLite) and then subscribe to Pro, you can connect that existing data in one step:
+
+1. Get your API key from the Driftbase dashboard after subscribing.
+2. Set it once: `export DRIFTBASE_API_KEY='your_key'` (or add to `.env`).
+3. Run **`driftbase push`** — this syncs **all** existing local runs to the dashboard. No need to re-run your agent.
+4. After that, run `driftbase push` whenever you want to sync new runs (e.g. after a deploy or weekly). The dashboard will show runs, drift scores, and version comparisons.
+
+Your local SQLite data stays on your machine; push only sends structural metadata (tool chains, token counts, latency, versions). Raw prompts and outputs are never sent.
 
 [Learn more about Driftbase Pro →](https://driftbase.io/pro)
 
@@ -617,7 +628,7 @@ We welcome contributions! Areas of interest:
 
 **Before submitting a PR:**
 1. Run tests: `pytest tests/`
-2. Format code: `black src/ tests/`
+2. Lint and format: `ruff check src/ tests/` and `ruff format src/ tests/`
 3. Check types: `mypy src/`
 
 ---

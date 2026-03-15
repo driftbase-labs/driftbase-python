@@ -47,3 +47,7 @@ class StorageBackend(ABC):
     def get_last_run(self) -> dict[str, Any] | None:
         """Return the most recently written run, or None. Optional for backends."""
         return None
+
+    def get_all_runs(self) -> list[dict[str, Any]]:
+        """Return all runs for sync to dashboard (e.g. driftbase push). Default: get_runs(limit=500_000)."""
+        return self.get_runs(deployment_version=None, environment=None, limit=500_000)
