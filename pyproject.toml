@@ -16,6 +16,7 @@ dependencies = [
     "click>=8.0.0",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
+    "sqlalchemy>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,9 @@ analyze = [
 ]
 semantic = [
     "light-embed>=1.0.0",
+]
+postgres = [
+    "asyncpg>=0.29.0",
 ]
 
 [project.scripts]
@@ -53,6 +57,7 @@ ignore = [
     "E501",   # line length handled by formatter
     "E402",   # allow module level imports after code (needed for CLI setup)
     "SIM105", # allow standard try-except-pass blocks
+    "SIM108", # allow standard if/else instead of forcing ternary operators
     "SIM115", # allow unmanaged file opening (standard for tempfile in tests)
     "SIM116", # allow if/elif chains instead of forcing dictionaries
     "SIM102", # allow nested if statements instead of forcing 'and'
