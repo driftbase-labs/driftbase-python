@@ -38,6 +38,95 @@ MIN_SAMPLES_WARNING = 50
 DEFAULT_THRESHOLD = 0.20
 
 
+def _parse_duration_to_hours(duration_str: str) -> int | None:
+    """Parse duration string like '24h', '7d', '2w' into hours."""
+    import re
+
+    match = re.match(r"^(\d+)([hdw])$", duration_str.lower())
+    if not match:
+        return None
+
+    value, unit = match.groups()
+    value = int(value)
+
+    if unit == "h":
+        return value
+    elif unit == "d":
+        return value * 24
+    elif unit == "w":
+        return value * 24 * 7
+
+    return None
+
+
+def _parse_date_range(between_str: str) -> tuple[datetime, datetime] | None:
+    """Parse date range like '2026-03-01..2026-03-15' into (start, end) datetimes."""
+    parts = between_str.split("..")
+    if len(parts) != 2:
+        return None
+
+    try:
+        start_date = datetime.fromisoformat(parts[0].strip())
+        end_date = datetime.fromisoformat(parts[1].strip())
+        return (start_date, end_date)
+    except ValueError:
+        return None
+
+
+def _parse_outcomes(outcomes_str: str) -> list[str]:
+    """Parse comma-separated outcomes like 'resolved,escalated' into list."""
+    return [o.strip() for o in outcomes_str.split(",") if o.strip()]
+
+
+def _apply_filters_to_runs(
+    backend: StorageBackend,
+    deployment_version: str | None,
+    environment: str | None,
+    since: str | None,
+    between: str | None,
+    outcomes: str | None,
+    max_samples: int | None,
+    limit: int = 10000,
+) -> list[dict[str, Any]]:
+    """
+    Fetch runs with enhanced filtering.
+
+    Returns list of run dicts.
+    """
+    # Parse filters
+    since_hours = None
+    if since:
+        since_hours = _parse_duration_to_hours(since)
+
+    between_range = None
+    if between:
+        between_range = _parse_date_range(between)
+
+    outcomes_list = None
+    if outcomes:
+        outcomes_list = _parse_outcomes(outcomes)
+
+    # Use enhanced query if backend supports it
+    if hasattr(backend, "get_runs_filtered"):
+        runs = backend.get_runs_filtered(
+            deployment_version=deployment_version,
+            environment=environment,
+            since_hours=since_hours,
+            between=between_range,
+            outcomes=outcomes_list,
+            limit=max_samples or limit,
+        )
+    else:
+        # Fallback to basic get_runs
+        runs = backend.get_runs(
+            deployment_version=deployment_version,
+            environment=environment,
+            limit=max_samples or limit,
+        )
+
+    return runs
+
+
 @click.command(name="diff")
 @click.argument("baseline", required=False)
 @click.argument("current", required=False)
@@ -63,6 +152,38 @@ DEFAULT_THRESHOLD = 0.20
 @click.option(
     "--remote", is_flag=True, help="Compute diff using the Driftbase Pro cloud engine."
 )
+@click.option(
+    "--since",
+    metavar="DURATION",
+    help="Compare runs since duration (e.g., 24h, 7d, 2w).",
+)
+@click.option(
+    "--between",
+    metavar="START..END",
+    help="Compare runs between dates (e.g., 2026-03-01..2026-03-15).",
+)
+@click.option(
+    "--outcomes",
+    metavar="LIST",
+    help="Filter by outcomes (comma-separated, e.g., resolved,escalated).",
+)
+@click.option(
+    "--max-samples",
+    type=int,
+    metavar="N",
+    help="Limit samples per version (trades precision for speed).",
+)
+@click.option(
+    "--fail-on-drift",
+    is_flag=True,
+    help="Exit with code 1 if any drift detected (CI mode).",
+)
+@click.option(
+    "--exit-nonzero-above",
+    type=float,
+    metavar="THRESHOLD",
+    help="Exit code 1 if drift > threshold (e.g., 0.15).",
+)
 @click.pass_context
 def cmd_diff(
     ctx: click.Context,
@@ -74,6 +195,12 @@ def cmd_diff(
     threshold: float,
     json_output: bool,
     remote: bool,
+    since: str | None,
+    between: str | None,
+    outcomes: str | None,
+    max_samples: int | None,
+    fail_on_drift: bool,
+    exit_nonzero_above: float | None,
 ) -> None:
     """Compare two versions or last N runs vs baseline. Use --remote for cloud comparison."""
     console: Console = ctx.obj["console"]
@@ -736,6 +863,7 @@ def run_diff(
             current_label=current_label,
         )
         out = {
+            "schema_version": "1.0",
             "baseline_version": baseline_label,
             "current_version": current_label,
             "baseline_n": baseline_n,
@@ -774,7 +902,14 @@ def run_diff(
         if report.drift_score >= threshold and explanation:
             out["explanation"] = explanation
         console.print(json.dumps(out, indent=2))
-        return verdict_result.exit_code
+
+        # CI exit code logic
+        if fail_on_drift and report.drift_score > 0:
+            return 1
+        elif exit_nonzero_above is not None and report.drift_score > exit_nonzero_above:
+            return 1
+        else:
+            return verdict_result.exit_code
 
     baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
     current_cost_10k = calculate_cost_per_10k(current_run_dicts)

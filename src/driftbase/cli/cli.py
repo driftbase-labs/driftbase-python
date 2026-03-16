@@ -53,13 +53,17 @@ def cli(ctx: click.Context, no_color: bool) -> None:
     ctx.obj["console"] = Console(no_color=_console_no_color(no_color))
 
 
+from driftbase.cli.cli_baseline import baseline_group
 from driftbase.cli.cli_demo import cmd_demo
 from driftbase.cli.cli_diff import cmd_diff
+from driftbase.cli.cli_doctor import cmd_doctor
 from driftbase.cli.cli_export import export_command, import_command
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
+from driftbase.cli.cli_prune import cmd_prune
 from driftbase.cli.cli_push import cmd_push
 from driftbase.cli.cli_report import cmd_report
+from driftbase.cli.cli_tail import cmd_tail
 
 cli.add_command(cmd_init)
 cli.add_command(cmd_diff)
@@ -69,6 +73,11 @@ cli.add_command(cmd_push)
 cli.add_command(cmd_demo)
 cli.add_command(export_command)
 cli.add_command(import_command)
+# New commands
+cli.add_command(cmd_doctor)
+cli.add_command(baseline_group)
+cli.add_command(cmd_tail)
+cli.add_command(cmd_prune)
 
 
 def _mask_secret(value: str) -> str:
@@ -324,40 +333,151 @@ def cmd_db_stats(ctx: click.Context) -> None:
     metavar="N",
     help="Maximum number of runs to show (default 50).",
 )
+@click.option(
+    "--offset", type=int, default=0, help="Skip first N runs (for pagination)."
+)
+@click.option(
+    "--outcome",
+    help="Filter by outcome (resolved, escalated, fallback, error).",
+)
+@click.option(
+    "--min-latency",
+    type=int,
+    metavar="MS",
+    help="Filter runs with latency >= MS milliseconds.",
+)
+@click.option(
+    "--max-latency",
+    type=int,
+    metavar="MS",
+    help="Filter runs with latency <= MS milliseconds.",
+)
+@click.option(
+    "--since", metavar="DURATION", help="Show runs since duration (e.g., 24h, 7d)."
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["table", "json", "csv"]),
+    default="table",
+    help="Output format.",
+)
 @click.pass_context
-def cmd_runs(ctx: click.Context, version: str, limit: int) -> None:
+def cmd_runs(
+    ctx: click.Context,
+    version: str,
+    limit: int,
+    offset: int,
+    outcome: str | None,
+    min_latency: int | None,
+    max_latency: int | None,
+    since: str | None,
+    format: str,
+) -> None:
     """List runs for a deployment version from the local backend."""
     console: Console = ctx.obj["console"]
+
+    # Parse since duration
+    since_hours = None
+    if since:
+        import re
+
+        match = re.match(r"^(\d+)([hdw])$", since.lower())
+        if match:
+            value, unit = match.groups()
+            value = int(value)
+            if unit == "h":
+                since_hours = value
+            elif unit == "d":
+                since_hours = value * 24
+            elif unit == "w":
+                since_hours = value * 24 * 7
+
     try:
         backend = get_backend()
-        runs = backend.get_runs(deployment_version=version, limit=limit)
+
+        # Use enhanced filtering if available
+        if hasattr(backend, "get_runs_filtered"):
+            runs = backend.get_runs_filtered(
+                deployment_version=version,
+                outcomes=[outcome] if outcome else None,
+                min_latency_ms=min_latency,
+                max_latency_ms=max_latency,
+                since_hours=since_hours,
+                offset=offset,
+                limit=limit,
+            )
+
+            # Get total count for pagination info
+            total_count = backend.count_runs_filtered(
+                deployment_version=version,
+                outcomes=[outcome] if outcome else None,
+                min_latency_ms=min_latency,
+                since_hours=since_hours,
+            )
+        else:
+            # Fallback to basic get_runs
+            runs = backend.get_runs(deployment_version=version, limit=limit)
+            total_count = len(runs)
+
     except Exception as e:
         console.print(f"Backend error: [red]{e}[/]")
         ctx.exit(1)
+
     if not runs:
         console.print(f"No runs found for version {version}")
         return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("RUN_ID", style="dim")
-    table.add_column("TIMESTAMP")
-    table.add_column("LATENCY_MS", justify="right")
-    table.add_column("TOOL_SEQUENCE", max_width=40, overflow="ellipsis")
-    table.add_column("SEMANTIC_CLUSTER")
-    table.add_column("ERROR_COUNT", justify="right")
-    for r in runs:
-        run_id = str(r.get("id", ""))[:8]
-        started = r.get("started_at")
-        if hasattr(started, "strftime"):
-            ts = started.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            ts = str(started) if started else "—"
-        latency = r.get("latency_ms", 0)
-        raw_seq = str(r.get("tool_sequence", "[]"))
-        tool_seq = (raw_seq[:39] + "…") if len(raw_seq) > 40 else raw_seq
-        cluster = str(r.get("semantic_cluster", "—"))
-        errors = r.get("error_count", 0)
-        table.add_row(run_id, ts, str(latency), tool_seq, cluster, str(errors))
-    console.print(table)
+
+    # Output formats
+    if format == "json":
+        import json
+
+        output = {
+            "schema_version": "1.0",
+            "runs": runs,
+            "total_count": total_count,
+            "offset": offset,
+            "limit": limit,
+        }
+        console.print(json.dumps(output, indent=2, default=str))
+
+    elif format == "csv":
+        import csv
+        import sys
+
+        if runs:
+            writer = csv.DictWriter(sys.stdout, fieldnames=runs[0].keys())
+            writer.writeheader()
+            writer.writerows(runs)
+
+    else:
+        # Table format (default)
+        if offset > 0 or total_count > limit:
+            console.print(
+                f"[dim]Showing {offset + 1}-{offset + len(runs)} of {total_count} runs[/]\n"
+            )
+
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("RUN_ID", style="dim")
+        table.add_column("TIMESTAMP")
+        table.add_column("LATENCY_MS", justify="right")
+        table.add_column("TOOL_SEQUENCE", max_width=40, overflow="ellipsis")
+        table.add_column("SEMANTIC_CLUSTER")
+        table.add_column("ERROR_COUNT", justify="right")
+        for r in runs:
+            run_id = str(r.get("id", ""))[:8]
+            started = r.get("started_at")
+            if hasattr(started, "strftime"):
+                ts = started.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts = str(started) if started else "—"
+            latency = r.get("latency_ms", 0)
+            raw_seq = str(r.get("tool_sequence", "[]"))
+            tool_seq = (raw_seq[:39] + "…") if len(raw_seq) > 40 else raw_seq
+            cluster = str(r.get("semantic_cluster", "—"))
+            errors = r.get("error_count", 0)
+            table.add_row(run_id, ts, str(latency), tool_seq, cluster, str(errors))
+        console.print(table)
 
 
 @cli.command("versions")

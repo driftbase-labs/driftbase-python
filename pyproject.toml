@@ -9,6 +9,9 @@ description = "Behavioral drift monitoring for AI agents."
 readme = "README.md"
 requires-python = ">=3.9"
 license-files = ["LICENSE"]
+authors = [
+    { name = "Driftbase", email = "info@driftbase.io" }
+]
 dependencies = [
     "pydantic>=2.0.0",
     "httpx>=0.25.0",
@@ -17,7 +20,13 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
     "sqlmodel>=0.0.14",
+    'tomli>=2.0.0; python_version < "3.11"',
 ]
+
+[project.urls]
+Homepage = "https://driftbase.io"
+Documentation = "https://driftbase.io/docs"
+Repository = "https://github.com/driftbase-labs/driftbase-python"
 
 [project.optional-dependencies]
 analyze = [

@@ -295,3 +295,278 @@ class SQLiteBackend(StorageBackend):
             result = session.execute(stmt)
             rows = result.scalars().all()
             return [_row_to_run_dict(r) for r in rows]
+
+    def get_runs_filtered(
+        self,
+        deployment_version: str | None = None,
+        environment: str | None = None,
+        outcomes: list[str] | None = None,
+        min_latency_ms: int | None = None,
+        max_latency_ms: int | None = None,
+        since_hours: int | None = None,
+        since_datetime: datetime | None = None,
+        between: tuple[datetime, datetime] | None = None,
+        offset: int = 0,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """
+        Get runs with enhanced filtering capabilities.
+
+        Args:
+            deployment_version: Filter by deployment version
+            environment: Filter by environment
+            outcomes: Filter by semantic_cluster values (e.g., ['resolved', 'escalated'])
+            min_latency_ms: Minimum latency in milliseconds
+            max_latency_ms: Maximum latency in milliseconds
+            since_hours: Get runs from the last N hours
+            since_datetime: Get runs since specific datetime
+            between: Get runs between two datetimes (start, end)
+            offset: Skip first N runs (for pagination)
+            limit: Maximum runs to return
+
+        Returns:
+            List of run dicts matching all filters
+        """
+        with Session(self._engine) as session:
+            stmt = select(AgentRunLocal).order_by(AgentRunLocal.started_at.desc())
+
+            # Version filter
+            if deployment_version is not None:
+                stmt = stmt.where(
+                    AgentRunLocal.deployment_version == deployment_version
+                )
+
+            # Environment filter
+            if environment is not None:
+                stmt = stmt.where(AgentRunLocal.environment == environment)
+
+            # Outcome filters (semantic_cluster)
+            if outcomes is not None and len(outcomes) > 0:
+                stmt = stmt.where(AgentRunLocal.semantic_cluster.in_(outcomes))
+
+            # Latency filters
+            if min_latency_ms is not None:
+                stmt = stmt.where(AgentRunLocal.latency_ms >= min_latency_ms)
+            if max_latency_ms is not None:
+                stmt = stmt.where(AgentRunLocal.latency_ms <= max_latency_ms)
+
+            # Time filters
+            if since_hours is not None:
+                from datetime import timedelta
+
+                cutoff = datetime.utcnow() - timedelta(hours=since_hours)
+                stmt = stmt.where(AgentRunLocal.started_at >= cutoff)
+            elif since_datetime is not None:
+                stmt = stmt.where(AgentRunLocal.started_at >= since_datetime)
+            elif between is not None:
+                start_time, end_time = between
+                stmt = stmt.where(
+                    AgentRunLocal.started_at >= start_time,
+                    AgentRunLocal.started_at <= end_time,
+                )
+
+            # Pagination
+            stmt = stmt.offset(offset).limit(limit)
+
+            result = session.execute(stmt)
+            rows = result.scalars().all()
+            return [_row_to_run_dict(r) for r in rows]
+
+    def count_runs_filtered(
+        self,
+        deployment_version: str | None = None,
+        environment: str | None = None,
+        outcomes: list[str] | None = None,
+        min_latency_ms: int | None = None,
+        since_hours: int | None = None,
+    ) -> int:
+        """
+        Count runs matching filters (for pagination metadata).
+
+        Args:
+            deployment_version: Filter by deployment version
+            environment: Filter by environment
+            outcomes: Filter by semantic_cluster values
+            min_latency_ms: Minimum latency filter
+            since_hours: Time window filter
+
+        Returns:
+            Count of matching runs
+        """
+        with Session(self._engine) as session:
+            from sqlalchemy import func
+
+            stmt = select(func.count(AgentRunLocal.id))
+
+            if deployment_version is not None:
+                stmt = stmt.where(
+                    AgentRunLocal.deployment_version == deployment_version
+                )
+            if environment is not None:
+                stmt = stmt.where(AgentRunLocal.environment == environment)
+            if outcomes is not None and len(outcomes) > 0:
+                stmt = stmt.where(AgentRunLocal.semantic_cluster.in_(outcomes))
+            if min_latency_ms is not None:
+                stmt = stmt.where(AgentRunLocal.latency_ms >= min_latency_ms)
+            if since_hours is not None:
+                from datetime import timedelta
+
+                cutoff = datetime.utcnow() - timedelta(hours=since_hours)
+                stmt = stmt.where(AgentRunLocal.started_at >= cutoff)
+
+            result = session.execute(stmt)
+            count = result.scalar()
+            return count or 0
+
+    def delete_runs_filtered(
+        self,
+        deployment_version: str | None = None,
+        environment: str | None = None,
+        older_than_days: int | None = None,
+        keep_last_n: int | None = None,
+    ) -> int:
+        """
+        Delete runs based on filter criteria.
+
+        Args:
+            deployment_version: Delete only this version
+            environment: Delete only this environment
+            older_than_days: Delete runs older than N days
+            keep_last_n: Keep only the N most recent runs (deletes older ones)
+
+        Returns:
+            Number of rows deleted
+        """
+        with Session(self._engine) as session:
+            if keep_last_n is not None:
+                # Build subquery to get IDs of runs to keep
+                keep_stmt = (
+                    select(AgentRunLocal.id)
+                    .order_by(AgentRunLocal.started_at.desc())
+                    .limit(keep_last_n)
+                )
+
+                if deployment_version is not None:
+                    keep_stmt = keep_stmt.where(
+                        AgentRunLocal.deployment_version == deployment_version
+                    )
+                if environment is not None:
+                    keep_stmt = keep_stmt.where(
+                        AgentRunLocal.environment == environment
+                    )
+
+                # Get IDs to keep
+                keep_result = session.execute(keep_stmt)
+                keep_ids = [row[0] for row in keep_result.fetchall()]
+
+                # Delete everything except those IDs
+                if keep_ids:
+                    delete_stmt = text(
+                        f"DELETE FROM agent_runs_local WHERE id NOT IN ({','.join(['?'] * len(keep_ids))})"
+                    )
+                    result = session.execute(delete_stmt, keep_ids)
+                else:
+                    # If no IDs to keep, delete all matching filters
+                    delete_stmt = text("DELETE FROM agent_runs_local WHERE 1=1")
+                    result = session.execute(delete_stmt)
+
+                session.commit()
+                return result.rowcount
+
+            # older_than_days filter
+            delete_conditions = []
+            params = {}
+
+            if older_than_days is not None:
+                from datetime import timedelta
+
+                cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+                delete_conditions.append("started_at < :cutoff")
+                params["cutoff"] = cutoff
+
+            if deployment_version is not None:
+                delete_conditions.append("deployment_version = :version")
+                params["version"] = deployment_version
+
+            if environment is not None:
+                delete_conditions.append("environment = :env")
+                params["env"] = environment
+
+            if delete_conditions:
+                where_clause = " AND ".join(delete_conditions)
+                delete_stmt = text(
+                    f"DELETE FROM agent_runs_local WHERE {where_clause}"
+                )
+                result = session.execute(delete_stmt, params)
+                session.commit()
+                return result.rowcount
+
+            return 0
+
+    def get_db_stats(self) -> dict[str, Any]:
+        """
+        Get database health statistics.
+
+        Returns:
+            Dict with:
+            - total_runs: Total number of runs
+            - versions: List of versions with counts
+            - disk_size_mb: Database file size in MB
+            - oldest_run: Datetime of oldest run
+            - newest_run: Datetime of newest run
+        """
+        with Session(self._engine) as session:
+            # Total runs
+            from sqlalchemy import func
+
+            total_stmt = select(func.count(AgentRunLocal.id))
+            total_result = session.execute(total_stmt)
+            total_runs = total_result.scalar() or 0
+
+            # Versions
+            versions_stmt = text(
+                "SELECT deployment_version, COUNT(*) FROM agent_runs_local "
+                "GROUP BY deployment_version ORDER BY COUNT(*) DESC"
+            )
+            versions_result = session.execute(versions_stmt)
+            versions = [
+                {"version": row[0] or "unknown", "count": row[1]}
+                for row in versions_result.fetchall()
+            ]
+
+            # Oldest and newest runs
+            oldest_stmt = (
+                select(AgentRunLocal.started_at)
+                .order_by(AgentRunLocal.started_at.asc())
+                .limit(1)
+            )
+            oldest_result = session.execute(oldest_stmt)
+            oldest_row = oldest_result.scalar()
+            oldest_run = oldest_row if oldest_row else None
+
+            newest_stmt = (
+                select(AgentRunLocal.started_at)
+                .order_by(AgentRunLocal.started_at.desc())
+                .limit(1)
+            )
+            newest_result = session.execute(newest_stmt)
+            newest_row = newest_result.scalar()
+            newest_run = newest_row if newest_row else None
+
+            # Disk size (SQLite file)
+            disk_size_mb = 0.0
+            try:
+                db_path = get_settings().DRIFTBASE_DB_PATH
+                if os.path.exists(db_path):
+                    size_bytes = os.path.getsize(db_path)
+                    disk_size_mb = size_bytes / (1024 * 1024)
+            except Exception as e:
+                logger.debug(f"Failed to get database file size: {e}")
+
+            return {
+                "total_runs": total_runs,
+                "versions": versions,
+                "disk_size_mb": round(disk_size_mb, 2),
+                "oldest_run": oldest_run,
+                "newest_run": newest_run,
+            }
