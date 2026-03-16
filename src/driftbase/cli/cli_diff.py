@@ -184,6 +184,18 @@ def _apply_filters_to_runs(
     metavar="THRESHOLD",
     help="Exit code 1 if drift > threshold (e.g., 0.15).",
 )
+@click.option(
+    "--significance-level",
+    type=float,
+    metavar="ALPHA",
+    default=0.05,
+    help="Statistical significance level for hypothesis tests (default 0.05).",
+)
+@click.option(
+    "--show-stats",
+    is_flag=True,
+    help="Show statistical significance tests (chi-squared, t-test, etc.).",
+)
 @click.pass_context
 def cmd_diff(
     ctx: click.Context,
@@ -201,6 +213,8 @@ def cmd_diff(
     max_samples: int | None,
     fail_on_drift: bool,
     exit_nonzero_above: float | None,
+    significance_level: float,
+    show_stats: bool,
 ) -> None:
     """
     Compare two versions or last N runs vs baseline.
@@ -964,6 +978,7 @@ def run_watch(
     backend: StorageBackend | None = None,
     console: Console | None = None,
     max_iterations: int | None = None,
+    notify: bool = False,
 ) -> None:
     """Poll backend and print live diff via rich; exit on Ctrl+C."""
     if backend is None:
@@ -974,7 +989,25 @@ def run_watch(
     if console is None:
         console = Console(no_color=not use_color)
 
+    # Check notification support if enabled
+    if notify:
+        from driftbase.utils.notify import is_notification_supported
+
+        if not is_notification_supported():
+            console.print(
+                "[yellow]⚠[/] Desktop notifications not supported on this platform"
+            )
+            console.print(
+                "[dim]Continuing without notifications. Install required packages:[/]"
+            )
+            console.print("  macOS:   No additional packages needed")
+            console.print("  Linux:   Install notify-send (libnotify-bin package)")
+            console.print("  Windows: pip install win10toast")
+            notify = False
+
     iteration = 0
+    last_drift_alert = None  # Track last alert to avoid spam
+
     try:
         while True:
             if max_iterations is not None and iteration >= max_iterations:
@@ -1056,6 +1089,22 @@ def run_watch(
                     baseline_cost_per_10k=baseline_cost_10k,
                     current_cost_per_10k=current_cost_10k,
                 )
+
+                # Send notification if drift detected and notifications enabled
+                if notify and report.drift_score >= threshold:
+                    # Only send notification if different from last alert (avoid spam)
+                    current_alert_key = f"{report.drift_score:.3f}"
+                    if current_alert_key != last_drift_alert:
+                        from driftbase.utils.notify import send_drift_alert
+
+                        success = send_drift_alert(
+                            baseline_version=against_version,
+                            current_version="current",
+                            drift_score=report.drift_score,
+                            threshold=threshold,
+                        )
+                        if success:
+                            last_drift_alert = current_alert_key
 
             console.print("[dim]Ctrl+C to exit.[/]")
             if max_iterations is not None and iteration >= max_iterations:

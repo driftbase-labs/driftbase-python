@@ -356,6 +356,11 @@ class Settings:
         return self._get_float("DRIFTBASE_WATCH_THRESHOLD", 0.20)
 
     @property
+    def DRIFTBASE_GIT_TAGGING(self) -> bool:
+        """Enable automatic git metadata tagging for runs. Default: False."""
+        return self._get_bool("DRIFTBASE_GIT_TAGGING", False)
+
+    @property
     def DRIFTBASE_WATCH_WEBHOOK_URL(self) -> str | None:
         """Webhook URL for watch alerts. Default: None."""
         return self._get("DRIFTBASE_WATCH_WEBHOOK_URL")
@@ -392,6 +397,7 @@ KNOWN_CONFIG_KEYS = {
     "DRIFTBASE_WATCH_THRESHOLD": float,
     "DRIFTBASE_WATCH_WEBHOOK_URL": str,
     "DRIFTBASE_ENVIRONMENT": str,
+    "DRIFTBASE_GIT_TAGGING": bool,
 }
 
 

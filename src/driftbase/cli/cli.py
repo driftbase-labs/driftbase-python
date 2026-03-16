@@ -57,13 +57,16 @@ from driftbase.cli.cli_baseline import baseline_group
 from driftbase.cli.cli_bookmark import bookmark_group
 from driftbase.cli.cli_chart import cmd_chart
 from driftbase.cli.cli_compare import cmd_compare
+from driftbase.cli.cli_cost import cmd_cost
 from driftbase.cli.cli_demo import cmd_demo
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
 from driftbase.cli.cli_explore import cmd_explore
 from driftbase.cli.cli_export import export_command, import_command
+from driftbase.cli.cli_git import git_group
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
+from driftbase.cli.cli_plugin import plugin_group
 from driftbase.cli.cli_prune import cmd_prune
 from driftbase.cli.cli_push import cmd_push
 from driftbase.cli.cli_report import cmd_report
@@ -89,6 +92,10 @@ cli.add_command(cmd_chart)
 cli.add_command(cmd_compare)
 cli.add_command(bookmark_group)
 cli.add_command(cmd_explore)
+# Phase 3 commands (future / high effort, high value)
+cli.add_command(git_group)
+cli.add_command(cmd_cost)
+cli.add_command(plugin_group)
 
 # Command aliases are added at the end of the file after all commands are defined
 
@@ -684,6 +691,11 @@ def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
     default=0.20,
     help="Drift threshold (default 0.20).",
 )
+@click.option(
+    "--notify",
+    is_flag=True,
+    help="Send desktop notification when drift exceeds threshold.",
+)
 @click.pass_context
 def cmd_watch(
     ctx: click.Context,
@@ -693,6 +705,7 @@ def cmd_watch(
     last: int,
     environment: str | None,
     threshold: float,
+    notify: bool,
 ) -> None:
     """
     Live drift monitor against a baseline version.
@@ -702,6 +715,7 @@ def cmd_watch(
       driftbase watch -a v2.0                    # Monitor v2.0
       driftbase watch -a v2.0 -t 0.15            # Custom threshold
       driftbase watch -a v2.0 -i 10 --min-runs 20  # Poll every 10s, 20 min runs
+      driftbase watch -a v2.0 --notify           # Send desktop notifications
     """
     from driftbase.cli.cli_diff import run_watch
 
@@ -716,6 +730,7 @@ def cmd_watch(
         threshold=threshold,
         use_color=use_color,
         console=console,
+        notify=notify,
     )
 
 
