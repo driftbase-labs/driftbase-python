@@ -54,9 +54,13 @@ def cli(ctx: click.Context, no_color: bool) -> None:
 
 
 from driftbase.cli.cli_baseline import baseline_group
+from driftbase.cli.cli_bookmark import bookmark_group
+from driftbase.cli.cli_chart import cmd_chart
+from driftbase.cli.cli_compare import cmd_compare
 from driftbase.cli.cli_demo import cmd_demo
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
+from driftbase.cli.cli_explore import cmd_explore
 from driftbase.cli.cli_export import export_command, import_command
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
@@ -74,12 +78,17 @@ cli.add_command(cmd_push)
 cli.add_command(cmd_demo)
 cli.add_command(export_command)
 cli.add_command(import_command)
-# New commands
+# Phase 1 commands (comprehensive improvements)
 cli.add_command(cmd_doctor)
 cli.add_command(baseline_group)
 cli.add_command(cmd_tail)
 cli.add_command(cmd_prune)
 cli.add_command(cmd_status)
+# Phase 2 commands (medium effort, high value)
+cli.add_command(cmd_chart)
+cli.add_command(cmd_compare)
+cli.add_command(bookmark_group)
+cli.add_command(cmd_explore)
 
 # Command aliases are added at the end of the file after all commands are defined
 

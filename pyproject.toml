@@ -37,6 +37,10 @@ analyze = [
 semantic = [
     "light-embed>=1.0.0",
 ]
+tui = [
+    "textual>=0.47.0",
+    "plotext>=5.2.0",
+]
 
 [project.scripts]
 driftbase = "driftbase.cli.main:cli"
