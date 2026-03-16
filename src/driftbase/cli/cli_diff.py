@@ -202,7 +202,26 @@ def cmd_diff(
     fail_on_drift: bool,
     exit_nonzero_above: float | None,
 ) -> None:
-    """Compare two versions or last N runs vs baseline. Use --remote for cloud comparison."""
+    """
+    Compare two versions or last N runs vs baseline.
+
+    \b
+    Examples:
+      # Compare two versions
+      driftbase diff v1.0 v2.0
+
+      # Compare last 50 runs against baseline
+      driftbase diff --last 50 --against v2.0
+
+      # CI mode: fail if drift detected
+      driftbase diff v1.0 v2.0 --json --fail-on-drift
+
+      # Filter by time and outcome
+      driftbase diff v1.0 v2.0 --since 24h --outcomes resolved,escalated
+
+      # Use cloud comparison engine
+      driftbase diff v1.0 v2.0 --remote
+    """
     console: Console = ctx.obj["console"]
     use_color = not console.no_color
 

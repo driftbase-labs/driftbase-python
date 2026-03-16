@@ -63,6 +63,7 @@ from driftbase.cli.cli_inspect import cmd_inspect
 from driftbase.cli.cli_prune import cmd_prune
 from driftbase.cli.cli_push import cmd_push
 from driftbase.cli.cli_report import cmd_report
+from driftbase.cli.cli_status import cmd_status
 from driftbase.cli.cli_tail import cmd_tail
 
 cli.add_command(cmd_init)
@@ -78,6 +79,9 @@ cli.add_command(cmd_doctor)
 cli.add_command(baseline_group)
 cli.add_command(cmd_tail)
 cli.add_command(cmd_prune)
+cli.add_command(cmd_status)
+
+# Command aliases are added at the end of the file after all commands are defined
 
 
 def _mask_secret(value: str) -> str:
@@ -356,6 +360,42 @@ def cmd_db_stats(ctx: click.Context) -> None:
     "--since", metavar="DURATION", help="Show runs since duration (e.g., 24h, 7d)."
 )
 @click.option(
+    "--today",
+    "smart_time",
+    flag_value="today",
+    help="Show runs from today (last 24h).",
+)
+@click.option(
+    "--yesterday",
+    "smart_time",
+    flag_value="yesterday",
+    help="Show runs from yesterday.",
+)
+@click.option(
+    "--this-week",
+    "smart_time",
+    flag_value="this-week",
+    help="Show runs from this week.",
+)
+@click.option(
+    "--errors-only",
+    "quality_filter",
+    flag_value="errors-only",
+    help="Show only runs with errors.",
+)
+@click.option(
+    "--slow",
+    "quality_filter",
+    flag_value="slow",
+    help="Show only slow runs (>1s latency).",
+)
+@click.option(
+    "--fast",
+    "quality_filter",
+    flag_value="fast",
+    help="Show only fast runs (<100ms latency).",
+)
+@click.option(
     "--format",
     "-f",
     type=click.Choice(["table", "json", "csv"]),
@@ -372,14 +412,30 @@ def cmd_runs(
     min_latency: int | None,
     max_latency: int | None,
     since: str | None,
+    smart_time: str | None,
+    quality_filter: str | None,
     format: str,
 ) -> None:
-    """List runs for a deployment version from the local backend."""
+    """
+    List runs for a deployment version from the local backend.
+
+    \b
+    Examples:
+      driftbase runs -v v2.0                    # Show last 50 runs
+      driftbase runs -v v2.0 --today            # Show today's runs
+      driftbase runs -v v2.0 --errors-only      # Show only errors
+      driftbase runs -v v2.0 --slow --format json  # Slow runs as JSON
+      driftbase ls -v v2.0                      # Alias for runs
+    """
     console: Console = ctx.obj["console"]
 
-    # Parse since duration
+    # Parse smart time filter
+    from driftbase.cli.filters import parse_quality_filter, smart_filter_to_hours
+
     since_hours = None
-    if since:
+    if smart_time:
+        since_hours = smart_filter_to_hours(smart_time)
+    elif since:
         import re
 
         match = re.match(r"^(\d+)([hdw])$", since.lower())
@@ -392,6 +448,17 @@ def cmd_runs(
                 since_hours = value * 24
             elif unit == "w":
                 since_hours = value * 24 * 7
+
+    # Parse quality filter
+    quality_params = parse_quality_filter(quality_filter) if quality_filter else {}
+
+    # Override explicit filters if quality filter provides them
+    if quality_filter == "errors-only":
+        outcome = "error"
+    elif quality_filter == "slow" and not min_latency:
+        min_latency = 1000
+    elif quality_filter == "fast" and not max_latency:
+        max_latency = 100
 
     try:
         backend = get_backend()
@@ -425,7 +492,46 @@ def cmd_runs(
         ctx.exit(1)
 
     if not runs:
-        console.print(f"No runs found for version {version}")
+        console.print(f"[yellow]❌ No runs found for version[/] [cyan]{version}[/]\n")
+
+        # Provide helpful suggestions
+        try:
+            all_versions = backend.get_versions()
+            if all_versions:
+                console.print("💡 [dim]Suggestions:[/]")
+
+                # Check for similar version names (did you mean?)
+                similar = [
+                    v
+                    for v, _ in all_versions
+                    if version.lower() in v.lower() or v.lower() in version.lower()
+                ]
+                if similar:
+                    console.print(
+                        f"  • Did you mean: [cyan]{', '.join(similar)}[/]?"
+                    )
+
+                # Show available versions
+                available = ", ".join([v for v, _ in all_versions[:5]])
+                if len(all_versions) > 5:
+                    available += f", ... ({len(all_versions)} total)"
+                console.print(f"  • Available versions: {available}")
+                console.print(
+                    "  • Run [cyan]driftbase versions[/] to see all versions"
+                )
+            else:
+                console.print(
+                    "💡 [dim]No versions found in database. Try:[/]"
+                )
+                console.print("  • Run [cyan]driftbase demo[/] to generate sample data")
+                console.print(
+                    "  • Check DRIFTBASE_DB_PATH is correct: [cyan]{}[/]".format(
+                        get_settings().DRIFTBASE_DB_PATH
+                    )
+                )
+        except Exception:
+            pass
+
         return
 
     # Output formats
@@ -579,7 +685,15 @@ def cmd_watch(
     environment: str | None,
     threshold: float,
 ) -> None:
-    """Live drift monitor against a baseline version."""
+    """
+    Live drift monitor against a baseline version.
+
+    \b
+    Examples:
+      driftbase watch -a v2.0                    # Monitor v2.0
+      driftbase watch -a v2.0 -t 0.15            # Custom threshold
+      driftbase watch -a v2.0 -i 10 --min-runs 20  # Poll every 10s, 20 min runs
+    """
     from driftbase.cli.cli_diff import run_watch
 
     console: Console = ctx.obj["console"]
@@ -594,6 +708,12 @@ def cmd_watch(
         use_color=use_color,
         console=console,
     )
+
+
+# Command aliases for familiar shortcuts (added after all commands are defined)
+cli.add_command(cmd_inspect, name="cat")  # driftbase cat <run_id> = driftbase inspect
+cli.add_command(cmd_tail, name="log")  # driftbase log = driftbase tail
+cli.add_command(cmd_prune, name="clean")  # driftbase clean = driftbase prune
 
 
 def main() -> int:
