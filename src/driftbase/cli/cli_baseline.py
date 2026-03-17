@@ -54,7 +54,9 @@ def baseline_set(ctx: click.Context, version: str, scope: str):
         version_names = [ver for ver, _ in versions]
 
         if version not in version_names:
-            console.print(f"[yellow]Warning:[/] Version '{version}' not found in database.")
+            console.print(
+                f"[yellow]Warning:[/] Version '{version}' not found in database."
+            )
             console.print(
                 f"Available versions: {', '.join(version_names) if version_names else 'none'}"
             )
@@ -106,9 +108,7 @@ def baseline_get(ctx: click.Context):
     default=True,
     help="Clear from global config.",
 )
-@click.option(
-    "--local", "scope", flag_value="local", help="Clear from project config."
-)
+@click.option("--local", "scope", flag_value="local", help="Clear from project config.")
 @click.pass_context
 def baseline_clear(ctx: click.Context, scope: str):
     """
@@ -127,8 +127,6 @@ def baseline_clear(ctx: click.Context, scope: str):
     if deleted:
         console.print(f"[green]✓[/] Baseline cleared ({scope_label})")
     else:
-        console.print(
-            f"[yellow]No baseline found in {scope_label} config[/]"
-        )
+        console.print(f"[yellow]No baseline found in {scope_label} config[/]")
 
     ctx.exit(0)

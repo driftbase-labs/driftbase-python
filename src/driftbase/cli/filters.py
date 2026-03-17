@@ -99,24 +99,18 @@ def apply_quality_filter_to_runs(runs: list[dict], quality_filter: str) -> list[
     # Filter by error count
     if "min_error_count" in filters:
         filtered = [
-            r
-            for r in filtered
-            if r.get("error_count", 0) >= filters["min_error_count"]
+            r for r in filtered if r.get("error_count", 0) >= filters["min_error_count"]
         ]
 
     # Filter by latency
     if "min_latency_ms" in filters:
         filtered = [
-            r
-            for r in filtered
-            if r.get("latency_ms", 0) >= filters["min_latency_ms"]
+            r for r in filtered if r.get("latency_ms", 0) >= filters["min_latency_ms"]
         ]
 
     if "max_latency_ms" in filters:
         filtered = [
-            r
-            for r in filtered
-            if r.get("latency_ms", 0) <= filters["max_latency_ms"]
+            r for r in filtered if r.get("latency_ms", 0) <= filters["max_latency_ms"]
         ]
 
     # Filter by environment

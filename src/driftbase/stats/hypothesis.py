@@ -88,8 +88,12 @@ def chi_squared_test(
 
         # Expected counts assuming same distribution
         total_outcome = baseline_obs + current_obs
-        baseline_exp = total_outcome * baseline_totals / (baseline_totals + current_totals)
-        current_exp = total_outcome * current_totals / (baseline_totals + current_totals)
+        baseline_exp = (
+            total_outcome * baseline_totals / (baseline_totals + current_totals)
+        )
+        current_exp = (
+            total_outcome * current_totals / (baseline_totals + current_totals)
+        )
 
         # Add to chi-squared statistic (avoid division by zero)
         if baseline_exp > 0:
@@ -111,7 +115,9 @@ def chi_squared_test(
 
     # Interpretation
     if p_value < alpha:
-        interpretation = f"Outcome distributions differ significantly (p={p_value:.4f} < {alpha})"
+        interpretation = (
+            f"Outcome distributions differ significantly (p={p_value:.4f} < {alpha})"
+        )
     else:
         interpretation = f"No significant difference in outcome distributions (p={p_value:.4f} >= {alpha})"
 
@@ -199,7 +205,9 @@ def t_test(
             f"Current is {direction} than baseline."
         )
     else:
-        interpretation = f"No significant difference in means (p={p_value:.4f} >= {alpha})"
+        interpretation = (
+            f"No significant difference in means (p={p_value:.4f} >= {alpha})"
+        )
 
     return StatisticalTest(
         test_name="t_test",
@@ -245,8 +253,12 @@ def bootstrap_confidence_interval(
     bootstrap_diffs = []
     for _ in range(n_bootstrap):
         # Resample with replacement
-        baseline_sample = [random.choice(baseline_values) for _ in range(len(baseline_values))]
-        current_sample = [random.choice(current_values) for _ in range(len(current_values))]
+        baseline_sample = [
+            random.choice(baseline_values) for _ in range(len(baseline_values))
+        ]
+        current_sample = [
+            random.choice(current_values) for _ in range(len(current_values))
+        ]
 
         # Calculate difference in means
         bs_mean_baseline = sum(baseline_sample) / len(baseline_sample)
@@ -259,8 +271,16 @@ def bootstrap_confidence_interval(
     lower_idx = int(alpha / 2 * n_bootstrap)
     upper_idx = int((1 - alpha / 2) * n_bootstrap)
 
-    lower_bound = bootstrap_diffs[lower_idx] if lower_idx < len(bootstrap_diffs) else bootstrap_diffs[0]
-    upper_bound = bootstrap_diffs[upper_idx] if upper_idx < len(bootstrap_diffs) else bootstrap_diffs[-1]
+    lower_bound = (
+        bootstrap_diffs[lower_idx]
+        if lower_idx < len(bootstrap_diffs)
+        else bootstrap_diffs[0]
+    )
+    upper_bound = (
+        bootstrap_diffs[upper_idx]
+        if upper_idx < len(bootstrap_diffs)
+        else bootstrap_diffs[-1]
+    )
 
     return observed_diff, lower_bound, upper_bound
 
@@ -377,8 +397,12 @@ def analyze_significance(
     # 1. Test outcome distribution (chi-squared)
     from collections import Counter
 
-    baseline_outcomes = Counter(r.get("semantic_cluster", "unknown") for r in baseline_runs)
-    current_outcomes = Counter(r.get("semantic_cluster", "unknown") for r in current_runs)
+    baseline_outcomes = Counter(
+        r.get("semantic_cluster", "unknown") for r in baseline_runs
+    )
+    current_outcomes = Counter(
+        r.get("semantic_cluster", "unknown") for r in current_runs
+    )
 
     results["outcome_distribution"] = chi_squared_test(
         dict(baseline_outcomes), dict(current_outcomes), alpha

@@ -109,7 +109,11 @@ def get_git_context(path: Path | None = None) -> GitContext:
             timeout=2,
             check=False,
         )
-        is_dirty = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
+        is_dirty = (
+            bool(status_result.stdout.strip())
+            if status_result.returncode == 0
+            else False
+        )
 
         # Get remote URL
         remote_result = subprocess.run(
@@ -120,7 +124,9 @@ def get_git_context(path: Path | None = None) -> GitContext:
             timeout=2,
             check=False,
         )
-        remote_url = remote_result.stdout.strip() if remote_result.returncode == 0 else None
+        remote_url = (
+            remote_result.stdout.strip() if remote_result.returncode == 0 else None
+        )
 
         # Get tag if on tagged commit
         tag_result = subprocess.run(
@@ -243,7 +249,9 @@ def format_git_label(ctx: GitContext) -> str:
     return label
 
 
-def get_common_ancestor(branch1: str, branch2: str, path: Path | None = None) -> str | None:
+def get_common_ancestor(
+    branch1: str, branch2: str, path: Path | None = None
+) -> str | None:
     """Get the common ancestor commit of two branches."""
     if path is None:
         path = Path.cwd()

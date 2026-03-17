@@ -494,9 +494,7 @@ class SQLiteBackend(StorageBackend):
 
             if delete_conditions:
                 where_clause = " AND ".join(delete_conditions)
-                delete_stmt = text(
-                    f"DELETE FROM agent_runs_local WHERE {where_clause}"
-                )
+                delete_stmt = text(f"DELETE FROM agent_runs_local WHERE {where_clause}")
                 result = session.execute(delete_stmt, params)
                 session.commit()
                 return result.rowcount

@@ -146,7 +146,9 @@ def cmd_chart(
         p95 = latencies_sorted[int(len(latencies) * 0.95)]
         avg = sum(latencies) // len(latencies)
 
-        console.print(f"\n[bold cyan]Latency Distribution[/] ({version}, {len(runs)} runs)\n")
+        console.print(
+            f"\n[bold cyan]Latency Distribution[/] ({version}, {len(runs)} runs)\n"
+        )
 
         # Create histogram
         lines = _create_histogram(latencies, bins=15, width=50)
@@ -160,7 +162,9 @@ def cmd_chart(
     elif metric == "outcomes":
         outcomes = Counter(r.get("semantic_cluster", "unknown") for r in runs)
 
-        console.print(f"\n[bold cyan]Outcome Distribution[/] ({version}, {len(runs)} runs)\n")
+        console.print(
+            f"\n[bold cyan]Outcome Distribution[/] ({version}, {len(runs)} runs)\n"
+        )
 
         # Create bar chart
         lines = _create_bar_chart(dict(outcomes), width=50)
@@ -186,7 +190,9 @@ def cmd_chart(
             console.print("[yellow]No tool usage data available[/]")
             ctx.exit(0)
 
-        console.print(f"\n[bold cyan]Tool Usage Frequency[/] ({version}, {len(runs)} runs)\n")
+        console.print(
+            f"\n[bold cyan]Tool Usage Frequency[/] ({version}, {len(runs)} runs)\n"
+        )
 
         # Show top 15 tools
         top_tools = dict(tool_counts.most_common(15))
@@ -199,7 +205,9 @@ def cmd_chart(
     elif metric == "errors":
         error_counts = Counter(r.get("error_count", 0) for r in runs)
 
-        console.print(f"\n[bold cyan]Error Count Distribution[/] ({version}, {len(runs)} runs)\n")
+        console.print(
+            f"\n[bold cyan]Error Count Distribution[/] ({version}, {len(runs)} runs)\n"
+        )
 
         # Create bar chart
         error_data = {f"{k} errors": v for k, v in sorted(error_counts.items())}
@@ -209,7 +217,7 @@ def cmd_chart(
 
         total_errors = sum(k * v for k, v in error_counts.items())
         console.print(
-            f"\n[dim]Total errors: {total_errors}, Error rate: {(sum(v for k,v in error_counts.items() if k > 0) / len(runs) * 100):.1f}%[/]\n"
+            f"\n[dim]Total errors: {total_errors}, Error rate: {(sum(v for k, v in error_counts.items() if k > 0) / len(runs) * 100):.1f}%[/]\n"
         )
 
     ctx.exit(0)

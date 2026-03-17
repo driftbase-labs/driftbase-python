@@ -202,7 +202,9 @@ def cmd_compare(
                         verdict = "[red]✗ High[/]"
                         drift_display = f"[red]{drift:.3f}[/]"
 
-                    table.add_row(baseline_ver, "→", current_ver, drift_display, verdict)
+                    table.add_row(
+                        baseline_ver, "→", current_ver, drift_display, verdict
+                    )
                 else:
                     table.add_row(
                         baseline_ver, "→", current_ver, "[dim]N/A[/]", "[dim]—[/]"

@@ -971,7 +971,7 @@ def run_diff(
         baseline_cost_per_10k=baseline_cost_10k,
         current_cost_per_10k=current_cost_10k,
     )
-    
+
     # Non-JSON CI exit code logic
     if (fail_on_drift and report.drift_score > 0) or (
         exit_nonzero_above is not None and report.drift_score > exit_nonzero_above

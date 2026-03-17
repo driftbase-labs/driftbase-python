@@ -70,7 +70,9 @@ def git_status(ctx: click.Context):
         table.add_row("Branch", git_ctx.branch or "detached HEAD")
         table.add_row("Commit", git_ctx.commit_sha or "unknown")
         table.add_row("Tag", git_ctx.tag or "none")
-        table.add_row("Dirty", "yes (uncommitted changes)" if git_ctx.is_dirty else "no")
+        table.add_row(
+            "Dirty", "yes (uncommitted changes)" if git_ctx.is_dirty else "no"
+        )
         table.add_row("Remote", git_ctx.remote_url or "none")
         table.add_row("Label", format_git_label(git_ctx))
 
@@ -82,7 +84,9 @@ def git_status(ctx: click.Context):
         print(f"  Branch:     {git_ctx.branch or 'detached HEAD'}")
         print(f"  Commit:     {git_ctx.commit_sha or 'unknown'}")
         print(f"  Tag:        {git_ctx.tag or 'none'}")
-        print(f"  Dirty:      {'yes (uncommitted changes)' if git_ctx.is_dirty else 'no'}")
+        print(
+            f"  Dirty:      {'yes (uncommitted changes)' if git_ctx.is_dirty else 'no'}"
+        )
         print(f"  Remote:     {git_ctx.remote_url or 'none'}")
         print(f"  Label:      {format_git_label(git_ctx)}")
         print()
@@ -146,7 +150,9 @@ def git_compare(
     # Check git availability
     if not is_git_repo():
         console.print("[red]Error:[/] Not in a git repository")
-        console.print("\nThis command requires working directory to be in a git repository.")
+        console.print(
+            "\nThis command requires working directory to be in a git repository."
+        )
         ctx.exit(1)
 
     # Get commit SHAs for base and head
@@ -191,7 +197,9 @@ def git_compare(
     runs = backend.get_runs(deployment_version=version, limit=limit * 10)
 
     if not runs:
-        console.print(f"[yellow]No runs found{' for version ' + version if version else ''}[/]")
+        console.print(
+            f"[yellow]No runs found{' for version ' + version if version else ''}[/]"
+        )
         ctx.exit(0)
 
     # TODO: Filter by git commit when git_commit column is added

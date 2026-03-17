@@ -57,9 +57,7 @@ def cmd_upgrade(ctx: click.Context, check_only: bool) -> None:
         try:
             import requests
 
-            response = requests.get(
-                "https://pypi.org/pypi/driftbase/json", timeout=10
-            )
+            response = requests.get("https://pypi.org/pypi/driftbase/json", timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 latest_version = data["info"]["version"]

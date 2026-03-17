@@ -97,9 +97,7 @@ def cmd_doctor(ctx: click.Context, fix: bool) -> None:
     try:
         backend = get_backend()
         stats = backend.get_db_stats()
-        checks_results.append(
-            ("Schema version", "✓ PASS", "Schema is up to date")
-        )
+        checks_results.append(("Schema version", "✓ PASS", "Schema is up to date"))
     except Exception as e:
         checks_results.append(("Schema version", "✗ FAIL", f"Error: {e}"))
 
@@ -146,9 +144,7 @@ def cmd_doctor(ctx: click.Context, fix: bool) -> None:
                 )
             )
         else:
-            checks_results.append(
-                ("Disk space", "✓ PASS", f"{disk_size:.2f} MB used")
-            )
+            checks_results.append(("Disk space", "✓ PASS", f"{disk_size:.2f} MB used"))
     except Exception as e:
         checks_results.append(("Disk space", "⚠ WARN", f"Could not check: {e}"))
 

@@ -415,7 +415,16 @@ def validate_config_key(key: str, value: str) -> tuple[bool, str]:
     try:
         if expected_type is bool:
             # Validate boolean format
-            if value.lower() not in ("0", "1", "true", "false", "yes", "no", "on", "off"):
+            if value.lower() not in (
+                "0",
+                "1",
+                "true",
+                "false",
+                "yes",
+                "no",
+                "on",
+                "off",
+            ):
                 return False, f"Invalid boolean value for {key}: {value}"
         elif expected_type is int:
             # Validate integer format

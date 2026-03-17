@@ -232,7 +232,9 @@ def cmd_cost(
                     "budget_remaining_usd": budget_remaining,
                     "burn_rate_usd_per_day": daily_cost,
                     "days_until_depleted": (
-                        days_until_depleted if days_until_depleted != float("inf") else None
+                        days_until_depleted
+                        if days_until_depleted != float("inf")
+                        else None
                     ),
                 }
 
@@ -241,14 +243,18 @@ def cmd_cost(
 
     # Table output
     console.print("\n[bold cyan]💰 Cost Analysis[/]")
-    console.print(f"[dim]Analyzing {len(runs)} runs{f' for {version}' if version else ''}[/]\n")
+    console.print(
+        f"[dim]Analyzing {len(runs)} runs{f' for {version}' if version else ''}[/]\n"
+    )
 
     # Summary panel
     summary_lines = [
         f"Total cost:       [bold]${total_cost_usd:.2f}[/]",
         f"Total runs:       {len(runs):,}",
         f"Cost per run:     ${total_cost_usd / len(runs):.4f}" if runs else "N/A",
-        f"Cost per 1K runs: ${total_cost_usd / len(runs) * 1000:.2f}" if runs else "N/A",
+        f"Cost per 1K runs: ${total_cost_usd / len(runs) * 1000:.2f}"
+        if runs
+        else "N/A",
     ]
 
     if since:
@@ -290,7 +296,9 @@ def cmd_cost(
                 started_at = run.get("started_at")
                 if started_at:
                     try:
-                        dt = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+                        dt = datetime.fromisoformat(
+                            str(started_at).replace("Z", "+00:00")
+                        )
                         key = dt.strftime("%Y-%m-%d")
                     except Exception:
                         key = "unknown"
@@ -344,7 +352,9 @@ def cmd_cost(
             budget_remaining = budget - monthly_projection
             burn_rate_pct = (monthly_projection / budget * 100) if budget > 0 else 0
 
-            days_until_depleted = budget / daily_cost if daily_cost > 0 else float("inf")
+            days_until_depleted = (
+                budget / daily_cost if daily_cost > 0 else float("inf")
+            )
 
             budget_lines = [
                 f"Monthly budget:     ${budget:.2f}",

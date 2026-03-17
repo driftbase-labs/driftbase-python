@@ -522,22 +522,16 @@ def cmd_runs(
                     if version.lower() in v.lower() or v.lower() in version.lower()
                 ]
                 if similar:
-                    console.print(
-                        f"  • Did you mean: [cyan]{', '.join(similar)}[/]?"
-                    )
+                    console.print(f"  • Did you mean: [cyan]{', '.join(similar)}[/]?")
 
                 # Show available versions
                 available = ", ".join([v for v, _ in all_versions[:5]])
                 if len(all_versions) > 5:
                     available += f", ... ({len(all_versions)} total)"
                 console.print(f"  • Available versions: {available}")
-                console.print(
-                    "  • Run [cyan]driftbase versions[/] to see all versions"
-                )
+                console.print("  • Run [cyan]driftbase versions[/] to see all versions")
             else:
-                console.print(
-                    "💡 [dim]No versions found in database. Try:[/]"
-                )
+                console.print("💡 [dim]No versions found in database. Try:[/]")
                 console.print("  • Run [cyan]driftbase demo[/] to generate sample data")
                 console.print(
                     f"  • Check DRIFTBASE_DB_PATH is correct: [cyan]{get_settings().DRIFTBASE_DB_PATH}[/]"

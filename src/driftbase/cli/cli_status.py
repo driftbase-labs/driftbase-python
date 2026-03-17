@@ -142,9 +142,7 @@ def cmd_status(ctx: click.Context) -> None:
             all_runs = backend.get_runs(limit=10000)
             cutoff = datetime.utcnow() - timedelta(hours=24)
             today_runs = [
-                r
-                for r in all_runs
-                if r.get("started_at") and r["started_at"] >= cutoff
+                r for r in all_runs if r.get("started_at") and r["started_at"] >= cutoff
             ]
     except Exception:
         today_runs = []
@@ -153,7 +151,9 @@ def cmd_status(ctx: click.Context) -> None:
     today_errors = sum(1 for r in today_runs if r.get("error_count", 0) > 0)
     today_error_rate = (today_errors / today_count * 100) if today_count > 0 else 0
 
-    today_latencies = [r.get("latency_ms", 0) for r in today_runs if r.get("latency_ms")]
+    today_latencies = [
+        r.get("latency_ms", 0) for r in today_runs if r.get("latency_ms")
+    ]
     avg_latency = sum(today_latencies) // len(today_latencies) if today_latencies else 0
 
     cost_per_10k = calculate_cost_per_10k(today_runs) if today_runs else 0
@@ -175,7 +175,9 @@ def cmd_status(ctx: click.Context) -> None:
 
         # Baseline
         if baseline_version:
-            lines.append(f"[bold]Baseline:[/]              {baseline_version} (from config)")
+            lines.append(
+                f"[bold]Baseline:[/]              {baseline_version} (from config)"
+            )
         else:
             lines.append("[bold]Baseline:[/]              [dim]Not set[/]")
 
@@ -187,7 +189,13 @@ def cmd_status(ctx: click.Context) -> None:
         lines.append(f"  Runs:                {today_count}")
 
         if today_count > 0:
-            error_color = "red" if today_error_rate > 5 else "yellow" if today_error_rate > 1 else "green"
+            error_color = (
+                "red"
+                if today_error_rate > 5
+                else "yellow"
+                if today_error_rate > 1
+                else "green"
+            )
             lines.append(
                 f"  Error rate:          [{error_color}]{today_error_rate:.1f}%[/] ({today_errors} errors)"
             )
@@ -201,7 +209,9 @@ def cmd_status(ctx: click.Context) -> None:
             lines.append(f"[bold]Recent versions:[/]       {recent}")
 
         # Database
-        lines.append(f"[bold]Database size:[/]         {disk_size_mb:.2f} MB ({total_runs:,} runs)")
+        lines.append(
+            f"[bold]Database size:[/]         {disk_size_mb:.2f} MB ({total_runs:,} runs)"
+        )
 
         panel = Panel("\n".join(lines), border_style="cyan", padding=(1, 2))
         console.print("\n")
@@ -224,7 +234,9 @@ def cmd_status(ctx: click.Context) -> None:
         print("━" * 50)
         if latest_version:
             time_ago = _format_time_ago(newest_run_dt) if newest_run_dt else "unknown"
-            print(f"Latest version:        {latest_version} ({latest_count} runs, {time_ago})")
+            print(
+                f"Latest version:        {latest_version} ({latest_count} runs, {time_ago})"
+            )
         else:
             print("Latest version:        No data yet")
 
@@ -238,7 +250,9 @@ def cmd_status(ctx: click.Context) -> None:
         print("\nToday's stats:")
         print(f"  Runs:                {today_count}")
         if today_count > 0:
-            print(f"  Error rate:          {today_error_rate:.1f}% ({today_errors} errors)")
+            print(
+                f"  Error rate:          {today_error_rate:.1f}% ({today_errors} errors)"
+            )
             print(f"  Avg latency:         {avg_latency}ms")
             print(f"  Cost per 10k:        €{cost_per_10k:.2f}")
 

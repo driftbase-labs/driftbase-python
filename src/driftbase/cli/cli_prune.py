@@ -36,9 +36,7 @@ def _parse_duration(duration_str: str) -> int | None:
 @click.command(name="prune")
 @click.option("--version", "-v", help="Prune specific version only.")
 @click.option("--environment", "-e", help="Prune specific environment only.")
-@click.option(
-    "--keep-last", type=int, metavar="N", help="Keep only the last N runs."
-)
+@click.option("--keep-last", type=int, metavar="N", help="Keep only the last N runs.")
 @click.option(
     "--older-than",
     metavar="DURATION",
@@ -83,9 +81,7 @@ def cmd_prune(
     if older_than:
         older_than_days = _parse_duration(older_than)
         if older_than_days is None:
-            console.print(
-                f"[red]Error:[/] Invalid duration format: {older_than}"
-            )
+            console.print(f"[red]Error:[/] Invalid duration format: {older_than}")
             console.print("  Expected format: 30d (days) or 24h (hours)")
             ctx.exit(1)
 
@@ -141,7 +137,9 @@ def cmd_prune(
 
     # Confirmation prompt (if not --yes)
     if not yes:
-        console.print("\n[yellow]This will permanently delete runs from the database.[/]")
+        console.print(
+            "\n[yellow]This will permanently delete runs from the database.[/]"
+        )
         confirm = click.confirm("Do you want to continue?", default=False)
         if not confirm:
             console.print("[dim]Cancelled[/]")
