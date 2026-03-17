@@ -449,36 +449,211 @@ driftbase config
 
 ## CLI Reference
 
+### Core Commands
+
 | Command | Description |
 |---------|-------------|
 | `driftbase init` | Interactive setup guide — get started in 60 seconds |
+| `driftbase config` | Show current configuration (env, config file, defaults) |
+| `driftbase doctor` | Check configuration and database health |
+| `driftbase status` | Quick dashboard of key metrics and system health |
 | `driftbase demo` | Inject synthetic runs to test the drift engine |
+
+### Drift Detection & Analysis
+
+| Command | Description |
+|---------|-------------|
 | `driftbase diff <v1> <v2>` | Compare two versions with statistical analysis |
-| `driftbase report <v1> <v2>` | Generate shareable reports (markdown, JSON, HTML, EU AI Act) |
-| `driftbase inspect <run_id>` | Deep-dive into a specific run's execution trace |
 | `driftbase watch -a <version>` | Live terminal dashboard monitoring incoming runs |
-| `driftbase runs -v <version>` | List all local runs for a deployment version |
+| `driftbase report <v1> <v2>` | Generate shareable reports (markdown, JSON, HTML, EU AI Act) |
+
+### Data Management
+
+| Command | Description |
+|---------|-------------|
+| `driftbase runs -v <version>` | List runs for a deployment version |
 | `driftbase versions` | List all deployment versions and run counts |
+| `driftbase inspect <run_id>` | Deep-dive into a specific run's execution trace |
+| `driftbase tail` | Stream recent runs with minimal output |
+| `driftbase prune` | Delete runs based on retention criteria |
+| `driftbase reset -v <version>` | Delete all runs for a deployment version |
 | `driftbase export` | Export all runs to JSON for backup/archival |
 | `driftbase import <file.json>` | Import runs from JSON (supports merge/replace modes) |
-| `driftbase push` | Sync local runs to dashboard — connect existing data or ongoing sync (Pro) |
-| `driftbase reset -v <version>` | Delete all runs for a deployment version |
-| `driftbase config` | View current configuration and database path |
+| `driftbase push` | Sync local runs to dashboard (Pro) |
+
+### Visualization & Analysis
+
+| Command | Description |
+|---------|-------------|
+| `driftbase chart -v <version>` | Display terminal charts for run metrics |
+| `driftbase compare <v1> <v2> <v3>` | Multi-version batch comparison (tournament mode) |
+| `driftbase explore` | Interactive terminal UI for exploring runs |
+| `driftbase cost` | Analyze costs with detailed breakdown and forecasting |
+
+### Command Groups
+
+| Command | Description |
+|---------|-------------|
+| `driftbase baseline` | Manage baseline version (set, get, clear) |
+| `driftbase bookmark` | Save and run commonly used queries |
+| `driftbase git` | Git integration (status, compare, tag) |
+| `driftbase plugin` | Manage plugins for custom checks and integrations |
+
+### Command Aliases
+
+| Alias | Equivalent | Description |
+|-------|------------|-------------|
+| `driftbase cat <run_id>` | `driftbase inspect` | Unix-style run inspection |
+| `driftbase log` | `driftbase tail` | Unix-style log viewing |
+| `driftbase clean` | `driftbase prune` | Unix-style cleanup |
+
+### Utility Commands
+
+| Command | Description |
+|---------|-------------|
 | `driftbase db-stats` | Print internal statistics (semantic clusters, etc.) |
 
 ### CLI Examples
 
+#### Basic Drift Detection
 ```bash
-# Compare last 20 runs against baseline v2.0
+# Compare two versions
+driftbase diff v1.0 v2.0
+
+# Compare last 20 runs against baseline
 driftbase diff --last 20 --against v2.0
 
-# Filter comparison by environment
+# Filter by environment
 driftbase diff v2.0 v2.1 --environment production
 
-# Generate markdown report for PR comment
-driftbase diff v2.0 v2.1 --format md --output drift_report.md
+# Filter by time and outcome
+driftbase diff v1.0 v2.0 --since 24h --outcomes resolved,escalated
 
-# Generate EU AI Act compliance report with signature
+# Statistical significance testing
+driftbase diff v1.0 v2.0 --show-stats --significance-level 0.05
+```
+
+#### Monitoring & Alerts
+```bash
+# Watch for drift in real-time
+driftbase watch --against v2.0 --threshold 0.15
+
+# Watch with desktop notifications
+driftbase watch -a v2.0 --notify
+
+# Monitor with custom interval
+driftbase watch -a v2.0 -i 10 --min-runs 20
+```
+
+#### Data Exploration
+```bash
+# Quick status dashboard
+driftbase status
+
+# List runs with smart filters
+driftbase runs -v v2.0 --today --errors-only
+driftbase runs -v v2.0 --slow --format json
+
+# Follow recent runs like tail -f
+driftbase tail -f
+driftbase tail -n 50 -v v2.0
+
+# Deep dive into specific run
+driftbase inspect <run_id>
+driftbase cat <run_id>  # Alias
+```
+
+#### Visualization
+```bash
+# Display terminal charts
+driftbase chart -v v2.0 -m latency
+driftbase chart -v v2.0 -m outcomes
+driftbase chart -v v2.0 -m tools
+
+# Multi-version comparison
+driftbase compare v1.0 v1.5 v2.0
+driftbase compare v1.0 v1.5 v2.0 --matrix  # Tournament mode
+
+# Interactive TUI
+driftbase explore
+```
+
+#### Cost Analysis
+```bash
+# Overall cost summary
+driftbase cost
+
+# Cost for specific version
+driftbase cost -v v2.0
+
+# Group by provider/outcome/day
+driftbase cost --groupby provider
+driftbase cost --since 7d --groupby day
+
+# Budget tracking
+driftbase cost --budget 100 --since 30d
+driftbase cost --format json
+```
+
+#### Baseline Management
+```bash
+# Set baseline for comparisons
+driftbase baseline set v2.0
+
+# Show current baseline
+driftbase baseline get
+
+# Clear baseline
+driftbase baseline clear
+```
+
+#### Bookmarks
+```bash
+# Save frequently used queries
+driftbase bookmark save prod-errors "runs -v production --errors-only"
+driftbase bookmark save weekly-diff "diff v1.0 v2.0 --since 7d"
+
+# List bookmarks
+driftbase bookmark list
+
+# Run saved bookmark
+driftbase bookmark run prod-errors
+```
+
+#### Git Integration
+```bash
+# Show git repository status
+driftbase git status
+
+# Compare branches
+driftbase git compare main feature-branch
+
+# Enable git auto-tagging
+driftbase git tag --enable
+```
+
+#### Plugin System
+```bash
+# Initialize plugin system
+driftbase plugin init
+
+# List installed plugins
+driftbase plugin list
+
+# Show plugin details
+driftbase plugin info example
+
+# Disable/enable plugins
+driftbase plugin disable example
+driftbase plugin enable example
+```
+
+#### Reports & Export
+```bash
+# Generate markdown report for PR comment
+driftbase diff v2.0 v2.1 --format md --output pr_comment.md
+
+# Generate EU AI Act compliance report
 driftbase report v2.0 v2.1 --format html --template eu-ai-act --sign
 
 # Export all production runs to JSON
@@ -486,9 +661,31 @@ driftbase export --output backup.json
 
 # Import runs with merge strategy
 driftbase import backup.json --merge
+```
 
-# Watch for drift in real-time
-driftbase watch --against v2.0 --threshold 0.15
+#### CI/CD Integration
+```bash
+# Fail on any drift (strict mode)
+driftbase diff v1.0 v2.0 --json --fail-on-drift
+
+# Fail above specific threshold
+driftbase diff v1.0 v2.0 --json --exit-nonzero-above 0.15
+
+# Combine with budget checks
+driftbase cost -v v2.0 --budget 100 --format json
+```
+
+#### Data Cleanup
+```bash
+# Preview what would be deleted
+driftbase prune --keep-last 5000 --dry-run
+
+# Delete old runs
+driftbase prune --older-than 30d
+driftbase prune --version v1.0 --older-than 7d
+
+# Quick cleanup with alias
+driftbase clean --keep-last 1000
 ```
 
 ---
