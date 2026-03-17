@@ -12,6 +12,9 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Driftbase", email = "info@driftbase.io" }
 ]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
     "pydantic>=2.0.0",
     "httpx>=0.25.0",
