@@ -287,13 +287,33 @@ response = query_engine.query("What is LlamaIndex?")
 
 **Migration from auto-detection:** If you were using the `@track()` decorator with LlamaIndex, switch to the explicit `LlamaIndexTracer` for better event granularity and control. The auto-detection fallback has been removed in favor of the explicit integration.
 
-The `@track` decorator captures:
-- Tool call sequences and parameters (hashed)
-- Token usage (prompt + completion)
-- Latency distribution (p50, p95, p99)
-- Error rates and types
-- Decision outcomes (e.g., escalation to human)
-- Cost deltas (computed from your configured rates)
+### Behavioral Metrics Captured
+
+The `@track` decorator automatically captures comprehensive behavioral telemetry:
+
+**Core Metrics:**
+- **Tool call sequences** and parameters (SHA256 hashed)
+- **Token usage** (prompt + completion tokens)
+- **Latency distribution** (p50, p95, p99)
+- **Error rates and types**
+- **Decision outcomes** (e.g., escalation to human)
+- **Cost deltas** (computed from your configured rates)
+
+**Advanced Behavioral Metrics (New):**
+- **Loop count** (`loop_count`) - Number of tool execution iterations (tracks agentic reasoning depth)
+- **Verbosity ratio** (`verbosity_ratio`) - Response length relative to input (detects output bloat)
+- **Tool call sequence** (`tool_sequence`) - Ordered list of tools called (tracks decision pathways)
+- **Time to first tool** (`time_to_first_tool_ms`) - Latency before agent takes first action
+- **Retry count** (`retry_count`) - Number of tool call retries (reliability indicator)
+- **Output length** (`output_length`) - Character count of final response
+- **Tool sequence drift** (`tool_sequence_drift`) - Detects changes in tool calling order
+
+These metrics enable detection of subtle behavioral changes:
+- **Reasoning depth changes**: Loop count increases suggest more complex agent reasoning
+- **Response verbosity changes**: Verbosity ratio spikes indicate wordier outputs
+- **Decision pathway changes**: Tool sequence shifts reveal altered problem-solving strategies
+- **Performance regressions**: Time-to-first-tool increases suggest planning bottlenecks
+- **Reliability issues**: Retry count increases indicate tool instability
 
 All data is stored in `~/.driftbase/runs.db` (SQLite) with automatic retention limits and WAL mode for safe concurrent writes.
 
