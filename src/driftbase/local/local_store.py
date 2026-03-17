@@ -44,6 +44,13 @@ class AgentRun:
     semantic_cluster: str
     raw_prompt: str = ""
     raw_output: str = ""
+    # New behavioral metrics
+    loop_count: int = 0
+    tool_call_sequence: str = "[]"  # JSON serialized list
+    time_to_first_tool_ms: int = 0
+    verbosity_ratio: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 @dataclass
@@ -66,6 +73,13 @@ class BehavioralFingerprint:
     retry_rate: float = 0.0
     top_tool_sequences: str = "{}"
     semantic_cluster_distribution: str = "{}"
+    # New behavioral metrics
+    avg_loop_count: float = 0.0
+    p95_loop_count: float = 0.0
+    avg_retry_count: float = 0.0
+    avg_verbosity_ratio: float = 0.0
+    avg_time_to_first_tool_ms: float = 0.0
+    fallback_rate: float = 0.0
 
 
 @dataclass
@@ -100,6 +114,21 @@ class DriftReport:
     current_error_rate: float = 0.0
     baseline_dominant_tool: str = ""
     current_dominant_tool: str = ""
+    # New behavioral drift dimensions
+    verbosity_drift: float = 0.0
+    loop_depth_drift: float = 0.0
+    output_length_drift: float = 0.0
+    tool_sequence_drift: float = 0.0
+    retry_drift: float = 0.0
+    # Context values for new dimensions
+    baseline_avg_verbosity_ratio: float = 0.0
+    current_avg_verbosity_ratio: float = 0.0
+    baseline_avg_loop_count: float = 0.0
+    current_avg_loop_count: float = 0.0
+    baseline_avg_output_length: float = 0.0
+    current_avg_output_length: float = 0.0
+    baseline_avg_retry_count: float = 0.0
+    current_avg_retry_count: float = 0.0
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:
@@ -133,6 +162,13 @@ def run_dict_to_agent_run(d: dict[str, Any]) -> AgentRun:
         semantic_cluster=str(d.get("semantic_cluster", "cluster_none")),
         raw_prompt=str(d.get("raw_prompt", "") or ""),
         raw_output=str(d.get("raw_output", "") or ""),
+        # New behavioral metrics with safe defaults
+        loop_count=int(d.get("loop_count", 0)),
+        tool_call_sequence=str(d.get("tool_call_sequence", "[]")),
+        time_to_first_tool_ms=int(d.get("time_to_first_tool_ms", 0)),
+        verbosity_ratio=float(d.get("verbosity_ratio", 0.0)),
+        prompt_tokens=int(d.get("prompt_tokens", 0)),
+        completion_tokens=int(d.get("completion_tokens", 0)),
     )
 
 

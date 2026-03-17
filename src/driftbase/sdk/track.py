@@ -90,6 +90,13 @@ class RunContext:
     output_structure_hash: str = ""
     error_count: int = 0
 
+    # New behavioral metrics
+    loop_count: int = 0  # number of tool call iterations before final answer
+    tool_call_sequence: list[str] = field(
+        default_factory=list
+    )  # ordered list of tool names
+    time_to_first_tool_ms: int = 0  # milliseconds from start to first tool call
+
     # Added for Azure Cloud Dashboard UI
     raw_input: str = ""
     raw_output: str = ""
@@ -211,6 +218,17 @@ def _build_payload(
 ) -> dict[str, Any]:
     completed = ctx.completed_at or datetime.utcnow()
     tool_sequence_json = json.dumps([t.get("name", "") for t in ctx.tool_calls])
+
+    # Compute verbosity_ratio
+    prompt_tokens = (ctx.token_usage or {}).get("prompt", 0) or 0
+    completion_tokens = (ctx.token_usage or {}).get("completion", 0) or 0
+    verbosity_ratio = (
+        completion_tokens / prompt_tokens if prompt_tokens > 0 else 0.0
+    )
+
+    # Serialize tool_call_sequence to JSON
+    tool_call_sequence_json = json.dumps(ctx.tool_call_sequence)
+
     return {
         "session_id": session_id,
         "deployment_version": deployment_version,
@@ -226,8 +244,13 @@ def _build_payload(
         "error_count": ctx.error_count,
         "retry_count": ctx.retry_count,
         "semantic_cluster": ctx.decision_outcome,
-        "prompt_tokens": (ctx.token_usage or {}).get("prompt"),
-        "completion_tokens": (ctx.token_usage or {}).get("completion"),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        # New behavioral metrics
+        "loop_count": ctx.loop_count,
+        "tool_call_sequence": tool_call_sequence_json,
+        "time_to_first_tool_ms": ctx.time_to_first_tool_ms,
+        "verbosity_ratio": verbosity_ratio,
     }
 
 
@@ -255,16 +278,30 @@ def _capture_generic(
                             else tc
                         )
                         if isinstance(name, dict):
-                            ctx.tool_calls.append({"name": name.get("name", "unknown")})
+                            tool_name = name.get("name", "unknown")
+                            ctx.tool_calls.append({"name": tool_name})
+                            ctx.tool_call_sequence.append(tool_name)
                         else:
-                            ctx.tool_calls.append(
-                                {"name": getattr(name, "name", str(name))}
+                            tool_name = getattr(name, "name", str(name))
+                            ctx.tool_calls.append({"name": tool_name})
+                            ctx.tool_call_sequence.append(tool_name)
+                        # Track time to first tool
+                        if len(ctx.tool_call_sequence) == 1:
+                            ctx.time_to_first_tool_ms = int(
+                                (time.perf_counter() - start) * 1000
                             )
                 elif isinstance(result, dict) and "tool_calls" in result:
                     for tc in result["tool_calls"] or []:
-                        ctx.tool_calls.append(
-                            {"name": tc.get("function", {}).get("name", "unknown")}
-                        )
+                        tool_name = tc.get("function", {}).get("name", "unknown")
+                        ctx.tool_calls.append({"name": tool_name})
+                        ctx.tool_call_sequence.append(tool_name)
+                        # Track time to first tool
+                        if len(ctx.tool_call_sequence) == 1:
+                            ctx.time_to_first_tool_ms = int(
+                                (time.perf_counter() - start) * 1000
+                            )
+                # Update loop_count (iterations of tool calls)
+                ctx.loop_count = len(ctx.tool_call_sequence)
             except Exception:
                 pass
 
@@ -296,7 +333,8 @@ def _capture_openai(
     def patched_create(self: Any, *create_args: Any, **create_kwargs: Any) -> Any:
         t0 = time.perf_counter()
         resp = original_create(self, *create_args, **create_kwargs)
-        ctx.latency_ms += int((time.perf_counter() - t0) * 1000)
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        ctx.latency_ms += elapsed_ms
         try:
             ctx.model_name = getattr(resp, "model", "openai")
             if getattr(resp, "choices", None):
@@ -308,6 +346,12 @@ def _capture_openai(
                         if hasattr(tc, "function") and tc.function:
                             name = getattr(tc.function, "name", name)
                         ctx.tool_calls.append({"name": name})
+                        ctx.tool_call_sequence.append(name)
+                        # Track time to first tool
+                        if len(ctx.tool_call_sequence) == 1:
+                            ctx.time_to_first_tool_ms = elapsed_ms
+                    # Update loop_count
+                    ctx.loop_count = len(ctx.tool_call_sequence)
             usage = getattr(resp, "usage", None)
             if usage:
                 p = getattr(usage, "prompt_tokens", 0) or 0
@@ -743,7 +787,8 @@ async def _capture_openai_async(
             resp = await r
         else:
             resp = r
-        ctx.latency_ms += int((time.perf_counter() - t0) * 1000)
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        ctx.latency_ms += elapsed_ms
         try:
             ctx.model_name = getattr(resp, "model", "openai")
             if getattr(resp, "choices", None):
@@ -755,6 +800,12 @@ async def _capture_openai_async(
                         if hasattr(tc, "function") and tc.function:
                             name = getattr(tc.function, "name", name)
                         ctx.tool_calls.append({"name": name})
+                        ctx.tool_call_sequence.append(name)
+                        # Track time to first tool
+                        if len(ctx.tool_call_sequence) == 1:
+                            ctx.time_to_first_tool_ms = elapsed_ms
+                    # Update loop_count
+                    ctx.loop_count = len(ctx.tool_call_sequence)
             usage = getattr(resp, "usage", None)
             if usage:
                 p = getattr(usage, "prompt_tokens", 0) or 0

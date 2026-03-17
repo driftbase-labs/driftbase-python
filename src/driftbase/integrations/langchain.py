@@ -121,6 +121,8 @@ if _LANGCHAIN_AVAILABLE:
                     "total_tokens": 0,
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
+                    "loop_count": 0,
+                    "time_to_first_tool_ms": 0,
                 }
                 self._run_to_root[srid] = srid
                 logger.debug(f"LangChain chain started: run_id={srid}")
@@ -163,6 +165,11 @@ if _LANGCHAIN_AVAILABLE:
             state["tool_start_times"][tool_name] = time.perf_counter()
             if run_id is not None:
                 state["tool_run_id_to_name"][str(run_id)] = tool_name
+
+            # Track time to first tool if this is the first tool call
+            if state["time_to_first_tool_ms"] == 0 and len(state["tool_sequence"]) == 0:
+                elapsed = (datetime.utcnow() - state["started_at"]).total_seconds() * 1000
+                state["time_to_first_tool_ms"] = int(elapsed)
 
             logger.debug(f"LangChain tool started: {tool_name}")
 
@@ -264,6 +271,15 @@ if _LANGCHAIN_AVAILABLE:
             output_length = len(str(output))
             output_structure_hash = _compute_structure_hash(output)
 
+            # Compute verbosity_ratio and loop_count
+            prompt_tokens = state["prompt_tokens"]
+            completion_tokens = state["completion_tokens"]
+            verbosity_ratio = (
+                completion_tokens / prompt_tokens if prompt_tokens > 0 else 0.0
+            )
+            # For LangChain, use tool_call_count as a proxy for loop_count
+            loop_count = max(1, len(state["tool_sequence"]))
+
             payload = {
                 "session_id": self.session_id,
                 "deployment_version": self.deployment_version,
@@ -279,6 +295,13 @@ if _LANGCHAIN_AVAILABLE:
                 "error_count": state["error_count"],
                 "retry_count": state["retry_count"],
                 "semantic_cluster": "resolved",
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                # New behavioral metrics
+                "loop_count": loop_count,
+                "tool_call_sequence": json.dumps(state["tool_sequence"]),
+                "time_to_first_tool_ms": state["time_to_first_tool_ms"],
+                "verbosity_ratio": verbosity_ratio,
             }
 
             try:

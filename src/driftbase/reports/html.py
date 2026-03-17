@@ -181,6 +181,56 @@ def generate_html_report(
     elif baseline_err > 0 or current_err > 0:
         error_context.append(f"error rate: {baseline_err:.1f}% → {current_err:.1f}%")
 
+    # Verbosity drift context
+    verbosity_context = []
+    verbosity_drift_val = getattr(report, "verbosity_drift", 0.0)
+    if verbosity_drift_val > 0.2:
+        baseline_verb = getattr(report, "baseline_avg_verbosity_ratio", 0.0)
+        current_verb = getattr(report, "current_avg_verbosity_ratio", 0.0)
+        if baseline_verb > 0 or current_verb > 0:
+            verbosity_context.append(
+                f"verbosity: {baseline_verb:.2f} → {current_verb:.2f}"
+            )
+
+    # Loop depth drift context
+    loop_context = []
+    loop_drift_val = getattr(report, "loop_depth_drift", 0.0)
+    if loop_drift_val > 0.2:
+        baseline_loop = getattr(report, "baseline_avg_loop_count", 0.0)
+        current_loop = getattr(report, "current_avg_loop_count", 0.0)
+        if baseline_loop > 0 or current_loop > 0:
+            loop_context.append(
+                f"avg loop count: {baseline_loop:.1f} → {current_loop:.1f}"
+            )
+
+    # Tool sequence drift context
+    tool_seq_context = []
+    tool_seq_drift_val = getattr(report, "tool_sequence_drift", 0.0)
+    if tool_seq_drift_val > 0.2:
+        tool_seq_context.append("tool ordering changed")
+
+    # Retry drift context
+    retry_context = []
+    retry_drift_val = getattr(report, "retry_drift", 0.0)
+    if retry_drift_val > 0.2:
+        baseline_retry = getattr(report, "baseline_avg_retry_count", 0.0)
+        current_retry = getattr(report, "current_avg_retry_count", 0.0)
+        if baseline_retry > 0 or current_retry > 0:
+            retry_context.append(
+                f"avg retries: {baseline_retry:.1f} → {current_retry:.1f}"
+            )
+
+    # Output length drift context
+    output_len_context = []
+    output_len_drift_val = getattr(report, "output_length_drift", 0.0)
+    if output_len_drift_val > 0.2:
+        baseline_out = getattr(report, "baseline_avg_output_length", 0.0)
+        current_out = getattr(report, "current_avg_output_length", 0.0)
+        if baseline_out > 0 or current_out > 0:
+            output_len_context.append(
+                f"avg output: {baseline_out:.0f} → {current_out:.0f} chars"
+            )
+
     decision_card = _render_dimension_card(
         "Decisions",
         report.decision_drift,
@@ -223,6 +273,47 @@ def generate_html_report(
         get_dimension_status(tool_score),
         tool_context,
         get_dimension_style(tool_score),
+    )
+
+    # New behavioral dimension cards
+    verbosity_card = _render_dimension_card(
+        "Verbosity",
+        verbosity_drift_val,
+        get_dimension_status(verbosity_drift_val),
+        verbosity_context,
+        get_dimension_style(verbosity_drift_val),
+    )
+
+    loop_depth_card = _render_dimension_card(
+        "Reasoning Depth",
+        loop_drift_val,
+        get_dimension_status(loop_drift_val),
+        loop_context,
+        get_dimension_style(loop_drift_val),
+    )
+
+    tool_sequence_card = _render_dimension_card(
+        "Tool Sequence",
+        tool_seq_drift_val,
+        get_dimension_status(tool_seq_drift_val),
+        tool_seq_context,
+        get_dimension_style(tool_seq_drift_val),
+    )
+
+    retry_card = _render_dimension_card(
+        "Retry Rate",
+        retry_drift_val,
+        get_dimension_status(retry_drift_val),
+        retry_context,
+        get_dimension_style(retry_drift_val),
+    )
+
+    output_length_card = _render_dimension_card(
+        "Output Length",
+        output_len_drift_val,
+        get_dimension_status(output_len_drift_val),
+        output_len_context,
+        get_dimension_style(output_len_drift_val),
     )
 
     # Additional analysis section (only if multiple hypotheses)
@@ -381,6 +472,11 @@ def generate_html_report(
                 {latency_card}
                 {tool_card}
                 {error_card}
+                {verbosity_card}
+                {loop_depth_card}
+                {tool_sequence_card}
+                {retry_card}
+                {output_length_card}
             </div>
         </div>
 
@@ -729,6 +825,46 @@ def generate_eu_ai_act_report(
                 <div style="font-size:24px; font-weight:600; color:#111827;">{tool_score:.3f}</div>
                 <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
                     Reasoning and tool usage patterns (Art. 72(2)(d))
+                </div>
+            </div>
+
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Verbosity Drift</div>
+                <div style="font-size:24px; font-weight:600; color:#111827;">{getattr(report, "verbosity_drift", 0.0):.3f}</div>
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
+                    Response length and verbosity changes
+                </div>
+            </div>
+
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Loop Depth Drift</div>
+                <div style="font-size:24px; font-weight:600; color:#111827;">{getattr(report, "loop_depth_drift", 0.0):.3f}</div>
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
+                    Agent reasoning iteration depth changes
+                </div>
+            </div>
+
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Tool Sequence Drift</div>
+                <div style="font-size:24px; font-weight:600; color:#111827;">{getattr(report, "tool_sequence_drift", 0.0):.3f}</div>
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
+                    Tool call ordering pattern changes
+                </div>
+            </div>
+
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Retry Drift</div>
+                <div style="font-size:24px; font-weight:600; color:#111827;">{getattr(report, "retry_drift", 0.0):.3f}</div>
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
+                    Tool call retry rate changes
+                </div>
+            </div>
+
+            <div style="padding:16px; border:1px solid {COLORS["gray_border"]}; border-radius:8px;">
+                <div style="font-size:13px; color:{COLORS["gray"]}; margin-bottom:4px;">Output Length Drift</div>
+                <div style="font-size:24px; font-weight:600; color:#111827;">{getattr(report, "output_length_drift", 0.0):.3f}</div>
+                <div style="font-size:12px; color:{COLORS["gray"]}; margin-top:8px;">
+                    Final output character count changes
                 </div>
             </div>
         </div>

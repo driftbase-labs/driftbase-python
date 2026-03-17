@@ -169,6 +169,8 @@ if _OPENAI_AVAILABLE:
                 tool_sequence = []
                 tool_call_count = 0
                 total_tokens = 0
+                prompt_tokens = 0
+                completion_tokens = 0
                 output_text = ""
 
                 if response is not None:
@@ -198,8 +200,8 @@ if _OPENAI_AVAILABLE:
                         if hasattr(response, "usage"):
                             usage = response.usage
                             total_tokens = getattr(usage, "total_tokens", 0)
-                            getattr(usage, "prompt_tokens", 0)
-                            getattr(usage, "completion_tokens", 0)
+                            prompt_tokens = getattr(usage, "prompt_tokens", 0)
+                            completion_tokens = getattr(usage, "completion_tokens", 0)
 
                     except Exception as e:
                         logger.debug(f"Failed to extract response data: {e}")
@@ -212,6 +214,15 @@ if _OPENAI_AVAILABLE:
                         "output_length": output_length,
                     }
                 )
+
+                # Compute verbosity_ratio and new metrics
+                verbosity_ratio = (
+                    completion_tokens / prompt_tokens if prompt_tokens > 0 else 0.0
+                )
+                # For single-turn OpenAI calls, loop_count is 1
+                loop_count = 1
+                # For OpenAI without agentic loops, time_to_first_tool_ms is latency_ms
+                time_to_first_tool_ms = latency_ms if tool_call_count > 0 else 0
 
                 payload = {
                     "session_id": self.session_id,
@@ -228,6 +239,13 @@ if _OPENAI_AVAILABLE:
                     "error_count": error_count,
                     "retry_count": 0,
                     "semantic_cluster": "resolved",
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    # New behavioral metrics
+                    "loop_count": loop_count,
+                    "tool_call_sequence": json.dumps(tool_sequence),
+                    "time_to_first_tool_ms": time_to_first_tool_ms,
+                    "verbosity_ratio": verbosity_ratio,
                 }
 
                 try:

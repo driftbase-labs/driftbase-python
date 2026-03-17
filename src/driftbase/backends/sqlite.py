@@ -44,6 +44,11 @@ class AgentRunLocal(SQLModel, table=True):
     completion_tokens: int | None = None
     raw_prompt: str = ""
     raw_output: str = ""
+    # New behavioral metrics
+    loop_count: int = 0
+    tool_call_sequence: str = "[]"
+    time_to_first_tool_ms: int = 0
+    verbosity_ratio: float = 0.0
 
 
 def _ensure_dir(path: str) -> None:
@@ -95,6 +100,35 @@ def _migrate_schema(engine: Any) -> None:
                     text("ALTER TABLE agent_runs_local ADD COLUMN raw_output TEXT")
                 )
                 conn.commit()
+            # New behavioral metrics migrations
+            if "loop_count" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN loop_count INTEGER DEFAULT 0"
+                    )
+                )
+                conn.commit()
+            if "tool_call_sequence" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN tool_call_sequence TEXT DEFAULT '[]'"
+                    )
+                )
+                conn.commit()
+            if "time_to_first_tool_ms" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN time_to_first_tool_ms INTEGER DEFAULT 0"
+                    )
+                )
+                conn.commit()
+            if "verbosity_ratio" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN verbosity_ratio REAL DEFAULT 0.0"
+                    )
+                )
+                conn.commit()
     except Exception as e:
         logger.debug("Schema migration skip: %s", e)
 
@@ -125,6 +159,11 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "completion_tokens": r.completion_tokens,
         "raw_prompt": r.raw_prompt,
         "raw_output": r.raw_output,
+        # New behavioral metrics
+        "loop_count": r.loop_count,
+        "tool_call_sequence": r.tool_call_sequence,
+        "time_to_first_tool_ms": r.time_to_first_tool_ms,
+        "verbosity_ratio": r.verbosity_ratio,
     }
 
 

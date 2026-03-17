@@ -27,23 +27,34 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
         if not is_regression:
             # v1.0: Fast, cheap, highly resolved
             p_tokens = random.randint(400, 600)
-            c_tokens = random.randint(100, 200)
+            c_tokens = random.randint(50, 100)  # Adjusted for output_length 200-400
             latency = random.randint(300, 600)
             tools = ["query_database"]
             outcome = "resolved" if random.random() > 0.05 else "escalated"
             output_text = (
                 "Transaction TXN-8472 is marked as COMPLETED. Amount: €450.00."
             )
+            # New behavioral metrics for baseline
+            loop_count = random.randint(2, 4)
+            retry_count = random.randint(0, 1)
+            time_to_first_tool_ms = random.randint(10, 50)
         else:
             # v2.0: Heavy context, hallucinating long answers, higher escalation
             p_tokens = random.randint(800, 1100)  # +50% prompt cost
-            c_tokens = random.randint(400, 700)  # +200% generation cost
+            c_tokens = random.randint(150, 225)  # Adjusted for output_length 600-900
             latency = random.randint(1100, 1800)  # +200% latency
             tools = ["query_database", "web_search", "web_search"]  # Agent got confused
             outcome = (
                 "escalated" if random.random() > 0.60 else "resolved"
             )  # Huge failure spike
             output_text = "I searched the database and the web. The user 8472 might be related to a historical event in 8472 BC. Also, I cannot verify the transaction status right now. Please contact support."
+            # New behavioral metrics for stressed version
+            loop_count = random.randint(5, 8)
+            retry_count = random.randint(2, 3)
+            time_to_first_tool_ms = random.randint(20, 100)
+
+        # Compute verbosity_ratio
+        verbosity_ratio = c_tokens / p_tokens if p_tokens > 0 else 0.0
 
         payload = {
             "session_id": f"demo_session_{version}_{i}",
@@ -58,12 +69,17 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
             "output_structure_hash": "struct_hash_demo",
             "latency_ms": latency,
             "error_count": 0,
-            "retry_count": 0,
+            "retry_count": retry_count,
             "semantic_cluster": outcome,
             "prompt_tokens": p_tokens,
             "completion_tokens": c_tokens,
             "raw_prompt": prompt_text,
             "raw_output": output_text,
+            # New behavioral metrics
+            "loop_count": loop_count,
+            "tool_call_sequence": json.dumps(tools),  # JSON serialized list of tool names
+            "time_to_first_tool_ms": time_to_first_tool_ms,
+            "verbosity_ratio": verbosity_ratio,
         }
         enqueue_run(payload)
 

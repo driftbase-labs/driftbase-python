@@ -139,17 +139,52 @@ def _compute_drift_score(
     sigma_output = _sigmoid_contribution(output_drift, k=3.0, c=0.3)
     sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
 
-    w_jsd = 0.55
-    w_latency = 0.15
-    w_errors = 0.15
-    w_semantic = 0.10
-    w_output = 0.05
+    # New behavioral drift dimensions (same as in compute_drift)
+    baseline_verbosity = getattr(baseline, "avg_verbosity_ratio", 0.0)
+    current_verbosity = getattr(current, "avg_verbosity_ratio", 0.0)
+    verbosity_delta = abs(current_verbosity - baseline_verbosity)
+    verbosity_drift = _sigmoid_contribution(verbosity_delta, k=3.0, c=0.3)
+
+    baseline_p95_loop = getattr(baseline, "p95_loop_count", 0.0)
+    current_p95_loop = getattr(current, "p95_loop_count", 0.0)
+    loop_delta = abs(current_p95_loop - baseline_p95_loop) / max(baseline_p95_loop, 1.0)
+    sigma_loop = _sigmoid_contribution(loop_delta, k=2.5, c=0.4)
+
+    baseline_out_len = getattr(baseline, "avg_output_length", baseline.avg_output_length)
+    current_out_len = getattr(current, "avg_output_length", current.avg_output_length)
+    out_len_delta = (
+        abs(current_out_len - baseline_out_len) / max(baseline_out_len, 1.0)
+    )
+    sigma_out_len = _sigmoid_contribution(out_len_delta, k=2.0, c=0.4)
+
+    baseline_retry = getattr(baseline, "avg_retry_count", baseline.retry_rate)
+    current_retry = getattr(current, "avg_retry_count", current.retry_rate)
+    retry_delta = abs(current_retry - baseline_retry)
+    sigma_retry = _sigmoid_contribution(retry_delta, k=4.0, c=0.2)
+
+    # Rebalanced weights (same as in compute_drift)
+    w_jsd = 0.40
+    w_latency = 0.12
+    w_errors = 0.12
+    w_semantic = 0.08
+    w_output = 0.04
+    w_verbosity = 0.06
+    w_loop = 0.06
+    w_out_len = 0.04
+    w_tool_seq = 0.04
+    w_retry = 0.04
+
     drift_score = (
         w_jsd * decision_drift
         + w_latency * sigma_latency
         + w_errors * sigma_errors
         + w_semantic * sigma_semantic
         + w_output * sigma_output
+        + w_verbosity * verbosity_drift
+        + w_loop * sigma_loop
+        + w_out_len * sigma_out_len
+        + w_tool_seq * decision_drift  # tool_sequence_drift uses decision_drift
+        + w_retry * sigma_retry
     )
     drift_score = min(1.0, max(0.0, drift_score))
     if decision_drift > 0.30:
@@ -222,17 +257,66 @@ def compute_drift(
     sigma_output = _sigmoid_contribution(output_drift, k=3.0, c=0.3)
     sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
 
-    w_jsd = 0.55
-    w_latency = 0.15
-    w_errors = 0.15
-    w_semantic = 0.10
-    w_output = 0.05
+    # New behavioral drift dimensions
+    # Verbosity drift: absolute difference in avg_verbosity_ratio, normalized with sigmoid
+    baseline_verbosity = getattr(baseline, "avg_verbosity_ratio", 0.0)
+    current_verbosity = getattr(current, "avg_verbosity_ratio", 0.0)
+    verbosity_delta = abs(current_verbosity - baseline_verbosity)
+    verbosity_drift = _sigmoid_contribution(verbosity_delta, k=3.0, c=0.3)
+
+    # Loop depth drift: JSD on loop_count distributions (using p95 as proxy)
+    baseline_loop = getattr(baseline, "avg_loop_count", 0.0)
+    current_loop = getattr(current, "avg_loop_count", 0.0)
+    baseline_p95_loop = getattr(baseline, "p95_loop_count", 0.0)
+    current_p95_loop = getattr(current, "p95_loop_count", 0.0)
+    loop_delta = abs(current_p95_loop - baseline_p95_loop) / max(baseline_p95_loop, 1.0)
+    loop_depth_drift = min(1.0, loop_delta)
+    sigma_loop = _sigmoid_contribution(loop_delta, k=2.5, c=0.4)
+
+    # Output length drift: normalized difference in avg_output_length
+    baseline_out_len = getattr(baseline, "avg_output_length", baseline.avg_output_length)
+    current_out_len = getattr(current, "avg_output_length", current.avg_output_length)
+    out_len_delta = (
+        abs(current_out_len - baseline_out_len) / max(baseline_out_len, 1.0)
+    )
+    output_length_drift = min(1.0, out_len_delta)
+    sigma_out_len = _sigmoid_contribution(out_len_delta, k=2.0, c=0.4)
+
+    # Tool sequence drift: JSD on tool_call_sequence distributions
+    # tool_call_sequence is already captured as tool_sequence_distribution
+    # This catches reordering of tools even when same tools are used
+    tool_sequence_drift = decision_drift  # Already computed with JSD above
+
+    # Retry drift: normalized difference in avg_retry_count
+    baseline_retry = getattr(baseline, "avg_retry_count", baseline.retry_rate)
+    current_retry = getattr(current, "avg_retry_count", current.retry_rate)
+    retry_delta = abs(current_retry - baseline_retry)
+    retry_drift = min(1.0, retry_delta * 2.0)
+    sigma_retry = _sigmoid_contribution(retry_delta, k=4.0, c=0.2)
+
+    # Rebalanced weights to include new dimensions (each new dimension max 0.08)
+    w_jsd = 0.40  # reduced from 0.55
+    w_latency = 0.12  # reduced from 0.15
+    w_errors = 0.12  # reduced from 0.15
+    w_semantic = 0.08  # reduced from 0.10
+    w_output = 0.04  # reduced from 0.05
+    w_verbosity = 0.06  # new
+    w_loop = 0.06  # new
+    w_out_len = 0.04  # new
+    w_tool_seq = 0.04  # new (already covered by w_jsd, so small weight)
+    w_retry = 0.04  # new
+
     drift_score = (
         w_jsd * decision_drift
         + w_latency * sigma_latency
         + w_errors * sigma_errors
         + w_semantic * sigma_semantic
         + w_output * sigma_output
+        + w_verbosity * verbosity_drift
+        + w_loop * sigma_loop
+        + w_out_len * sigma_out_len
+        + w_tool_seq * tool_sequence_drift
+        + w_retry * sigma_retry
     )
     drift_score = min(1.0, max(0.0, drift_score))
     if decision_drift > 0.30:
@@ -266,6 +350,21 @@ def compute_drift(
         current_error_rate=current.error_rate,
         baseline_dominant_tool=baseline_dominant_tool,
         current_dominant_tool=current_dominant_tool,
+        # New behavioral drift dimensions
+        verbosity_drift=verbosity_drift,
+        loop_depth_drift=loop_depth_drift,
+        output_length_drift=output_length_drift,
+        tool_sequence_drift=tool_sequence_drift,
+        retry_drift=retry_drift,
+        # Context values for new dimensions
+        baseline_avg_verbosity_ratio=baseline_verbosity,
+        current_avg_verbosity_ratio=current_verbosity,
+        baseline_avg_loop_count=baseline_loop,
+        current_avg_loop_count=current_loop,
+        baseline_avg_output_length=baseline_out_len,
+        current_avg_output_length=current_out_len,
+        baseline_avg_retry_count=baseline_retry,
+        current_avg_retry_count=current_retry,
     )
 
     # Bootstrap 95% CI when run lists are provided

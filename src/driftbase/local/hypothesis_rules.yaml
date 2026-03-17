@@ -51,6 +51,51 @@ rules:
     recommended_action: "Profile tool call counts and per-tool latency. Consider caching or simplifying flows."
     confidence: "Medium; can be confounded by load or infrastructure."
 
+  - id: verbosity_drift
+    condition:
+      verbosity_drift_min: 0.3
+      baseline_runs_min: 20
+    observation: "Model is generating significantly longer/shorter responses (verbosity ratio changed)."
+    likely_cause: "Prompt or model update affecting output style; different verbosity instructions; or model version change."
+    recommended_action: "Review prompt changes. Check if the new verbosity level meets user expectations. Consider adjusting system instructions."
+    confidence: "High when verbosity_drift is consistently elevated."
+
+  - id: loop_depth_drift
+    condition:
+      loop_depth_drift_min: 0.3
+      baseline_runs_min: 20
+    observation: "Agent is taking more/fewer reasoning steps (tool call iterations changed)."
+    likely_cause: "Context window pressure causing early termination; tool reliability issues requiring retries; or prompt changes altering reasoning strategy."
+    recommended_action: "Check tool reliability and success rates. Review context window usage. Verify reasoning chain completeness."
+    confidence: "Medium; investigate alongside retry_drift and tool_sequence_drift."
+
+  - id: output_length_drift
+    condition:
+      output_length_drift_min: 0.3
+      baseline_runs_min: 20
+    observation: "Final output length has changed significantly."
+    likely_cause: "Prompt changes affecting response detail level; model update changing default verbosity; or task complexity shift."
+    recommended_action: "Review output quality and completeness. Check if length changes align with user requirements."
+    confidence: "Medium; correlate with verbosity_drift."
+
+  - id: tool_sequence_drift
+    condition:
+      tool_sequence_drift_min: 0.3
+      baseline_runs_min: 20
+    observation: "Agent is calling tools in a different order."
+    likely_cause: "Prompt change altered reasoning strategy; model update changed planning approach; or new tool priorities."
+    recommended_action: "Review if new tool ordering is intentional and effective. Check for any broken reasoning chains."
+    confidence: "Medium; often indicates strategic reasoning changes."
+
+  - id: retry_drift
+    condition:
+      retry_drift_min: 0.3
+      baseline_runs_min: 20
+    observation: "Tool call retry rate has changed significantly."
+    likely_cause: "Tool reliability degradation; schema changes causing validation failures; or retry logic adjustments."
+    recommended_action: "Inspect specific tool failures and retry patterns. Fix underlying reliability issues or adjust retry thresholds."
+    confidence: "High when correlated with error_drift."
+
   - id: overall_high
     condition:
       overall_drift_min: 0.25

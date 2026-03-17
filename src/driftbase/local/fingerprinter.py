@@ -98,6 +98,42 @@ def build_fingerprint_from_runs(
     retry_counts = [run.retry_count for run in runs]
     retry_rate = sum(retry_counts) / len(runs)
 
+    # New behavioral metrics
+    loop_counts = [getattr(run, "loop_count", 0) for run in runs]
+    avg_loop_count = sum(loop_counts) / len(loop_counts) if loop_counts else 0.0
+    p95_loop_count = float(_compute_percentile(loop_counts, 95)) if loop_counts else 0.0
+
+    verbosity_ratios = [getattr(run, "verbosity_ratio", 0.0) for run in runs]
+    avg_verbosity_ratio = (
+        sum(verbosity_ratios) / len(verbosity_ratios) if verbosity_ratios else 0.0
+    )
+
+    avg_retry_count = sum(retry_counts) / len(retry_counts) if retry_counts else 0.0
+
+    time_to_first_tools = [getattr(run, "time_to_first_tool_ms", 0) for run in runs]
+    avg_time_to_first_tool_ms = (
+        sum(time_to_first_tools) / len(time_to_first_tools)
+        if time_to_first_tools
+        else 0.0
+    )
+
+    # Compute fallback_rate from semantic_cluster
+    fallback_count = sum(
+        1 for run in runs if getattr(run, "semantic_cluster", "") == "fallback"
+    )
+    fallback_rate = fallback_count / len(runs) if len(runs) > 0 else 0.0
+
+    # Compute tool_call_sequence distribution (different from tool_sequence)
+    # tool_call_sequence is the ordered list of tool names
+    tool_call_sequences = [
+        getattr(run, "tool_call_sequence", "[]") for run in runs
+    ]
+    tcs_counts = Counter(tool_call_sequences)
+    total_tcs = len(tool_call_sequences)
+    tool_call_sequence_dist = (
+        {seq: count / total_tcs for seq, count in tcs_counts.items()} if total_tcs else {}
+    )
+
     return BehavioralFingerprint(
         deployment_version=deployment_version,
         environment=environment,
@@ -114,6 +150,13 @@ def build_fingerprint_from_runs(
         retry_rate=retry_rate,
         top_tool_sequences=json.dumps(top_tool_sequences),
         semantic_cluster_distribution=json.dumps(semantic_cluster_distribution),
+        # New behavioral metrics
+        avg_loop_count=avg_loop_count,
+        p95_loop_count=p95_loop_count,
+        avg_retry_count=avg_retry_count,
+        avg_verbosity_ratio=avg_verbosity_ratio,
+        avg_time_to_first_tool_ms=avg_time_to_first_tool_ms,
+        fallback_rate=fallback_rate,
     )
 
 
