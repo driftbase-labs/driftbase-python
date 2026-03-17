@@ -341,10 +341,20 @@ driftbase diff v2.0 v2.1 --format html --output report.html
 
 Driftbase uses the **Kolmogorov-Smirnov test** to measure distributional differences between version populations:
 - **Bootstrap confidence intervals** (95% CI) for stable estimates with small sample sizes
-- **Composite drift score** weighted across dimensions (decisions, latency, errors, tool usage)
+- **Composite drift score** weighted across 10 behavioral dimensions:
+  - **Tool sequence distribution** (40%) — Which tools are called and in what order
+  - **Latency distribution** (12%) — Response time changes (p50, p95, p99)
+  - **Error rates** (12%) — Failure and exception patterns
+  - **Semantic clustering** (8%) — Decision outcome distribution (resolved, escalated, error)
+  - **Output structure** (4%) — Changes in response schema/format
+  - **Verbosity ratio** (6%) — Response length relative to input (output bloat detection)
+  - **Loop count** (6%) — Agentic reasoning depth (number of tool execution iterations)
+  - **Output length** (4%) — Absolute response size changes
+  - **Tool sequence drift** (4%) — Changes in tool calling order/patterns
+  - **Retry count** (4%) — Tool call retry frequency (reliability indicator)
 - **Hypothesis engine** that generates plain-English root-cause explanations (see [Hypothesis rules](docs/hypothesis_rules.md) for the two YAML roles and how to override)
 
-This isn't just logging — it's a **statistical behavioral fingerprint**.
+This isn't just logging — it's a **statistical behavioral fingerprint** that captures both performance and behavioral changes.
 
 ---
 
@@ -836,9 +846,9 @@ This keeps heavy dependencies (numpy, scipy) out of production while maintaining
 
 We welcome contributions! Areas of interest:
 - Additional framework integrations (DSPy, Haystack, etc.)
-- New drift dimensions (token efficiency, retrieval quality)
-- Alternative statistical tests (MMD, Wasserstein distance)
-- Visualization improvements (terminal UI, HTML reports)
+- Additional drift dimensions (retrieval quality, prompt complexity, safety/alignment metrics)
+- Alternative statistical tests (MMD, Wasserstein distance, permutation tests)
+- Visualization improvements (terminal UI, HTML reports, interactive dashboards)
 
 **Before submitting a PR:**
 1. Run tests: `pytest tests/`
