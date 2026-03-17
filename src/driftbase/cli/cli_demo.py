@@ -238,15 +238,21 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
         loop_count = random.randint(*scenario["loop_count"])
         retry_count = random.randint(*scenario["retry_count"])
         error_count = scenario.get("error_count", (0, 0))
-        error_count = random.randint(*error_count) if isinstance(error_count, tuple) else 0
+        error_count = (
+            random.randint(*error_count) if isinstance(error_count, tuple) else 0
+        )
 
         # Add some randomness: occasionally insert/remove a tool
         if random.random() < 0.15:
-            tools.insert(random.randint(0, len(tools)), random.choice(list(TOOLS.keys())))
+            tools.insert(
+                random.randint(0, len(tools)), random.choice(list(TOOLS.keys()))
+            )
         if random.random() < 0.10 and len(tools) > 3:
             tools.pop(random.randint(0, len(tools) - 1))
 
-        time_to_first_tool_ms = random.randint(15, 80) if is_regression else random.randint(5, 40)
+        time_to_first_tool_ms = (
+            random.randint(15, 80) if is_regression else random.randint(5, 40)
+        )
 
         # Compute verbosity_ratio
         verbosity_ratio = c_tokens / p_tokens if p_tokens > 0 else 0.0
