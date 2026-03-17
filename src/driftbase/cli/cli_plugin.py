@@ -135,10 +135,10 @@ def plugin_info(ctx: click.Context, plugin_name: str):
         f"[bold]Version:[/] {plugin.version}",
         f"[bold]Author:[/] {plugin.author or 'unknown'}",
         "",
-        f"[bold]Description:[/]",
+        "[bold]Description:[/]",
         f"{plugin.description or '(no description)'}",
         "",
-        f"[bold]Hooks implemented:[/]",
+        "[bold]Hooks implemented:[/]",
     ]
 
     # Check which hooks are implemented

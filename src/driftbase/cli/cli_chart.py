@@ -134,7 +134,7 @@ def cmd_chart(
     # Generate chart based on metric
     if metric == "latency":
         latencies = [r.get("latency_ms", 0) for r in runs]
-        latencies = [l for l in latencies if l > 0]  # Filter zeros
+        latencies = [val for val in latencies if val > 0]  # Filter zeros
 
         if not latencies:
             console.print("[yellow]No latency data available[/]")

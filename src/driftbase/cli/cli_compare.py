@@ -109,7 +109,7 @@ def cmd_compare(
 
     if matrix:
         # Tournament mode: compute all pairwise comparisons
-        console.print(f"\n[bold cyan]📊 Version Comparison Matrix[/]\n")
+        console.print("\n[bold cyan]📊 Version Comparison Matrix[/]\n")
 
         if Table:
             # Create matrix table
@@ -170,7 +170,7 @@ def cmd_compare(
 
     else:
         # Sequential comparison (v1→v2, v2→v3, etc.)
-        console.print(f"\n[bold cyan]📊 Sequential Comparison[/]\n")
+        console.print("\n[bold cyan]📊 Sequential Comparison[/]\n")
 
         if Table:
             table = Table(show_header=True, header_style="bold")

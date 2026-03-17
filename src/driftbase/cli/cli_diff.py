@@ -334,6 +334,8 @@ def cmd_diff(
             use_color=use_color,
             backend=None,
             console=console,
+            fail_on_drift=fail_on_drift,
+            exit_nonzero_above=exit_nonzero_above,
         )
         ctx.exit(code)
 
@@ -361,6 +363,8 @@ def cmd_diff(
             use_color=use_color,
             backend=backend,
             console=console,
+            fail_on_drift=fail_on_drift,
+            exit_nonzero_above=exit_nonzero_above,
         )
         ctx.exit(code)
 
@@ -383,6 +387,8 @@ def cmd_diff(
         use_color=use_color,
         backend=None,
         console=console,
+        fail_on_drift=fail_on_drift,
+        exit_nonzero_above=exit_nonzero_above,
     )
     ctx.exit(code)
 
@@ -793,6 +799,8 @@ def run_diff(
     use_color: bool = True,
     backend: StorageBackend | None = None,
     console: Console | None = None,
+    fail_on_drift: bool = False,
+    exit_nonzero_above: float | None = None,
 ) -> int:
     """Run diff and print via rich. Returns 0 on success, 1 on error or above threshold (for CI)."""
     if backend is None:
@@ -937,9 +945,9 @@ def run_diff(
         console.print(json.dumps(out, indent=2))
 
         # CI exit code logic
-        if fail_on_drift and report.drift_score > 0:
-            return 1
-        elif exit_nonzero_above is not None and report.drift_score > exit_nonzero_above:
+        if (fail_on_drift and report.drift_score > 0) or (
+            exit_nonzero_above is not None and report.drift_score > exit_nonzero_above
+        ):
             return 1
         else:
             return verdict_result.exit_code
@@ -963,6 +971,13 @@ def run_diff(
         baseline_cost_per_10k=baseline_cost_10k,
         current_cost_per_10k=current_cost_10k,
     )
+    
+    # Non-JSON CI exit code logic
+    if (fail_on_drift and report.drift_score > 0) or (
+        exit_nonzero_above is not None and report.drift_score > exit_nonzero_above
+    ):
+        return 1
+
     return exit_code
 
 

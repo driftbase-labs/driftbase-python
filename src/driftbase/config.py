@@ -413,14 +413,14 @@ def validate_config_key(key: str, value: str) -> tuple[bool, str]:
     expected_type = KNOWN_CONFIG_KEYS[key]
 
     try:
-        if expected_type == bool:
+        if expected_type is bool:
             # Validate boolean format
             if value.lower() not in ("0", "1", "true", "false", "yes", "no", "on", "off"):
                 return False, f"Invalid boolean value for {key}: {value}"
-        elif expected_type == int:
+        elif expected_type is int:
             # Validate integer format
             int(value)
-        elif expected_type == float:
+        elif expected_type is float:
             # Validate float format
             float(value)
         # str needs no validation

@@ -212,7 +212,7 @@ def bookmark_list(ctx: click.Context):
         for name, command in sorted(bookmarks.items()):
             print(f"{name:20s} : {command}")
 
-    console.print(f"\n[dim]Run with:[/] [cyan]driftbase bookmark run <name>[/]\n")
+    console.print("\n[dim]Run with:[/] [cyan]driftbase bookmark run <name>[/]\n")
     ctx.exit(0)
 
 

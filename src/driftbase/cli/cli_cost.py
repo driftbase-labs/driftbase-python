@@ -240,7 +240,7 @@ def cmd_cost(
         ctx.exit(0)
 
     # Table output
-    console.print(f"\n[bold cyan]💰 Cost Analysis[/]")
+    console.print("\n[bold cyan]💰 Cost Analysis[/]")
     console.print(f"[dim]Analyzing {len(runs)} runs{f' for {version}' if version else ''}[/]\n")
 
     # Summary panel

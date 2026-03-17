@@ -180,7 +180,7 @@ def git_compare(
     # Note: This requires git_commit column in database
     # For now, we'll use a simpler approach: compare runs by time windows
 
-    console.print(f"\n[dim]Comparing git commits:[/]")
+    console.print("\n[dim]Comparing git commits:[/]")
     console.print(f"  Base: {base} ({base_sha})")
     console.print(f"  Head: {head_label} ({head_sha})")
     if common:

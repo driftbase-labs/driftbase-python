@@ -12,6 +12,7 @@ import click
 
 from driftbase.backends.factory import get_backend
 from driftbase.cli._deps import safe_import_rich
+from driftbase.config import get_settings
 
 # Lazy import of heavy [analyze] dependencies
 Console, Panel, Table = safe_import_rich()
@@ -32,8 +33,6 @@ def _console_no_color(no_color_flag: bool) -> bool:
     if no_color_flag:
         return True
     try:
-        from driftbase.config import get_settings
-
         return not get_settings().DRIFTBASE_OUTPUT_COLOR
     except Exception:
         return False
@@ -154,8 +153,6 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
         return default, "default"
 
     try:
-        from driftbase.config import get_settings
-
         settings = get_settings()
         if "DRIFTBASE_DB_PATH" in os.environ:
             db_path = settings.DRIFTBASE_DB_PATH
@@ -543,9 +540,7 @@ def cmd_runs(
                 )
                 console.print("  • Run [cyan]driftbase demo[/] to generate sample data")
                 console.print(
-                    "  • Check DRIFTBASE_DB_PATH is correct: [cyan]{}[/]".format(
-                        get_settings().DRIFTBASE_DB_PATH
-                    )
+                    f"  • Check DRIFTBASE_DB_PATH is correct: [cyan]{get_settings().DRIFTBASE_DB_PATH}[/]"
                 )
         except Exception:
             pass

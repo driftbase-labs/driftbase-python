@@ -118,7 +118,7 @@ def cmd_upgrade(ctx: click.Context, check_only: bool) -> None:
             except Exception:
                 console.print("\n[green]✓[/] Successfully upgraded driftbase")
         else:
-            console.print(f"\n[red]✗[/] Upgrade failed")
+            console.print("\n[red]✗[/] Upgrade failed")
             if result.stderr:
                 console.print(f"[red]{result.stderr}[/]")
             ctx.exit(1)
