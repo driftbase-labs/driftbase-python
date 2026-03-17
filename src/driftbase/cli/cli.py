@@ -72,6 +72,7 @@ from driftbase.cli.cli_push import cmd_push
 from driftbase.cli.cli_report import cmd_report
 from driftbase.cli.cli_status import cmd_status
 from driftbase.cli.cli_tail import cmd_tail
+from driftbase.cli.cli_upgrade import cmd_upgrade
 
 cli.add_command(cmd_init)
 cli.add_command(cmd_diff)
@@ -83,6 +84,7 @@ cli.add_command(export_command)
 cli.add_command(import_command)
 # Phase 1 commands (comprehensive improvements)
 cli.add_command(cmd_doctor)
+cli.add_command(cmd_upgrade)
 cli.add_command(baseline_group)
 cli.add_command(cmd_tail)
 cli.add_command(cmd_prune)
