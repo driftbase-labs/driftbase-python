@@ -36,7 +36,7 @@ def parse_smart_time_filter(filter_value: str) -> int | None:
 
 def parse_quality_filter(
     filter_value: str,
-) -> dict[str, int | list[str] | None]:
+) -> dict[str, int | list[str] | str | None]:
     """
     Parse quality filters into query parameters.
 
@@ -46,7 +46,7 @@ def parse_quality_filter(
     Returns:
         Dict with filter parameters (outcomes, min_latency, max_latency, etc.)
     """
-    filters = {}
+    filters: dict[str, int | list[str] | str | None] = {}
 
     if filter_value == "errors-only":
         filters["outcomes"] = ["error"]
@@ -92,31 +92,31 @@ def apply_quality_filter_to_runs(runs: list[dict], quality_filter: str) -> list[
 
     # Filter by outcomes
     if "outcomes" in filters:
-        filtered = [
-            r for r in filtered if r.get("semantic_cluster") in filters["outcomes"]
-        ]
+        outcomes = filters["outcomes"]
+        if isinstance(outcomes, list):
+            filtered = [r for r in filtered if r.get("semantic_cluster") in outcomes]
 
     # Filter by error count
     if "min_error_count" in filters:
-        filtered = [
-            r for r in filtered if r.get("error_count", 0) >= filters["min_error_count"]
-        ]
+        min_errors = filters["min_error_count"]
+        if isinstance(min_errors, int):
+            filtered = [r for r in filtered if r.get("error_count", 0) >= min_errors]
 
     # Filter by latency
     if "min_latency_ms" in filters:
-        filtered = [
-            r for r in filtered if r.get("latency_ms", 0) >= filters["min_latency_ms"]
-        ]
+        min_latency = filters["min_latency_ms"]
+        if isinstance(min_latency, int):
+            filtered = [r for r in filtered if r.get("latency_ms", 0) >= min_latency]
 
     if "max_latency_ms" in filters:
-        filtered = [
-            r for r in filtered if r.get("latency_ms", 0) <= filters["max_latency_ms"]
-        ]
+        max_latency = filters["max_latency_ms"]
+        if isinstance(max_latency, int):
+            filtered = [r for r in filtered if r.get("latency_ms", 0) <= max_latency]
 
     # Filter by environment
     if "environment" in filters:
-        filtered = [
-            r for r in filtered if r.get("environment") == filters["environment"]
-        ]
+        env = filters["environment"]
+        if isinstance(env, str):
+            filtered = [r for r in filtered if r.get("environment") == env]
 
     return filtered

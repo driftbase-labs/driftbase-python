@@ -475,7 +475,7 @@ class SQLiteBackend(StorageBackend):
 
             # older_than_days filter
             delete_conditions = []
-            params = {}
+            params: dict[str, Any] = {}
 
             if older_than_days is not None:
                 from datetime import timedelta
