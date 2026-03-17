@@ -150,11 +150,11 @@ def _compute_drift_score(
     loop_delta = abs(current_p95_loop - baseline_p95_loop) / max(baseline_p95_loop, 1.0)
     sigma_loop = _sigmoid_contribution(loop_delta, k=2.5, c=0.4)
 
-    baseline_out_len = getattr(baseline, "avg_output_length", baseline.avg_output_length)
-    current_out_len = getattr(current, "avg_output_length", current.avg_output_length)
-    out_len_delta = (
-        abs(current_out_len - baseline_out_len) / max(baseline_out_len, 1.0)
+    baseline_out_len = getattr(
+        baseline, "avg_output_length", baseline.avg_output_length
     )
+    current_out_len = getattr(current, "avg_output_length", current.avg_output_length)
+    out_len_delta = abs(current_out_len - baseline_out_len) / max(baseline_out_len, 1.0)
     sigma_out_len = _sigmoid_contribution(out_len_delta, k=2.0, c=0.4)
 
     baseline_retry = getattr(baseline, "avg_retry_count", baseline.retry_rate)
@@ -274,11 +274,11 @@ def compute_drift(
     sigma_loop = _sigmoid_contribution(loop_delta, k=2.5, c=0.4)
 
     # Output length drift: normalized difference in avg_output_length
-    baseline_out_len = getattr(baseline, "avg_output_length", baseline.avg_output_length)
-    current_out_len = getattr(current, "avg_output_length", current.avg_output_length)
-    out_len_delta = (
-        abs(current_out_len - baseline_out_len) / max(baseline_out_len, 1.0)
+    baseline_out_len = getattr(
+        baseline, "avg_output_length", baseline.avg_output_length
     )
+    current_out_len = getattr(current, "avg_output_length", current.avg_output_length)
+    out_len_delta = abs(current_out_len - baseline_out_len) / max(baseline_out_len, 1.0)
     output_length_drift = min(1.0, out_len_delta)
     sigma_out_len = _sigmoid_contribution(out_len_delta, k=2.0, c=0.4)
 

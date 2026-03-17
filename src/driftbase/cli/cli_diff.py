@@ -534,10 +534,22 @@ def render_diff_report(
         ("latency_drift", "Latency", report.latency_drift),
         ("error_drift", "Errors", report.error_drift),
         ("verbosity_drift", "Verbosity", getattr(report, "verbosity_drift", 0.0)),
-        ("loop_depth_drift", "Reasoning depth", getattr(report, "loop_depth_drift", 0.0)),
-        ("tool_sequence_drift", "Tool sequence", getattr(report, "tool_sequence_drift", 0.0)),
+        (
+            "loop_depth_drift",
+            "Reasoning depth",
+            getattr(report, "loop_depth_drift", 0.0),
+        ),
+        (
+            "tool_sequence_drift",
+            "Tool sequence",
+            getattr(report, "tool_sequence_drift", 0.0),
+        ),
         ("retry_drift", "Retry rate", getattr(report, "retry_drift", 0.0)),
-        ("output_length_drift", "Output length", getattr(report, "output_length_drift", 0.0)),
+        (
+            "output_length_drift",
+            "Output length",
+            getattr(report, "output_length_drift", 0.0),
+        ),
     ]
 
     for dim_key, dim_name, score in dims:
@@ -590,14 +602,18 @@ def render_diff_report(
             baseline_v = getattr(report, "baseline_avg_verbosity_ratio", 0.0)
             current_v = getattr(report, "current_avg_verbosity_ratio", 0.0)
             if baseline_v > 0 or current_v > 0:
-                context = f"\n    └─ response verbosity {baseline_v:.2f} → {current_v:.2f}"
+                context = (
+                    f"\n    └─ response verbosity {baseline_v:.2f} → {current_v:.2f}"
+                )
             else:
                 context = "\n    └─ output style changed"
         elif dim_key == "loop_depth_drift" and score > 0.15:
             baseline_loop = getattr(report, "baseline_avg_loop_count", 0.0)
             current_loop = getattr(report, "current_avg_loop_count", 0.0)
             if baseline_loop > 0 or current_loop > 0:
-                context = f"\n    └─ reasoning steps {baseline_loop:.1f} → {current_loop:.1f}"
+                context = (
+                    f"\n    └─ reasoning steps {baseline_loop:.1f} → {current_loop:.1f}"
+                )
             else:
                 context = "\n    └─ tool iteration pattern changed"
         elif dim_key == "tool_sequence_drift" and score > 0.15:
@@ -606,7 +622,9 @@ def render_diff_report(
             baseline_retry = getattr(report, "baseline_avg_retry_count", 0.0)
             current_retry = getattr(report, "current_avg_retry_count", 0.0)
             if baseline_retry > 0 or current_retry > 0:
-                context = f"\n    └─ retry count {baseline_retry:.2f} → {current_retry:.2f}"
+                context = (
+                    f"\n    └─ retry count {baseline_retry:.2f} → {current_retry:.2f}"
+                )
             else:
                 context = "\n    └─ tool reliability changed"
         elif dim_key == "output_length_drift" and score > 0.15:

@@ -168,7 +168,9 @@ if _LANGCHAIN_AVAILABLE:
 
             # Track time to first tool if this is the first tool call
             if state["time_to_first_tool_ms"] == 0 and len(state["tool_sequence"]) == 0:
-                elapsed = (datetime.utcnow() - state["started_at"]).total_seconds() * 1000
+                elapsed = (
+                    datetime.utcnow() - state["started_at"]
+                ).total_seconds() * 1000
                 state["time_to_first_tool_ms"] = int(elapsed)
 
             logger.debug(f"LangChain tool started: {tool_name}")

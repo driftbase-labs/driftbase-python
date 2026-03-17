@@ -125,13 +125,13 @@ def build_fingerprint_from_runs(
 
     # Compute tool_call_sequence distribution (different from tool_sequence)
     # tool_call_sequence is the ordered list of tool names
-    tool_call_sequences = [
-        getattr(run, "tool_call_sequence", "[]") for run in runs
-    ]
+    tool_call_sequences = [getattr(run, "tool_call_sequence", "[]") for run in runs]
     tcs_counts = Counter(tool_call_sequences)
     total_tcs = len(tool_call_sequences)
     tool_call_sequence_dist = (
-        {seq: count / total_tcs for seq, count in tcs_counts.items()} if total_tcs else {}
+        {seq: count / total_tcs for seq, count in tcs_counts.items()}
+        if total_tcs
+        else {}
     )
 
     return BehavioralFingerprint(

@@ -222,9 +222,7 @@ def _build_payload(
     # Compute verbosity_ratio
     prompt_tokens = (ctx.token_usage or {}).get("prompt", 0) or 0
     completion_tokens = (ctx.token_usage or {}).get("completion", 0) or 0
-    verbosity_ratio = (
-        completion_tokens / prompt_tokens if prompt_tokens > 0 else 0.0
-    )
+    verbosity_ratio = completion_tokens / prompt_tokens if prompt_tokens > 0 else 0.0
 
     # Serialize tool_call_sequence to JSON
     tool_call_sequence_json = json.dumps(ctx.tool_call_sequence)

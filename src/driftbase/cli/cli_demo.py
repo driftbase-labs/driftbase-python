@@ -77,7 +77,9 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
             "raw_output": output_text,
             # New behavioral metrics
             "loop_count": loop_count,
-            "tool_call_sequence": json.dumps(tools),  # JSON serialized list of tool names
+            "tool_call_sequence": json.dumps(
+                tools
+            ),  # JSON serialized list of tool names
             "time_to_first_tool_ms": time_to_first_tool_ms,
             "verbosity_ratio": verbosity_ratio,
         }
