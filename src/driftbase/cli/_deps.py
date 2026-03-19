@@ -52,6 +52,20 @@ def safe_import_rich():
         check_analyze_deps()  # Will exit with helpful message
 
 
+def safe_import_rich_extended():
+    """Import additional rich components with graceful error if missing."""
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.markdown import Markdown
+        from rich.prompt import Prompt, Confirm
+
+        return Console, Panel, Table, Markdown, Prompt, Confirm
+    except ImportError:
+        check_analyze_deps()  # Will exit with helpful message
+
+
 def safe_import_numpy():
     """Import numpy with graceful error if missing."""
     try:

@@ -58,6 +58,7 @@ from driftbase.cli.cli_chart import cmd_chart
 from driftbase.cli.cli_compare import cmd_compare
 from driftbase.cli.cli_cost import cmd_cost
 from driftbase.cli.cli_demo import cmd_demo
+from driftbase.cli.cli_diagnose import cmd_diagnose
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
 from driftbase.cli.cli_explore import cmd_explore
@@ -79,6 +80,7 @@ cli.add_command(cmd_inspect)
 cli.add_command(cmd_report)
 cli.add_command(cmd_push)
 cli.add_command(cmd_demo)
+cli.add_command(cmd_diagnose)
 cli.add_command(export_command)
 cli.add_command(import_command)
 # Phase 1 commands (comprehensive improvements)

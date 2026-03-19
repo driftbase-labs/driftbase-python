@@ -1,224 +1,36 @@
 import json
+import os
 import random
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import click
 
-from driftbase.cli._deps import safe_import_rich
+from driftbase.cli._deps import safe_import_rich_extended
+from driftbase.cli.demo_templates import (
+    COST_MODELS,
+    FRAMEWORK_TEMPLATES,
+    INDUSTRY_BENCHMARKS,
+    REGRESSION_TYPES,
+    ScenarioTemplate,
+)
 from driftbase.local.local_store import enqueue_run
 
 # Lazy import of heavy [analyze] dependencies
-Console, Panel, Table = safe_import_rich()
+Console, Panel, Table, Markdown, Prompt, Confirm = safe_import_rich_extended()
 
 
-def generate_synthetic_runs(version: str, count: int, is_regression: bool):
-    """Generates synthetic telemetry data with realistic tool sequences and scenarios."""
+def generate_synthetic_runs(
+    version: str,
+    count: int,
+    scenarios: list[ScenarioTemplate],
+    annotate: bool = False,
+    console: Any = None,
+) -> None:
+    """Generates synthetic telemetry data from scenario templates."""
     now = datetime.utcnow()
-
-    # Realistic tool palette for an AI agent
-    TOOLS = {
-        "query_database": 0.35,
-        "search_documents": 0.25,
-        "retrieve_context": 0.20,
-        "web_search": 0.10,
-        "send_email": 0.05,
-        "create_ticket": 0.05,
-        "escalate_to_human": 0.03,
-        "calculate": 0.08,
-        "format_response": 0.30,
-        "validate_input": 0.15,
-        "parse_json": 0.12,
-        "fetch_api": 0.08,
-        "summarize": 0.15,
-        "translate": 0.03,
-        "check_permissions": 0.10,
-    }
-
-    # Scenario templates with realistic tool sequences
-    BASELINE_SCENARIOS = [
-        # Happy path: direct query → format → done (70% of runs)
-        {
-            "weight": 0.50,
-            "tools": ["validate_input", "query_database", "format_response"],
-            "outcome": "resolved",
-            "p_tokens": (350, 500),
-            "c_tokens": (40, 80),
-            "latency": (250, 450),
-            "loop_count": (1, 2),
-            "retry_count": (0, 0),
-        },
-        # Moderate: query → retrieve context → query again → summarize (20%)
-        {
-            "weight": 0.20,
-            "tools": [
-                "validate_input",
-                "query_database",
-                "retrieve_context",
-                "query_database",
-                "summarize",
-                "format_response",
-            ],
-            "outcome": "resolved",
-            "p_tokens": (500, 700),
-            "c_tokens": (60, 110),
-            "latency": (400, 700),
-            "loop_count": (2, 3),
-            "retry_count": (0, 1),
-        },
-        # Document search path (15%)
-        {
-            "weight": 0.15,
-            "tools": [
-                "validate_input",
-                "search_documents",
-                "retrieve_context",
-                "summarize",
-                "format_response",
-            ],
-            "outcome": "resolved",
-            "p_tokens": (450, 650),
-            "c_tokens": (50, 100),
-            "latency": (350, 600),
-            "loop_count": (2, 3),
-            "retry_count": (0, 1),
-        },
-        # Complex calculation path (10%)
-        {
-            "weight": 0.10,
-            "tools": [
-                "validate_input",
-                "query_database",
-                "calculate",
-                "calculate",
-                "format_response",
-            ],
-            "outcome": "resolved",
-            "p_tokens": (400, 600),
-            "c_tokens": (45, 85),
-            "latency": (300, 550),
-            "loop_count": (2, 3),
-            "retry_count": (0, 1),
-        },
-        # Occasional escalation (5%)
-        {
-            "weight": 0.05,
-            "tools": [
-                "validate_input",
-                "query_database",
-                "check_permissions",
-                "escalate_to_human",
-            ],
-            "outcome": "escalated",
-            "p_tokens": (400, 600),
-            "c_tokens": (30, 60),
-            "latency": (350, 600),
-            "loop_count": (2, 3),
-            "retry_count": (0, 1),
-        },
-    ]
-
-    REGRESSION_SCENARIOS = [
-        # Baseline path but with extra validation loops (40%)
-        {
-            "weight": 0.30,
-            "tools": [
-                "validate_input",
-                "query_database",
-                "retrieve_context",
-                "validate_input",
-                "query_database",
-                "format_response",
-                "format_response",
-            ],
-            "outcome": "resolved",
-            "p_tokens": (700, 1000),
-            "c_tokens": (120, 200),
-            "latency": (900, 1500),
-            "loop_count": (4, 6),
-            "retry_count": (1, 2),
-        },
-        # Web search fallback (agent lost confidence) (25%)
-        {
-            "weight": 0.25,
-            "tools": [
-                "validate_input",
-                "query_database",
-                "web_search",
-                "web_search",
-                "retrieve_context",
-                "query_database",
-                "summarize",
-                "format_response",
-            ],
-            "outcome": "resolved",
-            "p_tokens": (900, 1200),
-            "c_tokens": (150, 250),
-            "latency": (1200, 2000),
-            "loop_count": (5, 8),
-            "retry_count": (2, 3),
-        },
-        # Excessive API calls and retries (15%)
-        {
-            "weight": 0.15,
-            "tools": [
-                "validate_input",
-                "fetch_api",
-                "fetch_api",
-                "parse_json",
-                "query_database",
-                "retrieve_context",
-                "summarize",
-                "format_response",
-            ],
-            "outcome": "resolved",
-            "p_tokens": (800, 1100),
-            "c_tokens": (140, 220),
-            "latency": (1000, 1700),
-            "loop_count": (4, 7),
-            "retry_count": (2, 4),
-        },
-        # Permission issues leading to escalation (20%)
-        {
-            "weight": 0.20,
-            "tools": [
-                "validate_input",
-                "check_permissions",
-                "query_database",
-                "check_permissions",
-                "retrieve_context",
-                "escalate_to_human",
-            ],
-            "outcome": "escalated",
-            "p_tokens": (750, 1050),
-            "c_tokens": (100, 180),
-            "latency": (950, 1600),
-            "loop_count": (4, 6),
-            "retry_count": (1, 2),
-        },
-        # Critical: agent gets stuck in loop and errors out (10%)
-        {
-            "weight": 0.10,
-            "tools": [
-                "validate_input",
-                "query_database",
-                "web_search",
-                "query_database",
-                "web_search",
-                "retrieve_context",
-                "web_search",
-            ],
-            "outcome": "error",
-            "p_tokens": (1000, 1300),
-            "c_tokens": (80, 150),
-            "latency": (1500, 2500),
-            "loop_count": (6, 10),
-            "retry_count": (3, 5),
-            "error_count": (1, 2),
-        },
-    ]
-
-    scenarios = BASELINE_SCENARIOS if not is_regression else REGRESSION_SCENARIOS
 
     for i in range(count):
         # Time distribution over the last hour
@@ -244,15 +56,19 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
 
         # Add some randomness: occasionally insert/remove a tool
         if random.random() < 0.15:
-            tools.insert(
-                random.randint(0, len(tools)), random.choice(list(TOOLS.keys()))
-            )
+            all_tools = [
+                "query_database",
+                "search_documents",
+                "retrieve_context",
+                "web_search",
+                "calculate",
+                "format_response",
+            ]
+            tools.insert(random.randint(0, len(tools)), random.choice(all_tools))
         if random.random() < 0.10 and len(tools) > 3:
             tools.pop(random.randint(0, len(tools) - 1))
 
-        time_to_first_tool_ms = (
-            random.randint(15, 80) if is_regression else random.randint(5, 40)
-        )
+        time_to_first_tool_ms = random.randint(20, 100)
 
         # Compute verbosity_ratio
         verbosity_ratio = c_tokens / p_tokens if p_tokens > 0 else 0.0
@@ -276,11 +92,10 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
         prompt_text = random.choice(prompts)
         output_text = random.choice(outputs)
 
-        # Make regression outputs more verbose
-        if is_regression and outcome == "resolved":
-            output_text = (
-                f"{output_text} Additionally, I searched multiple data sources to validate this information. "
-                "Let me know if you need any further clarification or additional details."
+        # Annotate if requested
+        if annotate and console and i % 10 == 0:
+            console.print(
+                f"[dim]Run {i+1}/{count}: {outcome} ({len(tools)} tools, {latency}ms)[/]"
             )
 
         payload = {
@@ -302,13 +117,550 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
             "completion_tokens": c_tokens,
             "raw_prompt": prompt_text,
             "raw_output": output_text,
-            # New behavioral metrics
             "loop_count": loop_count,
             "tool_call_sequence": json.dumps(tools),
             "time_to_first_tool_ms": time_to_first_tool_ms,
             "verbosity_ratio": verbosity_ratio,
         }
         enqueue_run(payload)
+
+
+def get_baseline_regression_scenarios(
+    regression_type: str | None, framework: str | None
+) -> tuple[list[ScenarioTemplate], list[ScenarioTemplate]]:
+    """Get baseline and regression scenarios based on type or framework."""
+
+    # Framework-specific templates
+    if framework and framework in FRAMEWORK_TEMPLATES:
+        template = FRAMEWORK_TEMPLATES[framework]
+        return template["baseline_scenarios"], template["regression_scenarios"]
+
+    # Regression type gallery
+    if regression_type and regression_type in REGRESSION_TYPES:
+        # Create baseline scenarios (efficient versions)
+        baseline = [
+            {
+                "weight": 0.70,
+                "tools": ["validate_input", "query_database", "format_response"],
+                "outcome": "resolved",
+                "p_tokens": (350, 500),
+                "c_tokens": (40, 80),
+                "latency": (250, 450),
+                "loop_count": (1, 2),
+                "retry_count": (0, 0),
+            },
+            {
+                "weight": 0.20,
+                "tools": [
+                    "validate_input",
+                    "query_database",
+                    "retrieve_context",
+                    "format_response",
+                ],
+                "outcome": "resolved",
+                "p_tokens": (450, 650),
+                "c_tokens": (50, 100),
+                "latency": (350, 600),
+                "loop_count": (2, 3),
+                "retry_count": (0, 1),
+            },
+            {
+                "weight": 0.05,
+                "tools": [
+                    "validate_input",
+                    "query_database",
+                    "escalate_to_human",
+                ],
+                "outcome": "escalated",
+                "p_tokens": (400, 600),
+                "c_tokens": (30, 60),
+                "latency": (350, 600),
+                "loop_count": (2, 3),
+                "retry_count": (0, 1),
+            },
+            {
+                "weight": 0.05,
+                "tools": ["validate_input", "query_database"],
+                "outcome": "error",
+                "p_tokens": (350, 550),
+                "c_tokens": (20, 50),
+                "latency": (300, 550),
+                "loop_count": (1, 2),
+                "retry_count": (1, 2),
+                "error_count": (1, 1),
+            },
+        ]
+        regression = REGRESSION_TYPES[regression_type]["scenarios"]
+        return baseline, regression
+
+    # Default scenarios (original demo behavior)
+    baseline = [
+        {
+            "weight": 0.50,
+            "tools": ["validate_input", "query_database", "format_response"],
+            "outcome": "resolved",
+            "p_tokens": (350, 500),
+            "c_tokens": (40, 80),
+            "latency": (250, 450),
+            "loop_count": (1, 2),
+            "retry_count": (0, 0),
+        },
+        {
+            "weight": 0.20,
+            "tools": [
+                "validate_input",
+                "query_database",
+                "retrieve_context",
+                "query_database",
+                "summarize",
+                "format_response",
+            ],
+            "outcome": "resolved",
+            "p_tokens": (500, 700),
+            "c_tokens": (60, 110),
+            "latency": (400, 700),
+            "loop_count": (2, 3),
+            "retry_count": (0, 1),
+        },
+        {
+            "weight": 0.15,
+            "tools": [
+                "validate_input",
+                "search_documents",
+                "retrieve_context",
+                "summarize",
+                "format_response",
+            ],
+            "outcome": "resolved",
+            "p_tokens": (450, 650),
+            "c_tokens": (50, 100),
+            "latency": (350, 600),
+            "loop_count": (2, 3),
+            "retry_count": (0, 1),
+        },
+        {
+            "weight": 0.10,
+            "tools": [
+                "validate_input",
+                "query_database",
+                "calculate",
+                "calculate",
+                "format_response",
+            ],
+            "outcome": "resolved",
+            "p_tokens": (400, 600),
+            "c_tokens": (45, 85),
+            "latency": (300, 550),
+            "loop_count": (2, 3),
+            "retry_count": (0, 1),
+        },
+        {
+            "weight": 0.05,
+            "tools": [
+                "validate_input",
+                "query_database",
+                "check_permissions",
+                "escalate_to_human",
+            ],
+            "outcome": "escalated",
+            "p_tokens": (400, 600),
+            "c_tokens": (30, 60),
+            "latency": (350, 600),
+            "loop_count": (2, 3),
+            "retry_count": (0, 1),
+        },
+    ]
+
+    regression = [
+        {
+            "weight": 0.30,
+            "tools": [
+                "validate_input",
+                "query_database",
+                "retrieve_context",
+                "validate_input",
+                "query_database",
+                "format_response",
+                "format_response",
+            ],
+            "outcome": "resolved",
+            "p_tokens": (700, 1000),
+            "c_tokens": (120, 200),
+            "latency": (900, 1500),
+            "loop_count": (4, 6),
+            "retry_count": (1, 2),
+        },
+        {
+            "weight": 0.25,
+            "tools": [
+                "validate_input",
+                "query_database",
+                "web_search",
+                "web_search",
+                "retrieve_context",
+                "query_database",
+                "summarize",
+                "format_response",
+            ],
+            "outcome": "resolved",
+            "p_tokens": (900, 1200),
+            "c_tokens": (150, 250),
+            "latency": (1200, 2000),
+            "loop_count": (5, 8),
+            "retry_count": (2, 3),
+        },
+        {
+            "weight": 0.20,
+            "tools": [
+                "validate_input",
+                "check_permissions",
+                "query_database",
+                "check_permissions",
+                "retrieve_context",
+                "escalate_to_human",
+            ],
+            "outcome": "escalated",
+            "p_tokens": (750, 1050),
+            "c_tokens": (100, 180),
+            "latency": (950, 1600),
+            "loop_count": (4, 6),
+            "retry_count": (1, 2),
+        },
+        {
+            "weight": 0.15,
+            "tools": [
+                "validate_input",
+                "fetch_api",
+                "fetch_api",
+                "parse_json",
+                "query_database",
+                "retrieve_context",
+                "summarize",
+                "format_response",
+            ],
+            "outcome": "resolved",
+            "p_tokens": (800, 1100),
+            "c_tokens": (140, 220),
+            "latency": (1000, 1700),
+            "loop_count": (4, 7),
+            "retry_count": (2, 4),
+        },
+        {
+            "weight": 0.10,
+            "tools": [
+                "validate_input",
+                "query_database",
+                "web_search",
+                "query_database",
+                "web_search",
+                "retrieve_context",
+                "web_search",
+            ],
+            "outcome": "error",
+            "p_tokens": (1000, 1300),
+            "c_tokens": (80, 150),
+            "latency": (1500, 2500),
+            "loop_count": (6, 10),
+            "retry_count": (3, 5),
+            "error_count": (1, 2),
+        },
+    ]
+
+    return baseline, regression
+
+
+def interactive_tutorial(console: Any, runs: int) -> None:
+    """Interactive step-by-step tutorial mode."""
+    console.print(
+        Panel(
+            "[bold cyan]🎓 Welcome to the Driftbase Interactive Tutorial![/]\n\n"
+            "This guided walkthrough will teach you how to detect and analyze\n"
+            "behavioral drift in AI agents. We'll generate data, run diffs, and\n"
+            "interpret the results together.\n\n"
+            "[dim]Press Enter to continue...[/]",
+            title="Tutorial Mode",
+            border_style="cyan",
+        )
+    )
+    input()
+
+    # Step 1: Explain what we're about to generate
+    console.print("\n[bold]Step 1: Understanding Baseline vs Regression[/]\n")
+    console.print(
+        "We'll generate two versions of agent data:\n"
+        "  • [green]v1.0 (Baseline)[/]: Efficient agent with low latency, minimal token usage\n"
+        "  • [red]v2.0 (Regression)[/]: Same agent after changes caused performance issues\n"
+    )
+    console.print(
+        "\n[yellow]💡 Key Metrics We Track:[/]\n"
+        "  • [cyan]Tool sequences[/]: Which tools are called and in what order\n"
+        "  • [cyan]Token usage[/]: Prompt + completion tokens (affects cost)\n"
+        "  • [cyan]Latency[/]: Response time (affects user experience)\n"
+        "  • [cyan]Loop count[/]: How many reasoning iterations\n"
+        "  • [cyan]Retry count[/]: Failed tool calls requiring retries\n"
+        "  • [cyan]Escalation rate[/]: How often agent gives up\n"
+    )
+    console.print("\n[dim]Press Enter to generate baseline data...[/]")
+    input()
+
+    # Generate baseline
+    console.print(f"\n[cyan]Generating {runs} baseline runs (v1.0)...[/]")
+    baseline, regression = get_baseline_regression_scenarios(None, None)
+    generate_synthetic_runs("v1.0", runs, baseline, annotate=True, console=console)
+    time.sleep(0.5)
+    console.print("[green]✓ Baseline complete![/]\n")
+
+    # Step 2: Explain regression
+    console.print("[bold]Step 2: Simulating a Regression[/]\n")
+    console.print(
+        "Now we'll generate v2.0 data with these problems:\n"
+        "  • [red]Excessive loops[/]: Agent retries operations unnecessarily\n"
+        "  • [red]Tool sequence changes[/]: Different problem-solving approach\n"
+        "  • [red]Higher escalation rate[/]: Agent gives up more often\n"
+        "  • [red]Token bloat[/]: Wordier outputs without added value\n"
+    )
+    console.print("\n[dim]Press Enter to generate regression data...[/]")
+    input()
+
+    console.print(f"\n[cyan]Generating {runs} regression runs (v2.0)...[/]")
+    generate_synthetic_runs("v2.0", runs, regression, annotate=True, console=console)
+    time.sleep(0.5)
+    console.print("[green]✓ Regression complete![/]\n")
+
+    # Step 3: Run the diff
+    console.print("[bold]Step 3: Detecting Drift[/]\n")
+    console.print(
+        "Let's compare the two versions using the diff command.\n"
+        "The drift score ranges from 0.0 (identical) to 1.0 (completely different).\n"
+    )
+    console.print("\n[dim]Press Enter to run: driftbase diff v1.0 v2.0[/]")
+    input()
+
+    console.print("\n[cyan]Running drift detection...[/]\n")
+    time.sleep(1)
+    console.print("[bold green]Now run:[/] [cyan]driftbase diff v1.0 v2.0[/]\n")
+
+    # Step 4: What to look for
+    console.print("[bold]Step 4: Interpreting Results[/]\n")
+    console.print("In the diff output, pay attention to:\n")
+    console.print(
+        "  1. [yellow]Overall drift score[/]: Is it above your threshold (default: 0.20)?\n"
+        "  2. [yellow]Component scores[/]: Which dimension drifted most?\n"
+        "     • Decisions (escalation rate)\n"
+        "     • Latency (p95 response time)\n"
+        "     • Tool sequences (behavioral changes)\n"
+        "  3. [yellow]Financial impact[/]: How much will this cost per 10k runs?\n"
+        "  4. [yellow]Verdict & root cause[/]: Plain-English explanation\n"
+    )
+
+    # Step 5: Next steps
+    console.print("\n[bold]Step 5: Exploring Further[/]\n")
+    console.print("Try these commands to dive deeper:\n")
+    console.print(
+        "  • [cyan]driftbase runs -v v2.0 --slow[/]\n"
+        "    [dim]Inspect slow runs to understand latency regression[/]\n"
+    )
+    console.print(
+        "  • [cyan]driftbase chart -v v1.0 -m tools[/]\n"
+        "    [dim]Visualize tool usage patterns in baseline[/]\n"
+    )
+    console.print(
+        "  • [cyan]driftbase compare v1.0 v2.0 --matrix[/]\n"
+        "    [dim]Detailed component-by-component breakdown[/]\n"
+    )
+    console.print(
+        "  • [cyan]driftbase cost -v v2.0[/]\n"
+        "    [dim]Detailed cost analysis with projections[/]\n"
+    )
+
+    console.print(
+        "\n[bold green]🎉 Tutorial complete![/] You're ready to use Driftbase on real agents.\n"
+    )
+
+
+def export_fixtures(console: Any, format_type: str, output_dir: str) -> None:
+    """Export test fixtures for integration testing."""
+    from driftbase.backends.factory import get_backend
+
+    backend = get_backend()
+
+    # Get runs for both versions
+    v1_runs = backend.get_runs("v1.0", limit=50)
+    v2_runs = backend.get_runs("v2.0", limit=50)
+
+    if not v1_runs or not v2_runs:
+        console.print(
+            "[yellow]No demo data found. Run 'driftbase demo' first.[/]", style="yellow"
+        )
+        return
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    if format_type == "pytest":
+        # Generate pytest fixtures
+        fixture_content = '''"""
+Auto-generated test fixtures from driftbase demo data.
+Generated: {timestamp}
+"""
+
+import pytest
+from typing import Dict, List, Any
+
+
+@pytest.fixture
+def baseline_runs() -> List[Dict[str, Any]]:
+    """v1.0 baseline runs for drift detection tests."""
+    return {baseline_data}
+
+
+@pytest.fixture
+def regression_runs() -> List[Dict[str, Any]]:
+    """v2.0 regression runs for drift detection tests."""
+    return {regression_data}
+
+
+@pytest.fixture
+def expected_drift_score() -> float:
+    """Expected drift score for test validation."""
+    return 0.28  # Moderate drift expected
+
+
+def test_detects_drift(baseline_runs, regression_runs, expected_drift_score):
+    """Test that drift detection identifies regression."""
+    from driftbase.stats.drift import compute_drift_score
+
+    drift = compute_drift_score(baseline_runs, regression_runs)
+    assert drift >= expected_drift_score, f"Expected drift >= {{expected_drift_score}}, got {{drift}}"
+
+
+def test_detects_latency_regression(regression_runs):
+    """Test that latency increased in regression."""
+    avg_latency = sum(r["latency_ms"] for r in regression_runs) / len(regression_runs)
+    assert avg_latency > 800, f"Expected latency > 800ms, got {{avg_latency}}ms"
+
+
+def test_detects_token_bloat(baseline_runs, regression_runs):
+    """Test that token usage increased in regression."""
+    baseline_tokens = sum(r["completion_tokens"] for r in baseline_runs) / len(baseline_runs)
+    regression_tokens = sum(r["completion_tokens"] for r in regression_runs) / len(regression_runs)
+    increase = (regression_tokens - baseline_tokens) / baseline_tokens
+    assert increase > 0.5, f"Expected >50% token increase, got {{increase:.1%}}"
+'''.format(
+            timestamp=datetime.utcnow().isoformat(),
+            baseline_data=json.dumps(v1_runs[:10], indent=4, default=str),
+            regression_data=json.dumps(v2_runs[:10], indent=4, default=str),
+        )
+
+        fixture_file = output_path / "test_fixtures.py"
+        fixture_file.write_text(fixture_content)
+        console.print(f"[green]✓ Generated pytest fixtures:[/] {fixture_file}")
+
+    elif format_type == "json":
+        # Generate JSON fixtures
+        fixtures = {
+            "schema_version": "1.0",
+            "generated_at": datetime.utcnow().isoformat(),
+            "baseline": {"version": "v1.0", "runs": v1_runs[:20]},
+            "regression": {"version": "v2.0", "runs": v2_runs[:20]},
+        }
+
+        fixture_file = output_path / "drift_fixtures.json"
+        fixture_file.write_text(json.dumps(fixtures, indent=2, default=str))
+        console.print(f"[green]✓ Generated JSON fixtures:[/] {fixture_file}")
+
+
+def show_cost_impact(
+    console: Any, runs: int, cost_model: str, volume_per_month: int
+) -> None:
+    """Show detailed cost impact projection at scale."""
+    from driftbase.backends.factory import get_backend
+
+    backend = get_backend()
+
+    # Get runs
+    v1_runs = backend.get_runs("v1.0", limit=runs)
+    v2_runs = backend.get_runs("v2.0", limit=runs)
+
+    if not v1_runs or not v2_runs:
+        console.print("[yellow]No demo data found. Run without --cost-model first.[/]")
+        return
+
+    # Get cost model
+    model = COST_MODELS.get(cost_model, COST_MODELS["standard"])
+
+    # Calculate average token usage
+    v1_avg_prompt = sum(r.get("prompt_tokens", 0) for r in v1_runs) / len(v1_runs)
+    v1_avg_completion = sum(r.get("completion_tokens", 0) for r in v1_runs) / len(
+        v1_runs
+    )
+    v2_avg_prompt = sum(r.get("prompt_tokens", 0) for r in v2_runs) / len(v2_runs)
+    v2_avg_completion = sum(r.get("completion_tokens", 0) for r in v2_runs) / len(
+        v2_runs
+    )
+
+    # Cost per run
+    v1_cost_per_run = (
+        v1_avg_prompt / 1_000_000 * model["rate_prompt_1m"]
+        + v1_avg_completion / 1_000_000 * model["rate_completion_1m"]
+    )
+    v2_cost_per_run = (
+        v2_avg_prompt / 1_000_000 * model["rate_prompt_1m"]
+        + v2_avg_completion / 1_000_000 * model["rate_completion_1m"]
+    )
+
+    # Monthly costs
+    v1_monthly = v1_cost_per_run * volume_per_month
+    v2_monthly = v2_cost_per_run * volume_per_month
+    delta_monthly = v2_monthly - v1_monthly
+    delta_pct = ((v2_monthly - v1_monthly) / v1_monthly * 100) if v1_monthly > 0 else 0
+
+    # Display
+    console.print(
+        Panel(
+            f"[bold]Cost Model:[/] {model['name']}\n"
+            f"[dim]{model['description']}[/]\n\n"
+            f"[bold]Rates:[/]\n"
+            f"  Prompt tokens: €{model['rate_prompt_1m']:.2f} per 1M\n"
+            f"  Completion tokens: €{model['rate_completion_1m']:.2f} per 1M\n\n"
+            f"[bold]Volume:[/] {volume_per_month:,} runs/month",
+            title="💰 Cost Impact Simulator",
+            border_style="yellow",
+        )
+    )
+
+    table = Table(show_header=True, header_style="bold", title="\nPer-Run Breakdown")
+    table.add_column("Version")
+    table.add_column("Prompt Tokens", justify="right")
+    table.add_column("Completion Tokens", justify="right")
+    table.add_column("Cost/Run", justify="right")
+
+    table.add_row(
+        "[green]v1.0[/]",
+        f"{v1_avg_prompt:.0f}",
+        f"{v1_avg_completion:.0f}",
+        f"€{v1_cost_per_run:.4f}",
+    )
+    table.add_row(
+        "[red]v2.0[/]",
+        f"{v2_avg_prompt:.0f}",
+        f"{v2_avg_completion:.0f}",
+        f"€{v2_cost_per_run:.4f}",
+    )
+    console.print(table)
+
+    # Monthly projection
+    console.print(
+        Panel(
+            f"[bold]v1.0 Baseline:[/] €{v1_monthly:,.2f}/month\n"
+            f"[bold]v2.0 Regression:[/] €{v2_monthly:,.2f}/month\n\n"
+            f"[bold {'red' if delta_monthly > 0 else 'green'}]Delta:[/] "
+            f"€{delta_monthly:+,.2f}/month ({delta_pct:+.1f}%)\n\n"
+            f"[yellow]💡 Projected Annual Impact:[/] €{delta_monthly * 12:,.2f}/year",
+            title="📊 Monthly Cost Projection",
+            border_style="red" if delta_monthly > 0 else "green",
+        )
+    )
 
 
 @click.command("demo")
@@ -319,49 +671,345 @@ def generate_synthetic_runs(version: str, count: int, is_regression: bool):
     default=50,
     help="Number of runs per version (default: 50)",
 )
+@click.option(
+    "--quick",
+    is_flag=True,
+    help="Quick mode: 10 runs per version (~5 seconds total)",
+)
+@click.option(
+    "--regression-type",
+    type=click.Choice(list(REGRESSION_TYPES.keys())),
+    help="Specific regression pattern to demonstrate",
+)
+@click.option(
+    "--template",
+    type=click.Choice(list(FRAMEWORK_TEMPLATES.keys())),
+    help="Framework-specific agent template",
+)
+@click.option(
+    "--scenario",
+    type=click.Path(exists=True),
+    help="Path to custom YAML scenario file",
+)
+@click.option(
+    "--init-scenario",
+    type=click.Path(),
+    help="Generate template YAML scenario at path",
+)
+@click.option(
+    "--shadow-from",
+    type=click.Path(exists=True),
+    help="Analyze agent code and generate scenarios (Shadow Mode)",
+)
+@click.option(
+    "--benchmark",
+    type=click.Choice(list(INDUSTRY_BENCHMARKS.keys())),
+    help="Generate data matching industry benchmark",
+)
+@click.option(
+    "--interactive",
+    is_flag=True,
+    help="Interactive tutorial mode with step-by-step guidance",
+)
+@click.option(
+    "--annotate",
+    is_flag=True,
+    help="Show real-time explanations as data is generated",
+)
+@click.option(
+    "--export-fixtures",
+    "export_fixtures_flag",
+    is_flag=True,
+    help="Export test fixtures after generation",
+)
+@click.option(
+    "--format",
+    "fixture_format",
+    type=click.Choice(["pytest", "json"]),
+    default="pytest",
+    help="Fixture format (requires --export-fixtures)",
+)
+@click.option(
+    "--output",
+    "output_dir",
+    default="./tests/fixtures",
+    help="Output directory for fixtures (default: ./tests/fixtures)",
+)
+@click.option(
+    "--cost-model",
+    type=click.Choice(list(COST_MODELS.keys())),
+    help="Show cost impact with specific pricing model",
+)
+@click.option(
+    "--volume",
+    type=int,
+    default=100000,
+    help="Monthly run volume for cost projections (default: 100k)",
+)
 @click.pass_context
-def cmd_demo(ctx: click.Context, runs: int) -> None:
+def cmd_demo(
+    ctx: click.Context,
+    runs: int,
+    quick: bool,
+    regression_type: str | None,
+    template: str | None,
+    scenario: str | None,
+    init_scenario: str | None,
+    shadow_from: str | None,
+    benchmark: str | None,
+    interactive: bool,
+    annotate: bool,
+    export_fixtures_flag: bool,
+    fixture_format: str,
+    output_dir: str,
+    cost_model: str | None,
+    volume: int,
+) -> None:
     """Inject synthetic runs to instantly see the drift engine in action.
 
-    Generates realistic agent telemetry with varied tool sequences, outcomes,
-    and behavioral patterns. v1.0 represents a healthy baseline, v2.0 shows
-    a regression with increased latency, verbosity, and escalation rates.
+    \b
+    Basic Usage:
+      driftbase demo                     # Standard demo (50 runs each)
+      driftbase demo --quick             # Fast demo (10 runs, ~5 seconds)
+      driftbase demo --runs 100          # Custom run count
 
     \b
-    Example:
-      driftbase demo              # Generate 50 runs per version
-      driftbase demo --runs 100   # Generate 100 runs per version
+    Regression Gallery:
+      driftbase demo --regression-type token-bloat      # Excessive verbosity
+      driftbase demo --regression-type loop-detection   # Stuck in retry cycles
+      driftbase demo --regression-type tool-dropout     # Missing critical tools
+      driftbase demo --regression-type cost-explosion   # 3-5x token usage
+      driftbase demo --regression-type latency-creep    # Slow performance
+
+    \b
+    Framework Templates:
+      driftbase demo --template langgraph-rag           # RAG pipeline
+      driftbase demo --template autogen-research        # Multi-agent research
+      driftbase demo --template crewai-customer-support # Support bot
+      driftbase demo --template code-generation         # Code gen agent
+
+    \b
+    Custom Scenarios:
+      driftbase demo --init-scenario ./my_scenario.yaml # Generate template
+      driftbase demo --scenario ./my_scenario.yaml      # Use custom scenario
+
+    \b
+    Shadow Mode (Code Analysis):
+      driftbase demo --shadow-from ./my_agent.py        # Auto-generate from code
+
+    \b
+    Industry Benchmarks:
+      driftbase demo --benchmark rag-pipeline           # Match RAG benchmarks
+      driftbase demo --benchmark customer-support       # Match support bot benchmarks
+
+    \b
+    Learning & Testing:
+      driftbase demo --interactive       # Step-by-step tutorial
+      driftbase demo --annotate          # Show real-time explanations
+      driftbase demo --export-fixtures   # Generate pytest fixtures
+
+    \b
+    Cost Analysis:
+      driftbase demo --cost-model enterprise --volume 100000
+      driftbase demo --cost-model budget --volume 50000
     """
     console: Console = ctx.obj["console"]
 
-    console.print("🧪 [bold cyan]Injecting realistic synthetic telemetry...[/]")
-    console.print(
-        "[dim]Each version includes varied tool sequences (3-8 tools/run), "
-        "multiple outcome types, and realistic behavioral patterns.[/]\n"
-    )
+    # Handle scenario template generation
+    if init_scenario:
+        from driftbase.cli.demo_scenario_loader import generate_template_yaml
 
-    # 1. Generate Baseline
-    generate_synthetic_runs("v1.0", runs, is_regression=False)
-    console.print(
-        f"  ✓ Generated {runs} runs for [bold]v1.0[/] [dim](Baseline: efficient, low escalation)[/]"
-    )
+        generate_template_yaml(init_scenario)
+        console.print(
+            f"[green]✓ Generated scenario template:[/] {init_scenario}\n"
+            f"[dim]Edit the template and run with: driftbase demo --scenario {init_scenario}[/]"
+        )
+        return
 
-    # 2. Generate Regression
-    generate_synthetic_runs("v2.0", runs, is_regression=True)
+    # Quick mode overrides
+    if quick:
+        runs = 10
+
+    # Interactive tutorial mode
+    if interactive:
+        interactive_tutorial(console, runs)
+        return
+
+    # Get scenarios based on input
+    baseline = None
+    regression = None
+
+    # Priority 1: Custom YAML scenario
+    if scenario:
+        from driftbase.cli.demo_scenario_loader import load_yaml_scenario
+
+        try:
+            baseline, regression = load_yaml_scenario(scenario)
+            console.print(
+                f"[green]✓ Loaded custom scenario from:[/] {scenario}\n"
+            )
+        except Exception as e:
+            console.print(f"[red]Error loading scenario:[/] {e}")
+            return
+
+    # Priority 2: Shadow mode (analyze agent code)
+    elif shadow_from:
+        from driftbase.cli.demo_scenario_loader import (
+            analyze_agent_code,
+            generate_scenarios_from_code_analysis,
+        )
+
+        console.print(
+            Panel(
+                f"[bold]🔍 Shadow Mode: Analyzing Agent Code[/]\n\n"
+                f"[cyan]File:[/] {shadow_from}\n"
+                f"[dim]Extracting tool definitions and patterns...[/]",
+                title="Shadow Mode",
+                border_style="cyan",
+            )
+        )
+
+        try:
+            analysis = analyze_agent_code(shadow_from)
+            console.print(
+                f"\n[green]✓ Detected {analysis['tool_count']} tools:[/]"
+            )
+            console.print(f"  [dim]{', '.join(analysis['tools'][:10])}{'...' if len(analysis['tools']) > 10 else ''}[/]\n")
+
+            if analysis["frameworks"]:
+                console.print(f"[cyan]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n")
+
+            baseline, regression = generate_scenarios_from_code_analysis(analysis)
+            console.print(f"[green]✓ Generated scenarios from code analysis[/]\n")
+        except Exception as e:
+            console.print(f"[red]Error analyzing agent code:[/] {e}")
+            console.print(
+                "\n[dim]💡 Tip: Ensure tool functions follow naming conventions:[/]\n"
+                "  • Use @tool decorator (LangChain)\n"
+                "  • Name functions with prefixes: query_, search_, retrieve_, etc.\n"
+                "  • Or create tool classes ending in 'Tool'\n"
+            )
+            return
+
+    # Priority 3: Industry benchmark
+    elif benchmark:
+        bench_info = INDUSTRY_BENCHMARKS[benchmark]
+        console.print(
+            Panel(
+                f"[bold]{bench_info['name']}[/]\n\n"
+                f"{bench_info['description']}\n\n"
+                f"[yellow]Target Metrics:[/]\n"
+                f"  • P50 Latency: {bench_info['metrics']['p50_latency']}ms\n"
+                f"  • P95 Latency: {bench_info['metrics']['p95_latency']}ms\n"
+                f"  • Avg Tokens: {bench_info['metrics']['avg_prompt_tokens']} prompt, "
+                f"{bench_info['metrics']['avg_completion_tokens']} completion\n"
+                f"  • Tool Calls: {bench_info['metrics']['tool_call_count']} per run\n"
+                f"  • Error Rate: {bench_info['metrics']['error_rate']:.1%}",
+                title="🎯 Industry Benchmark",
+                border_style="cyan",
+            )
+        )
+
+        # Generate scenarios matching benchmark
+        metrics = bench_info["metrics"]
+        baseline, regression = get_baseline_regression_scenarios(None, None)
+
+        # Adjust baseline to match benchmark (simple scaling)
+        for scenario in baseline:
+            scenario["latency"] = (
+                int(metrics["p50_latency"] * 0.8),
+                int(metrics["p95_latency"] * 0.9),
+            )
+            scenario["p_tokens"] = (
+                int(metrics["avg_prompt_tokens"] * 0.9),
+                int(metrics["avg_prompt_tokens"] * 1.1),
+            )
+            scenario["c_tokens"] = (
+                int(metrics["avg_completion_tokens"] * 0.9),
+                int(metrics["avg_completion_tokens"] * 1.1),
+            )
+
+    # Priority 4: Predefined regression type or framework template
+    else:
+        baseline, regression = get_baseline_regression_scenarios(regression_type, template)
+
+    # Show what we're generating
+    if regression_type:
+        rt = REGRESSION_TYPES[regression_type]
+        console.print(
+            Panel(
+                f"[bold]{rt['name']}[/]\n\n{rt['description']}\n\n"
+                f"[yellow]Expected Drift:[/]\n"
+                + "\n".join(
+                    f"  • {k}: {v}" for k, v in rt["expected_drift"].items()
+                ),
+                title="🧪 Regression Type Demo",
+                border_style="cyan",
+            )
+        )
+    elif template:
+        tmpl = FRAMEWORK_TEMPLATES[template]
+        console.print(
+            Panel(
+                f"[bold]{tmpl['name']}[/]\n\n{tmpl['description']}\n\n"
+                f"[cyan]Tools:[/] {', '.join(tmpl['tools'][:5])}...",
+                title="🔧 Framework Template",
+                border_style="cyan",
+            )
+        )
+    else:
+        console.print("🧪 [bold cyan]Injecting realistic synthetic telemetry...[/]")
+        if quick:
+            console.print("[dim]Quick mode: 10 runs per version (~5 seconds)[/]\n")
+        else:
+            console.print(
+                f"[dim]Generating {runs} runs per version with varied patterns[/]\n"
+            )
+
+    # Generate baseline
     console.print(
-        f"  ✓ Generated {runs} runs for [bold]v2.0[/] [dim](Regression: verbose, slow, high escalation)[/]"
+        f"  {'[cyan]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v1.0[/] [dim](Baseline)[/]"
+    )
+    generate_synthetic_runs("v1.0", runs, baseline, annotate=annotate, console=console)
+
+    # Generate regression
+    console.print(
+        f"  {'[cyan]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v2.0[/] [dim](Regression)[/]"
+    )
+    generate_synthetic_runs(
+        "v2.0", runs, regression, annotate=annotate, console=console
     )
 
     # Allow background SQLite thread to flush
     time.sleep(1.0)
 
     console.print("\n[bold green]✓ Success![/] Local database populated.\n")
+
+    # Export fixtures if requested
+    if export_fixtures_flag:
+        export_fixtures(console, fixture_format, output_dir)
+        console.print()
+
+    # Show cost impact if requested
+    if cost_model:
+        console.print()
+        show_cost_impact(console, runs, cost_model, volume)
+        console.print()
+
+    # Show next steps
     console.print("[bold]Try these commands:[/]")
     console.print("  👉 [cyan]driftbase diff v1.0 v2.0[/]")
     console.print("     [dim]See overall drift score, cost impact, and verdict[/]\n")
-    console.print("  👉 [cyan]driftbase chart -v v1.0 -m tools[/]")
-    console.print("     [dim]Visualize tool usage patterns[/]\n")
-    console.print("  👉 [cyan]driftbase compare v1.0 v2.0 --matrix[/]")
-    console.print("     [dim]Detailed component-by-component comparison[/]\n")
-    console.print("  👉 [cyan]driftbase runs -v v2.0 --slow[/]")
-    console.print("     [dim]Inspect slow runs in v2.0[/]\n")
+
+    if regression_type == "latency-creep":
+        console.print("  👉 [cyan]driftbase runs -v v2.0 --slow[/]")
+        console.print("     [dim]Inspect slow runs to understand latency issues[/]\n")
+    elif regression_type == "tool-dropout":
+        console.print("  👉 [cyan]driftbase chart -v v1.0 -m tools[/]")
+        console.print("     [dim]Compare tool usage: what's missing in v2.0?[/]\n")
+    else:
+        console.print("  👉 [cyan]driftbase compare v1.0 v2.0 --matrix[/]")
+        console.print("     [dim]Detailed component-by-component comparison[/]\n")
+
+    console.print("  👉 [cyan]driftbase cost -v v2.0[/]")
+    console.print("     [dim]Analyze cost impact with projections[/]\n")
