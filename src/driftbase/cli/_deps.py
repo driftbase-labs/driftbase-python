@@ -56,10 +56,10 @@ def safe_import_rich_extended():
     """Import additional rich components with graceful error if missing."""
     try:
         from rich.console import Console
-        from rich.panel import Panel
-        from rich.table import Table
         from rich.markdown import Markdown
-        from rich.prompt import Prompt, Confirm
+        from rich.panel import Panel
+        from rich.prompt import Confirm, Prompt
+        from rich.table import Table
 
         return Console, Panel, Table, Markdown, Prompt, Confirm
     except ImportError:

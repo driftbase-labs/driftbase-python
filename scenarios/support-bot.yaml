@@ -1,0 +1,75 @@
+# Driftbase Custom Scenario Template
+# Define your own baseline and regression patterns here
+
+name: "My Custom Agent Pattern"
+description: "Describe what your agent does and what regression this demonstrates"
+
+# Baseline: how your agent should behave normally
+baseline:
+  # Scenario 1: Happy path (70% of runs)
+  - weight: 0.70
+    tools: ["validate_input", "query_database", "format_response"]
+    outcome: "resolved"
+    p_tokens: [300, 500]    # Range for prompt tokens
+    c_tokens: [40, 80]       # Range for completion tokens
+    latency: [200, 400]      # Range for latency in ms
+    loop_count: [1, 2]       # Range for reasoning iterations
+    retry_count: [0, 0]      # Range for retry attempts
+    description: "Standard successful query"
+
+  # Scenario 2: More complex path (20% of runs)
+  - weight: 0.20
+    tools: ["validate_input", "query_database", "retrieve_context", "summarize", "format_response"]
+    outcome: "resolved"
+    p_tokens: [500, 700]
+    c_tokens: [60, 120]
+    latency: [400, 700]
+    loop_count: [2, 3]
+    retry_count: [0, 1]
+    description: "Query requiring additional context"
+
+  # Scenario 3: Escalation (10% of runs)
+  - weight: 0.10
+    tools: ["validate_input", "query_database", "escalate_to_human"]
+    outcome: "escalated"
+    p_tokens: [400, 600]
+    c_tokens: [30, 60]
+    latency: [350, 600]
+    loop_count: [2, 3]
+    retry_count: [0, 1]
+    description: "Edge case requiring human intervention"
+
+# Regression: problematic behavior after code changes
+regression:
+  # Scenario 1: Excessive loops (50% of runs)
+  - weight: 0.50
+    tools: ["validate_input", "query_database", "query_database", "query_database", "format_response"]
+    outcome: "resolved"
+    p_tokens: [800, 1200]
+    c_tokens: [100, 180]
+    latency: [1000, 1800]
+    loop_count: [4, 7]
+    retry_count: [2, 4]
+    description: "Agent stuck repeating database queries"
+
+  # Scenario 2: Tool dropout (30% of runs)
+  - weight: 0.30
+    tools: ["validate_input", "query_database", "format_response"]
+    outcome: "resolved"
+    p_tokens: [400, 650]
+    c_tokens: [50, 100]
+    latency: [350, 650]
+    loop_count: [1, 2]
+    retry_count: [0, 1]
+    description: "Skipped context retrieval - missing critical step"
+
+  # Scenario 3: Increased escalation rate (20% of runs)
+  - weight: 0.20
+    tools: ["validate_input", "query_database", "escalate_to_human"]
+    outcome: "escalated"
+    p_tokens: [700, 1000]
+    c_tokens: [80, 140]
+    latency: [800, 1400]
+    loop_count: [3, 5]
+    retry_count: [1, 3]
+    description: "Agent gives up too easily"

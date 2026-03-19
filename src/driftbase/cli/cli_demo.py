@@ -499,9 +499,9 @@ def export_fixtures(console: Any, format_type: str, output_dir: str) -> None:
 
     if format_type == "pytest":
         # Generate pytest fixtures
-        fixture_content = '''"""
+        fixture_content = f'''"""
 Auto-generated test fixtures from driftbase demo data.
-Generated: {timestamp}
+Generated: {datetime.utcnow().isoformat()}
 """
 
 import pytest
@@ -511,13 +511,13 @@ from typing import Dict, List, Any
 @pytest.fixture
 def baseline_runs() -> List[Dict[str, Any]]:
     """v1.0 baseline runs for drift detection tests."""
-    return {baseline_data}
+    return {json.dumps(v1_runs[:10], indent=4, default=str)}
 
 
 @pytest.fixture
 def regression_runs() -> List[Dict[str, Any]]:
     """v2.0 regression runs for drift detection tests."""
-    return {regression_data}
+    return {json.dumps(v2_runs[:10], indent=4, default=str)}
 
 
 @pytest.fixture
@@ -546,11 +546,7 @@ def test_detects_token_bloat(baseline_runs, regression_runs):
     regression_tokens = sum(r["completion_tokens"] for r in regression_runs) / len(regression_runs)
     increase = (regression_tokens - baseline_tokens) / baseline_tokens
     assert increase > 0.5, f"Expected >50% token increase, got {{increase:.1%}}"
-'''.format(
-            timestamp=datetime.utcnow().isoformat(),
-            baseline_data=json.dumps(v1_runs[:10], indent=4, default=str),
-            regression_data=json.dumps(v2_runs[:10], indent=4, default=str),
-        )
+'''
 
         fixture_file = output_path / "test_fixtures.py"
         fixture_file.write_text(fixture_content)
@@ -880,7 +876,7 @@ def cmd_demo(
                 console.print(f"[cyan]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n")
 
             baseline, regression = generate_scenarios_from_code_analysis(analysis)
-            console.print(f"[green]✓ Generated scenarios from code analysis[/]\n")
+            console.print("[green]✓ Generated scenarios from code analysis[/]\n")
         except Exception as e:
             console.print(f"[red]Error analyzing agent code:[/] {e}")
             console.print(

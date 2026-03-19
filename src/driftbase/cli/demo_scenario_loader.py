@@ -236,7 +236,7 @@ def analyze_agent_code(agent_file_path: str | Path) -> dict[str, Any]:
         frameworks.append("crewai")
 
     return {
-        "tools": sorted(list(tools)),
+        "tools": sorted(tools),
         "tool_count": len(tools),
         "frameworks": frameworks,
         "file_path": str(agent_file_path),
