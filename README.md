@@ -59,17 +59,25 @@ See the drift engine in action **right now** without writing any code.
 
 ### 1. Install
 
-**For production tracking** (decorator only, minimal deps):
+Choose the installation that matches your use case:
+
+| Install Command | What You Get | Use Case |
+|----------------|--------------|----------|
+| `pip install driftbase` | `@track()` decorator + basic CLI<br>**Minimal deps:** pydantic, httpx, click, PyYAML | **Production containers**<br>Lightweight tracking only |
+| `pip install 'driftbase[analyze]'` | Everything above **+**<br>Statistical analysis (numpy, scipy)<br>CLI analysis commands (diff, demo, diagnose)<br>Beautiful terminal UI (rich) | **Local development & CI/CD**<br>Drift analysis and debugging |
+| `pip install 'driftbase[semantic]'` | Semantic clustering (light-embed)<br>Groups runs by output similarity<br>*Optional enhancement* | **Advanced analysis**<br>Semantic drift detection |
+
+**Typical setup:**
 ```bash
+# Production (minimal)
 pip install driftbase
-```
 
-**For local analysis** (CLI + statistical diff engine):
-```bash
+# Development (recommended)
 pip install 'driftbase[analyze]'
-```
 
-The base install adds the `@track()` decorator with minimal dependencies (pydantic, httpx, click). The `[analyze]` profile adds numpy, scipy, and rich for statistical drift computation and beautiful terminal UI.
+# Advanced (optional)
+pip install 'driftbase[analyze,semantic]'  # Both analysis + semantic
+```
 
 ### 2. Run the synthetic demo
 
@@ -1037,6 +1045,9 @@ A: Very accurate. We read token counts directly from LLM responses and multiply 
 
 **Q: Does this work with Azure OpenAI?**
 A: Yes. Any OpenAI-compatible client is supported (Azure, Anthropic, Groq, local LLMs).
+
+**Q: When should I use `driftbase[semantic]`?**
+A: The `[semantic]` extra adds semantic clustering (via light-embed) that groups runs by output similarity using embeddings. This enhances drift detection by tracking if your agent's *decisions* are clustering differently (e.g., more escalations, different resolution patterns). It's optional — Driftbase works fine without it and will log a warning if not installed. Install it if you care about semantic drift detection: `pip install 'driftbase[analyze,semantic]'`
 
 **Q: Can I self-host the Pro dashboard?**
 A: Not yet. Self-hosted enterprise edition is on the roadmap for Q2 2026. Email pro@driftbase.io for early access.
