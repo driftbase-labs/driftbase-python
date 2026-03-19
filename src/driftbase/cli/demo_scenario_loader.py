@@ -12,7 +12,9 @@ from typing import Any
 from driftbase.cli.demo_templates import ScenarioTemplate
 
 
-def load_yaml_scenario(yaml_path: str | Path) -> tuple[list[ScenarioTemplate], list[ScenarioTemplate]]:
+def load_yaml_scenario(
+    yaml_path: str | Path,
+) -> tuple[list[ScenarioTemplate], list[ScenarioTemplate]]:
     """Load baseline and regression scenarios from YAML file.
 
     Expected YAML format:
@@ -60,11 +62,11 @@ def load_yaml_scenario(yaml_path: str | Path) -> tuple[list[ScenarioTemplate], l
 
     # Validate structure
     if "baseline" not in data or "regression" not in data:
-        raise ValueError(
-            "YAML must contain 'baseline' and 'regression' sections"
-        )
+        raise ValueError("YAML must contain 'baseline' and 'regression' sections")
 
-    def _parse_scenarios(scenarios_data: list[dict[str, Any]]) -> list[ScenarioTemplate]:
+    def _parse_scenarios(
+        scenarios_data: list[dict[str, Any]],
+    ) -> list[ScenarioTemplate]:
         """Convert YAML scenario data to ScenarioTemplate format."""
         templates: list[ScenarioTemplate] = []
 
@@ -200,15 +202,17 @@ def analyze_agent_code(agent_file_path: str | Path) -> dict[str, Any]:
     tools = set()
 
     # Pattern 1: LangChain tool decorators
-    tool_decorator_pattern = r'@tool\s*\n\s*def\s+(\w+)'
+    tool_decorator_pattern = r"@tool\s*\n\s*def\s+(\w+)"
     tools.update(re.findall(tool_decorator_pattern, content))
 
     # Pattern 2: Tool class definitions
-    tool_class_pattern = r'class\s+(\w+Tool)\s*\('
+    tool_class_pattern = r"class\s+(\w+Tool)\s*\("
     tools.update(re.findall(tool_class_pattern, content))
 
     # Pattern 3: Function definitions that look like tools
-    function_pattern = r'def\s+(query_|search_|retrieve_|check_|validate_|format_|send_|create_)(\w+)'
+    function_pattern = (
+        r"def\s+(query_|search_|retrieve_|check_|validate_|format_|send_|create_)(\w+)"
+    )
     function_matches = re.findall(function_pattern, content)
     tools.update([f"{prefix}{name}" for prefix, name in function_matches])
 
@@ -219,7 +223,9 @@ def analyze_agent_code(agent_file_path: str | Path) -> dict[str, Any]:
             # Find function definitions with docstrings mentioning "tool"
             if isinstance(node, ast.FunctionDef):
                 docstring = ast.get_docstring(node)
-                if docstring and ("tool" in docstring.lower() or "agent" in docstring.lower()):
+                if docstring and (
+                    "tool" in docstring.lower() or "agent" in docstring.lower()
+                ):
                     tools.add(node.name)
     except SyntaxError:
         pass  # Fall back to regex-only parsing
@@ -255,13 +261,17 @@ def generate_scenarios_from_code_analysis(
     tools = analysis["tools"]
 
     if not tools:
-        raise ValueError("No tools detected in agent code. Ensure functions are named conventionally.")
+        raise ValueError(
+            "No tools detected in agent code. Ensure functions are named conventionally."
+        )
 
     # Default configuration
     config = baseline_config or {}
     avg_tools_per_run = config.get("avg_tools_per_run", min(4, len(tools)))
     baseline_latency = config.get("baseline_latency", [300, 600])
-    baseline_tokens = config.get("baseline_tokens", {"prompt": [400, 700], "completion": [50, 120]})
+    baseline_tokens = config.get(
+        "baseline_tokens", {"prompt": [400, 700], "completion": [50, 120]}
+    )
 
     # Generate baseline scenarios
     baseline: list[ScenarioTemplate] = [
@@ -278,10 +288,18 @@ def generate_scenarios_from_code_analysis(
         },
         {
             "weight": 0.20,
-            "tools": tools[:avg_tools_per_run + 2] if len(tools) >= avg_tools_per_run + 2 else tools,
+            "tools": tools[: avg_tools_per_run + 2]
+            if len(tools) >= avg_tools_per_run + 2
+            else tools,
             "outcome": "resolved",
-            "p_tokens": (baseline_tokens["prompt"][0] + 200, baseline_tokens["prompt"][1] + 300),
-            "c_tokens": (baseline_tokens["completion"][0] + 20, baseline_tokens["completion"][1] + 40),
+            "p_tokens": (
+                baseline_tokens["prompt"][0] + 200,
+                baseline_tokens["prompt"][1] + 300,
+            ),
+            "c_tokens": (
+                baseline_tokens["completion"][0] + 20,
+                baseline_tokens["completion"][1] + 40,
+            ),
             "latency": (baseline_latency[0] + 150, baseline_latency[1] + 250),
             "loop_count": (2, 3),
             "retry_count": (0, 1),
@@ -289,10 +307,13 @@ def generate_scenarios_from_code_analysis(
         },
         {
             "weight": 0.10,
-            "tools": tools[:max(2, avg_tools_per_run - 1)],
+            "tools": tools[: max(2, avg_tools_per_run - 1)],
             "outcome": "escalated",
             "p_tokens": tuple(baseline_tokens["prompt"]),  # type: ignore
-            "c_tokens": (baseline_tokens["completion"][0] - 20, baseline_tokens["completion"][1] - 40),
+            "c_tokens": (
+                baseline_tokens["completion"][0] - 20,
+                baseline_tokens["completion"][1] - 40,
+            ),
             "latency": tuple(baseline_latency),  # type: ignore
             "loop_count": (1, 2),
             "retry_count": (0, 1),
@@ -306,8 +327,14 @@ def generate_scenarios_from_code_analysis(
             "weight": 0.50,
             "tools": tools[:avg_tools_per_run] * 2,  # Repeat tools (loop behavior)
             "outcome": "resolved",
-            "p_tokens": (baseline_tokens["prompt"][0] * 2, baseline_tokens["prompt"][1] * 3),
-            "c_tokens": (baseline_tokens["completion"][0] * 2, baseline_tokens["completion"][1] * 3),
+            "p_tokens": (
+                baseline_tokens["prompt"][0] * 2,
+                baseline_tokens["prompt"][1] * 3,
+            ),
+            "c_tokens": (
+                baseline_tokens["completion"][0] * 2,
+                baseline_tokens["completion"][1] * 3,
+            ),
             "latency": (baseline_latency[0] * 3, baseline_latency[1] * 4),
             "loop_count": (5, 9),
             "retry_count": (3, 6),
@@ -315,10 +342,13 @@ def generate_scenarios_from_code_analysis(
         },
         {
             "weight": 0.30,
-            "tools": tools[:max(1, avg_tools_per_run - 2)],  # Drop tools
+            "tools": tools[: max(1, avg_tools_per_run - 2)],  # Drop tools
             "outcome": "resolved",
             "p_tokens": tuple(baseline_tokens["prompt"]),  # type: ignore
-            "c_tokens": (baseline_tokens["completion"][0] * 2, baseline_tokens["completion"][1] * 3),
+            "c_tokens": (
+                baseline_tokens["completion"][0] * 2,
+                baseline_tokens["completion"][1] * 3,
+            ),
             "latency": tuple(baseline_latency),  # type: ignore
             "loop_count": (1, 2),
             "retry_count": (0, 1),
@@ -326,10 +356,16 @@ def generate_scenarios_from_code_analysis(
         },
         {
             "weight": 0.20,
-            "tools": tools[:max(2, avg_tools_per_run - 1)],
+            "tools": tools[: max(2, avg_tools_per_run - 1)],
             "outcome": "escalated",
-            "p_tokens": (baseline_tokens["prompt"][0] + 300, baseline_tokens["prompt"][1] + 500),
-            "c_tokens": (baseline_tokens["completion"][0] + 50, baseline_tokens["completion"][1] + 100),
+            "p_tokens": (
+                baseline_tokens["prompt"][0] + 300,
+                baseline_tokens["prompt"][1] + 500,
+            ),
+            "c_tokens": (
+                baseline_tokens["completion"][0] + 50,
+                baseline_tokens["completion"][1] + 100,
+            ),
             "latency": (baseline_latency[0] * 2, baseline_latency[1] * 3),
             "loop_count": (3, 5),
             "retry_count": (2, 4),

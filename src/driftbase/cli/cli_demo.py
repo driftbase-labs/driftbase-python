@@ -95,7 +95,7 @@ def generate_synthetic_runs(
         # Annotate if requested
         if annotate and console and i % 10 == 0:
             console.print(
-                f"[dim]Run {i+1}/{count}: {outcome} ({len(tools)} tools, {latency}ms)[/]"
+                f"[dim]Run {i + 1}/{count}: {outcome} ({len(tools)} tools, {latency}ms)[/]"
             )
 
         payload = {
@@ -841,9 +841,7 @@ def cmd_demo(
 
         try:
             baseline, regression = load_yaml_scenario(scenario)
-            console.print(
-                f"[green]✓ Loaded custom scenario from:[/] {scenario}\n"
-            )
+            console.print(f"[green]✓ Loaded custom scenario from:[/] {scenario}\n")
         except Exception as e:
             console.print(f"[red]Error loading scenario:[/] {e}")
             return
@@ -867,13 +865,15 @@ def cmd_demo(
 
         try:
             analysis = analyze_agent_code(shadow_from)
+            console.print(f"\n[green]✓ Detected {analysis['tool_count']} tools:[/]")
             console.print(
-                f"\n[green]✓ Detected {analysis['tool_count']} tools:[/]"
+                f"  [dim]{', '.join(analysis['tools'][:10])}{'...' if len(analysis['tools']) > 10 else ''}[/]\n"
             )
-            console.print(f"  [dim]{', '.join(analysis['tools'][:10])}{'...' if len(analysis['tools']) > 10 else ''}[/]\n")
 
             if analysis["frameworks"]:
-                console.print(f"[cyan]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n")
+                console.print(
+                    f"[cyan]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n"
+                )
 
             baseline, regression = generate_scenarios_from_code_analysis(analysis)
             console.print("[green]✓ Generated scenarios from code analysis[/]\n")
@@ -927,7 +927,9 @@ def cmd_demo(
 
     # Priority 4: Predefined regression type or framework template
     else:
-        baseline, regression = get_baseline_regression_scenarios(regression_type, template)
+        baseline, regression = get_baseline_regression_scenarios(
+            regression_type, template
+        )
 
     # Show what we're generating
     if regression_type:
@@ -936,9 +938,7 @@ def cmd_demo(
             Panel(
                 f"[bold]{rt['name']}[/]\n\n{rt['description']}\n\n"
                 f"[yellow]Expected Drift:[/]\n"
-                + "\n".join(
-                    f"  • {k}: {v}" for k, v in rt["expected_drift"].items()
-                ),
+                + "\n".join(f"  • {k}: {v}" for k, v in rt["expected_drift"].items()),
                 title="🧪 Regression Type Demo",
                 border_style="cyan",
             )
