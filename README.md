@@ -976,6 +976,32 @@ This keeps heavy dependencies (numpy, scipy) out of production while maintaining
 
 ---
 
+## Development Setup
+
+**For contributors** — Set up automated code quality checks to prevent CI failures:
+
+```bash
+# Install with dev dependencies
+pip install -e '.[dev]'
+
+# Install pre-commit hooks (runs automatically before each commit)
+pre-commit install
+
+# Manual run on all files (optional)
+pre-commit run --all-files
+```
+
+The pre-commit hooks will automatically:
+- ✅ Format your code with `ruff format`
+- ✅ Fix linting issues with `ruff check --fix`
+- ✅ Trim trailing whitespace
+- ✅ Fix end-of-file issues
+- ✅ Validate YAML/TOML files
+
+**This prevents formatting/linting CI failures** — the hooks run before you commit, ensuring your code always passes GitHub Actions checks.
+
+---
+
 ## Contributing
 
 We welcome contributions! Areas of interest:
@@ -985,9 +1011,10 @@ We welcome contributions! Areas of interest:
 - Visualization improvements (terminal UI, HTML reports, interactive dashboards)
 
 **Before submitting a PR:**
-1. Run tests: `pytest tests/`
-2. Lint and format: `ruff check src/ tests/` and `ruff format src/ tests/`
-3. Check types: `mypy src/`
+1. Install pre-commit hooks: `pre-commit install` (one-time setup)
+2. Run tests: `pytest tests/`
+3. Pre-commit will handle formatting/linting automatically on commit
+4. (Optional) Check types: `mypy src/`
 
 ---
 
