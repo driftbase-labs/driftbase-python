@@ -33,6 +33,24 @@ Driftbase gives you a single drift score, a financial delta in euros, and a root
 | **EU AI Act compliance** | Generate Article 72 post-market monitoring reports with `--template eu-ai-act` |
 | **Framework-agnostic** | Auto-detects LangChain, LangGraph, OpenAI, AutoGen, CrewAI, smolagents, Haystack, DSPy, LlamaIndex — zero config |
 
+### Developer Workflow Optimizations
+
+Driftbase includes **11 developer-focused features** to accelerate testing, debugging, and learning:
+
+| Feature | Use Case |
+|---------|----------|
+| **Regression Gallery** | Test drift detection against 5 predefined patterns (token-bloat, loop-detection, tool-dropout, cost-explosion, latency-creep) |
+| **Framework Templates** | Generate realistic data for LangGraph RAG, AutoGen, CrewAI, code-gen agents |
+| **Quick Mode** | Fast demos for CI/CD smoke tests (~5 seconds) |
+| **Interactive Tutorial** | Step-by-step onboarding for new team members |
+| **Shadow Mode** | Auto-analyze your agent code and generate test scenarios |
+| **Custom YAML Scenarios** | Define team-specific regression patterns |
+| **Industry Benchmarks** | Compare your agent to RAG pipeline, customer support, code-gen standards |
+| **Export Test Fixtures** | Generate pytest/JSON fixtures for integration testing |
+| **Cost Impact Simulator** | Project financial impact at scale (enterprise/standard/budget pricing) |
+| **Diagnose Command** | Auto-detect regression types with actionable recommendations |
+| **Live Annotation** | Real-time explanations as demo data is generated |
+
 ---
 
 ## The 60-Second Quickstart
@@ -55,13 +73,47 @@ The base install adds the `@track()` decorator with minimal dependencies (pydant
 
 ### 2. Run the synthetic demo
 
-This command instantly populates your local database with 50 baseline runs (v1.0) and 50 regressed runs (v2.0) that simulate real behavioral drift:
+**Quick start** — Generate realistic demo data in seconds:
 
 ```bash
-driftbase demo
+driftbase demo              # Standard demo (50 runs each)
+driftbase demo --quick      # Fast mode (10 runs, ~5 seconds)
+driftbase demo --interactive  # Step-by-step tutorial
 ```
 
-**Note:** Run this only once on a fresh database. To reset, delete `~/.driftbase/runs.db` before running again.
+The demo command instantly populates your local database with baseline (v1.0) and regressed (v2.0) runs that simulate real behavioral drift patterns.
+
+**Advanced demos** — Test specific regression patterns or frameworks:
+
+```bash
+# Regression Gallery (5 patterns)
+driftbase demo --regression-type token-bloat      # Excessive verbosity
+driftbase demo --regression-type loop-detection   # Stuck in retry cycles
+driftbase demo --regression-type tool-dropout     # Missing critical tools
+driftbase demo --regression-type cost-explosion   # 3-5x token usage
+driftbase demo --regression-type latency-creep    # Slow performance
+
+# Framework Templates (realistic agent patterns)
+driftbase demo --template langgraph-rag           # RAG pipeline
+driftbase demo --template autogen-research        # Multi-agent research
+driftbase demo --template crewai-customer-support # Support bot
+driftbase demo --template code-generation         # Code gen agent
+
+# Custom Scenarios (team-specific patterns)
+driftbase demo --init-scenario ./my_scenario.yaml # Generate template
+driftbase demo --scenario ./my_scenario.yaml      # Use custom scenario
+
+# Shadow Mode (auto-generate from your code)
+driftbase demo --shadow-from ./my_agent.py        # Analyze agent code
+
+# Industry Benchmarks
+driftbase demo --benchmark rag-pipeline           # Match industry standards
+
+# Cost Impact Analysis
+driftbase demo --cost-model enterprise --volume 100000
+```
+
+**Note:** Run demo once on a fresh database. To reset, delete `~/.driftbase/runs.db` before running again.
 
 ### 3. Diff the versions
 
@@ -112,6 +164,27 @@ driftbase inspect <RUN_ID>
 ```
 
 This proves your raw text is safely hashed at the edge — only structural metadata is stored.
+
+### 5. Explore advanced demo features
+
+Now that you've seen the basics, explore specialized demos:
+
+```bash
+# Interactive tutorial mode
+driftbase demo --interactive
+
+# Test specific regression patterns
+driftbase demo --regression-type loop-detection
+
+# Generate data for your framework
+driftbase demo --template langgraph-rag
+
+# Debug with recommendations
+driftbase diagnose --runs v2.0 --compare v1.0
+
+# See all 11 features
+driftbase demo --help
+```
 
 ---
 
@@ -487,7 +560,8 @@ driftbase config
 | `driftbase config` | Show current configuration (env, config file, defaults) |
 | `driftbase doctor` | Check configuration and database health |
 | `driftbase status` | Quick dashboard of key metrics and system health |
-| `driftbase demo` | Inject synthetic runs to test the drift engine |
+| `driftbase demo` | Generate synthetic runs with 11 developer-focused modes (see below) |
+| `driftbase diagnose` | Debug drift with regression detection and actionable recommendations |
 
 ### Drift Detection & Analysis
 
@@ -544,6 +618,66 @@ driftbase config
 | `driftbase db-stats` | Print internal statistics (semantic clusters, etc.) |
 
 ### CLI Examples
+
+#### Demo Command (Developer Workflow Tool)
+```bash
+# Quick Start
+driftbase demo                     # Standard demo (50 runs each)
+driftbase demo --quick             # Fast mode (10 runs, ~5 seconds)
+driftbase demo --interactive       # Step-by-step tutorial
+
+# Regression Gallery (understand specific failure patterns)
+driftbase demo --regression-type token-bloat      # Excessive verbosity
+driftbase demo --regression-type loop-detection   # Stuck in retry cycles
+driftbase demo --regression-type tool-dropout     # Missing critical tools
+driftbase demo --regression-type cost-explosion   # 3-5x token usage
+driftbase demo --regression-type latency-creep    # Slow performance
+
+# Framework Templates (realistic agent patterns)
+driftbase demo --template langgraph-rag           # RAG pipeline
+driftbase demo --template autogen-research        # Multi-agent research
+driftbase demo --template crewai-customer-support # Support bot
+driftbase demo --template code-generation         # Code gen agent
+
+# Custom Scenarios (team-specific patterns)
+driftbase demo --init-scenario ./my_scenario.yaml # Generate template
+driftbase demo --scenario ./my_scenario.yaml      # Use custom scenario
+
+# Shadow Mode (auto-generate from your agent code)
+driftbase demo --shadow-from ./my_agent.py        # Analyze and generate
+
+# Industry Benchmarks (compare to standards)
+driftbase demo --benchmark rag-pipeline           # RAG industry avg
+driftbase demo --benchmark customer-support       # Support bot avg
+
+# Learning & Testing
+driftbase demo --annotate                         # Real-time explanations
+driftbase demo --export-fixtures --format pytest  # Generate test files
+driftbase demo --export-fixtures --format json    # JSON fixtures
+
+# Cost Analysis (financial impact projections)
+driftbase demo --cost-model enterprise --volume 100000
+driftbase demo --cost-model budget --volume 50000
+```
+
+#### Diagnose Command (Debugging & Root Cause Analysis)
+```bash
+# Compare to baseline
+driftbase diagnose --runs v2.0 --compare v1.0
+
+# Compare to industry benchmark
+driftbase diagnose --runs production --benchmark rag-pipeline
+
+# Analyze specific version with more samples
+driftbase diagnose --runs v2.0 --compare v1.0 --limit 200
+```
+
+The diagnose command provides:
+- **Automatic regression detection** (token-bloat, loop-detection, cost-explosion, etc.)
+- **Confidence scores** for each detected pattern
+- **Actionable recommendations** (specific commands to run)
+- **Tool usage analysis** (which tools are called most frequently)
+- **Industry benchmark comparison** (how you compare to standards)
 
 #### Basic Drift Detection
 ```bash
