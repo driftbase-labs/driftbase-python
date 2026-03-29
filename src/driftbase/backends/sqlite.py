@@ -128,6 +128,33 @@ class ChangeEvent(SQLModel, table=True):
     source: str  # "decorator" | "cli" | "auto"
 
 
+class DeployOutcome(SQLModel, table=True):
+    """Deploy outcome labels for weight learning."""
+
+    __tablename__ = "deploy_outcomes"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True)
+    version: str = Field(index=True)
+    outcome: str  # "good" | "bad"
+    labeled_by: str = "user"  # "user" | "auto"
+    note: str = ""
+    labeled_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LearnedWeightsCache(SQLModel, table=True):
+    """Cached learned weights from labeled deploy outcomes."""
+
+    __tablename__ = "learned_weights_cache"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True, unique=True)
+    weights: str = "{}"  # JSON
+    weights_metadata: str = "{}"  # JSON (correlations, factors, etc.)
+    n_total: int = 0
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 def _ensure_dir(path: str) -> None:
     """
     Ensure the parent directory of the database file exists.
@@ -211,6 +238,22 @@ def _migrate_schema(engine: Any) -> None:
                     text("ALTER TABLE agent_runs_local ADD COLUMN sensitivity TEXT")
                 )
                 conn.commit()
+
+            # Migrate learned_weights_cache table (rename metadata to weights_metadata)
+            r = conn.execute(text("PRAGMA table_info(learned_weights_cache)"))
+            lwc_columns = {row[1] for row in r.fetchall()}
+            if (
+                lwc_columns
+                and "metadata" in lwc_columns
+                and "weights_metadata" not in lwc_columns
+            ):
+                # Rename metadata column to weights_metadata
+                conn.execute(
+                    text(
+                        "ALTER TABLE learned_weights_cache RENAME COLUMN metadata TO weights_metadata"
+                    )
+                )
+                conn.commit()
     except Exception as e:
         logger.debug("Schema migration skip: %s", e)
 
@@ -283,15 +326,23 @@ class SQLiteBackend(StorageBackend):
         BudgetBreach.__table__.create(self._engine, checkfirst=True)
         BudgetConfig.__table__.create(self._engine, checkfirst=True)
         ChangeEvent.__table__.create(self._engine, checkfirst=True)
+        DeployOutcome.__table__.create(self._engine, checkfirst=True)
+        LearnedWeightsCache.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
-        # Add UNIQUE constraint for change_events if not exists
+        # Add UNIQUE constraints if not exists
         try:
             with self._engine.connect() as conn:
                 conn.execute(
                     text(
                         "CREATE UNIQUE INDEX IF NOT EXISTS idx_change_events_unique "
                         "ON change_events(agent_id, version, change_type)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_deploy_outcomes_unique "
+                        "ON deploy_outcomes(agent_id, version)"
                     )
                 )
                 conn.commit()
@@ -1001,3 +1052,209 @@ class SQLiteBackend(StorageBackend):
         except Exception as e:
             logger.debug(f"SQLite get_change_events_for_versions failed: {e}")
             return {"v1": [], "v2": []}
+
+    def write_deploy_outcome(
+        self,
+        agent_id: str,
+        version: str,
+        outcome: str,
+        note: str = "",
+        labeled_by: str = "user",
+    ) -> None:
+        """Write deploy outcome label. On UNIQUE conflict, overwrite."""
+        try:
+            with Session(self._engine) as session:
+                # Check if already exists
+                existing = session.exec(
+                    select(DeployOutcome).where(
+                        DeployOutcome.agent_id == agent_id,
+                        DeployOutcome.version == version,
+                    )
+                ).first()
+
+                if existing:
+                    logger.info(
+                        f"Overwriting existing deploy outcome for {agent_id}/{version}: "
+                        f"{existing.outcome} -> {outcome}"
+                    )
+                    existing.outcome = outcome
+                    existing.note = note
+                    existing.labeled_by = labeled_by
+                    existing.labeled_at = datetime.utcnow()
+                else:
+                    record = DeployOutcome(
+                        agent_id=agent_id,
+                        version=version,
+                        outcome=outcome,
+                        note=note,
+                        labeled_by=labeled_by,
+                    )
+                    session.add(record)
+
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_deploy_outcome failed: {e}")
+
+    def get_deploy_outcome(self, agent_id: str, version: str) -> dict[str, Any] | None:
+        """Return deploy outcome for agent_id + version, or None if not found."""
+        try:
+            with Session(self._engine) as session:
+                outcome = session.exec(
+                    select(DeployOutcome).where(
+                        DeployOutcome.agent_id == agent_id,
+                        DeployOutcome.version == version,
+                    )
+                ).first()
+
+                if not outcome:
+                    return None
+
+                return {
+                    "id": outcome.id,
+                    "agent_id": outcome.agent_id,
+                    "version": outcome.version,
+                    "outcome": outcome.outcome,
+                    "labeled_by": outcome.labeled_by,
+                    "note": outcome.note,
+                    "labeled_at": outcome.labeled_at.isoformat()
+                    if isinstance(outcome.labeled_at, datetime)
+                    else outcome.labeled_at,
+                }
+        except Exception as e:
+            logger.debug(f"SQLite get_deploy_outcome failed: {e}")
+            return None
+
+    def get_deploy_outcomes(self, agent_id: str) -> list[dict[str, Any]]:
+        """Return all labeled versions for agent_id, ordered by labeled_at desc."""
+        try:
+            with Session(self._engine) as session:
+                outcomes = session.exec(
+                    select(DeployOutcome)
+                    .where(DeployOutcome.agent_id == agent_id)
+                    .order_by(DeployOutcome.labeled_at.desc())
+                ).all()
+
+                return [
+                    {
+                        "id": o.id,
+                        "agent_id": o.agent_id,
+                        "version": o.version,
+                        "outcome": o.outcome,
+                        "labeled_by": o.labeled_by,
+                        "note": o.note,
+                        "labeled_at": o.labeled_at.isoformat()
+                        if isinstance(o.labeled_at, datetime)
+                        else o.labeled_at,
+                    }
+                    for o in outcomes
+                ]
+        except Exception as e:
+            logger.debug(f"SQLite get_deploy_outcomes failed: {e}")
+            return []
+
+    def get_labeled_versions_with_drift(self, agent_id: str) -> list[dict[str, Any]]:
+        """
+        Return versions with both deploy_outcome AND drift report data.
+        For weight learning training set.
+        """
+        try:
+            with Session(self._engine) as session:
+                # Get all labeled outcomes for this agent
+                outcomes = session.exec(
+                    select(DeployOutcome).where(DeployOutcome.agent_id == agent_id)
+                ).all()
+
+                results = []
+                for outcome in outcomes:
+                    # Check if this version has runs (need for drift computation)
+                    runs = session.exec(
+                        select(AgentRunLocal)
+                        .where(
+                            AgentRunLocal.session_id == agent_id,
+                            AgentRunLocal.deployment_version == outcome.version,
+                        )
+                        .limit(1)
+                    ).first()
+
+                    if not runs:
+                        continue
+
+                    # For now, we'll return the version and outcome
+                    # Drift scores will be computed on-demand in weight_learner
+                    results.append(
+                        {
+                            "version": outcome.version,
+                            "outcome": outcome.outcome,
+                            "agent_id": outcome.agent_id,
+                        }
+                    )
+
+                return results
+        except Exception as e:
+            logger.debug(f"SQLite get_labeled_versions_with_drift failed: {e}")
+            return []
+
+    def write_learned_weights(
+        self, agent_id: str, learned_weights: dict[str, Any]
+    ) -> None:
+        """Write learned weights to cache. On UNIQUE conflict, overwrite."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                # Check if already exists
+                existing = session.exec(
+                    select(LearnedWeightsCache).where(
+                        LearnedWeightsCache.agent_id == agent_id
+                    )
+                ).first()
+
+                if existing:
+                    existing.weights = json.dumps(learned_weights.get("weights", {}))
+                    existing.weights_metadata = json.dumps(
+                        learned_weights.get("metadata", {})
+                    )
+                    existing.n_total = learned_weights.get("n_total", 0)
+                    existing.computed_at = datetime.utcnow()
+                else:
+                    record = LearnedWeightsCache(
+                        agent_id=agent_id,
+                        weights=json.dumps(learned_weights.get("weights", {})),
+                        weights_metadata=json.dumps(
+                            learned_weights.get("metadata", {})
+                        ),
+                        n_total=learned_weights.get("n_total", 0),
+                    )
+                    session.add(record)
+
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_learned_weights failed: {e}")
+
+    def get_learned_weights(self, agent_id: str) -> dict[str, Any] | None:
+        """Return learned weights for agent_id, or None if not found."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                cached = session.exec(
+                    select(LearnedWeightsCache).where(
+                        LearnedWeightsCache.agent_id == agent_id
+                    )
+                ).first()
+
+                if not cached:
+                    return None
+
+                return {
+                    "agent_id": cached.agent_id,
+                    "weights": json.loads(cached.weights),
+                    "metadata": json.loads(cached.weights_metadata),
+                    "n_total": cached.n_total,
+                    "computed_at": cached.computed_at.isoformat()
+                    if isinstance(cached.computed_at, datetime)
+                    else cached.computed_at,
+                }
+        except Exception as e:
+            logger.debug(f"SQLite get_learned_weights failed: {e}")
+            return None

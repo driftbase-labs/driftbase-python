@@ -14,7 +14,7 @@ import logging
 import os
 import queue
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -139,6 +139,16 @@ class DriftReport:
     calibrated_weights: dict[str, float] | None = None
     composite_thresholds: dict[str, float] | None = None
     baseline_n: int = 0
+    # Blend metadata
+    blend_method: str = "general_fallback"
+    behavioral_signals: dict[str, float] | None = None
+    # Learned weights metadata
+    learned_weights_available: bool = False
+    learned_weights_n: int = 0
+    top_predictors: list[str] | None = None
+    # Correlation adjustment metadata
+    correlated_pairs: list[tuple[str, str, float]] = field(default_factory=list)
+    correlation_adjusted: bool = False
     # Root cause analysis
     root_cause: Any = None  # RootCauseReport | None (Any to avoid circular import)
     # Rollback suggestion

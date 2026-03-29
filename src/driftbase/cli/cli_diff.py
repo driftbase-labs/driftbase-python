@@ -510,15 +510,65 @@ def render_diff_report(
     calibrated_weights = getattr(report, "calibrated_weights", None)
     composite_thresholds = getattr(report, "composite_thresholds", None)
     baseline_n_calibration = getattr(report, "baseline_n", baseline_n)
+    blend_method = getattr(report, "blend_method", "general_fallback")
+
+    # Learned weights metadata
+    learned_weights_available = getattr(report, "learned_weights_available", False)
+    learned_weights_n = getattr(report, "learned_weights_n", 0)
+    top_predictors = getattr(report, "top_predictors", None) or []
 
     # Format use case for display (lowercase with underscores to title case)
     use_case_display = use_case.lower().replace("_", " ")
 
-    # One-line calibration summary (always visible)
-    calibration_line = f"Calibration   {use_case_display} · {calibration_method} · baseline n={baseline_n_calibration}"
-    if use_case_confidence > 0:
-        calibration_line += f" ({use_case_confidence:.0%} confidence)"
-    console.print(f"[dim]{calibration_line}[/]")
+    # One-line calibration summary
+    if calibration_method == "learned" and learned_weights_available:
+        # Learned weights available - show detailed info
+        n_good = learned_weights_n  # Approximation
+        n_bad = 0  # We don't store this separately in the report
+        console.print(
+            f"[dim]Calibration   {use_case_display} (blended, confidence: {use_case_confidence:.2f})[/]"
+        )
+        console.print(
+            f"[dim]  Method: [bold]learned[/bold] ({learned_weights_n} labeled deploys · baseline n={baseline_n_calibration})[/]"
+        )
+        if top_predictors:
+            predictors_str = " · ".join(
+                [p.replace("_", " ") for p in top_predictors[:3]]
+            )
+            console.print(f"[dim]  Top predictors: {predictors_str}[/]")
+    elif blend_method == "keyword_dominant":
+        kw_use_case = getattr(report, "keyword_use_case", use_case)
+        kw_conf = getattr(report, "keyword_confidence", use_case_confidence)
+        kw_display = kw_use_case.lower().replace("_", " ")
+        calibration_line = f"Calibration   {kw_display} (keyword {kw_conf:.0%}) · {calibration_method} · baseline n={baseline_n_calibration}"
+        console.print(f"[dim]{calibration_line}[/]")
+    elif blend_method == "behavioral_dominant":
+        beh_use_case = getattr(report, "behavioral_use_case", use_case)
+        beh_conf = getattr(report, "behavioral_confidence", use_case_confidence)
+        beh_display = beh_use_case.lower().replace("_", " ")
+        calibration_line = f"Calibration   {beh_display} (behavioral {beh_conf:.0%}) · {calibration_method} · baseline n={baseline_n_calibration}"
+        console.print(f"[dim]{calibration_line}[/]")
+    elif blend_method == "blended":
+        kw_use_case = getattr(report, "keyword_use_case", "GENERAL")
+        kw_conf = getattr(report, "keyword_confidence", 0.0)
+        beh_use_case = getattr(report, "behavioral_use_case", "GENERAL")
+        beh_conf = getattr(report, "behavioral_confidence", 0.0)
+        kw_display = kw_use_case.lower().replace("_", " ")
+        beh_display = beh_use_case.lower().replace("_", " ")
+        calibration_line = f"Calibration   {use_case_display} (keyword {kw_display} {kw_conf:.0%} + behavioral {beh_display} {beh_conf:.0%}) · {calibration_method} · baseline n={baseline_n_calibration}"
+        console.print(f"[dim]{calibration_line}[/]")
+    else:  # general_fallback or unknown
+        calibration_line = f"Calibration   {use_case_display} · {calibration_method} · baseline n={baseline_n_calibration}"
+        if use_case_confidence > 0:
+            calibration_line += f" ({use_case_confidence:.0%} confidence)"
+        console.print(f"[dim]{calibration_line}[/]")
+
+    # Show tip for labeling when some versions labeled but < 10
+    outcomes_count = learned_weights_n  # Use this as a proxy
+    if outcomes_count > 0 and outcomes_count < 10 and not learned_weights_available:
+        console.print(
+            f"[dim]  Tip: Label {10 - outcomes_count} more versions with 'driftbase deploy mark' to enable learned weights[/]"
+        )
 
     # Show top weighted dimensions and thresholds if calibrated
     if calibrated_weights and composite_thresholds:
@@ -554,6 +604,55 @@ def render_diff_report(
         console.print(
             f"[dim]  Thresholds: MONITOR {monitor_t:.2f} · REVIEW {review_t:.2f} · BLOCK {block_t:.2f}[/]"
         )
+
+    # Show correlated dimensions if any were found
+    correlation_adjusted = getattr(report, "correlation_adjusted", False)
+    correlated_pairs = getattr(report, "correlated_pairs", None) or []
+    if correlation_adjusted and correlated_pairs:
+        # Show at most 2 pairs in the summary
+        display_pairs = correlated_pairs[:2]
+        pair_strs = []
+        for dim_a, dim_b, corr in display_pairs:
+            # Determine which dimension had weight reduced
+            if calibrated_weights:
+                weight_a = calibrated_weights.get(dim_a, 0.0)
+                weight_b = calibrated_weights.get(dim_b, 0.0)
+                reduced_dim = dim_a if weight_a <= weight_b else dim_b
+            else:
+                reduced_dim = dim_a
+
+            # Friendly dimension names
+            dim_map = {
+                "decision_drift": "decision",
+                "latency": "latency",
+                "latency_drift": "latency",
+                "error_rate": "error rate",
+                "error_drift": "error rate",
+                "loop_depth": "loop depth",
+                "loop_depth_drift": "loop depth",
+                "retry_rate": "retry rate",
+                "retry_drift": "retry rate",
+                "output_length": "output length",
+                "output_length_drift": "output length",
+                "verbosity_ratio": "verbosity",
+                "verbosity_drift": "verbosity",
+                "semantic_drift": "semantic",
+                "tool_sequence": "tool sequence",
+                "tool_sequence_drift": "tool sequence",
+                "tool_sequence_transitions": "transitions",
+                "tool_sequence_transitions_drift": "transitions",
+                "tool_distribution": "tool dist",
+                "time_to_first_tool": "planning",
+                "planning_latency_drift": "planning",
+            }
+            name_a = dim_map.get(dim_a, dim_a.replace("_", " "))
+            name_b = dim_map.get(dim_b, dim_b.replace("_", " "))
+            reduced_name = dim_map.get(reduced_dim, reduced_dim.replace("_", " "))
+            pair_strs.append(
+                f"{name_a} ↔ {name_b} (r={corr:.2f}, {reduced_name} reduced)"
+            )
+
+        console.print(f"[dim]  Correlated: {' · '.join(pair_strs)}[/]")
 
     console.print()
 

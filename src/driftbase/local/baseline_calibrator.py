@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,20 @@ class CalibrationResult:
     reliability_multipliers: dict[str, float]
     inferred_use_case: str
     confidence: float
+    # Blend metadata
+    keyword_use_case: str = "GENERAL"
+    keyword_confidence: float = 0.0
+    behavioral_use_case: str = "GENERAL"
+    behavioral_confidence: float = 0.0
+    blend_method: str = "general_fallback"
+    behavioral_signals: dict[str, float] | None = None
+    # Learned weights metadata
+    learned_weights_available: bool = False
+    learned_weights_n: int = 0
+    top_predictors: list[str] | None = None
+    # Correlation adjustment metadata
+    correlated_pairs: list[tuple[str, str, float]] = field(default_factory=list)
+    correlation_adjusted: bool = False
 
 
 def _volume_multiplier(run_count: int) -> float:
@@ -69,6 +83,152 @@ def _volume_multiplier(run_count: int) -> float:
         if threshold is None or run_count < threshold:
             return multiplier
     return 1.00
+
+
+def _compute_threshold(
+    mean: float, std: float, n: int, sigma_multiplier: float
+) -> float:
+    """
+    Compute a threshold using t-distribution for small samples.
+
+    For n >= 100: behaves like mean + sigma_multiplier * std (normal distribution)
+    For n < 100:  widens the threshold to account for estimation uncertainty
+
+    Uses the t-distribution's percent point function (inverse CDF) to find
+    the value at the equivalent tail probability.
+
+    Args:
+        mean: Sample mean
+        std: Sample standard deviation
+        n: Sample size (baseline run count)
+        sigma_multiplier: Standard deviation multiplier (2.0, 3.0, or 4.0)
+
+    Returns:
+        Threshold value
+    """
+    try:
+        if std <= 0.01:
+            std = 0.01
+
+        df = max(1, n - 1)
+
+        SIGMA_TO_PROBABILITY = {
+            2.0: 0.9772,
+            3.0: 0.9987,
+            4.0: 0.99997,
+        }
+        probability = SIGMA_TO_PROBABILITY.get(sigma_multiplier)
+        if probability is None:
+            from scipy.stats import norm
+
+            probability = norm.cdf(sigma_multiplier)
+
+        from scipy.stats import t as t_dist
+
+        t_multiplier = t_dist.ppf(probability, df=df)
+
+        return mean + t_multiplier * std
+    except Exception as e:
+        logger.debug(
+            f"t-distribution threshold computation failed: {e}, falling back to normal"
+        )
+        return mean + sigma_multiplier * std
+
+
+def _compute_correlation_adjustments(
+    dimension_scores: dict[str, list[float]],
+    weights: dict[str, float],
+) -> tuple[dict[str, float], list[tuple[str, str, float]]]:
+    """
+    Compute weight adjustments to reduce double-counting of correlated dimensions.
+
+    Common correlations (empirically observed):
+    - latency ↔ retry_rate (timeouts cause retries)
+    - loop_depth ↔ error_rate (loops often end in errors)
+    - loop_depth ↔ retry_rate (retry loops increase depth)
+    - latency ↔ loop_depth (more loops = more latency)
+    - output_length ↔ verbosity_ratio (longer output = higher ratio)
+
+    For each pair with correlation > 0.7:
+    - Identify less important dimension (lower weight)
+    - Reduce its weight by: correlation * 0.5 (max 50% reduction)
+    - More important dimension keeps full weight
+
+    Args:
+        dimension_scores: Dict of dimension name → list of scores from baseline runs
+        weights: Current weights (after reliability multipliers)
+
+    Returns:
+        (adjustment_factors, correlated_pairs)
+        - adjustment_factors: Dict of multiplicative factors (< 1.0 = reduced)
+        - correlated_pairs: List of (dim_a, dim_b, correlation) tuples
+
+    Never raises. Returns all 1.0 factors on any failure.
+    Requires minimum 30 data points per dimension.
+    """
+    try:
+        import numpy as np
+        from scipy.stats import spearmanr
+    except ImportError:
+        logger.debug("scipy/numpy not available for correlation adjustment")
+        return dict.fromkeys(weights, 1.0), []
+
+    try:
+        dimensions = list(weights.keys())
+        n = min(len(v) for v in dimension_scores.values()) if dimension_scores else 0
+
+        if n < 30:
+            return dict.fromkeys(dimensions, 1.0), []
+
+        CORRELATION_THRESHOLD = 0.70
+        MAX_REDUCTION = 0.50
+
+        adjustment_factors = dict.fromkeys(dimensions, 1.0)
+        correlated_pairs = []
+
+        score_matrix = np.array(
+            [dimension_scores.get(dim, [0.0] * n)[:n] for dim in dimensions]
+        )
+
+        for i, dim_a in enumerate(dimensions):
+            for j, dim_b in enumerate(dimensions):
+                if j <= i:
+                    continue
+
+                scores_a = score_matrix[i]
+                scores_b = score_matrix[j]
+
+                if np.std(scores_a) < 1e-9 or np.std(scores_b) < 1e-9:
+                    continue
+
+                corr, pvalue = spearmanr(scores_a, scores_b)
+
+                if abs(corr) < CORRELATION_THRESHOLD:
+                    continue
+
+                if corr < 0:
+                    continue
+
+                correlated_pairs.append((dim_a, dim_b, float(corr)))
+
+                weight_a = weights.get(dim_a, 0.0)
+                weight_b = weights.get(dim_b, 0.0)
+
+                if weight_a <= weight_b:
+                    less_important = dim_a
+                else:
+                    less_important = dim_b
+
+                reduction = min(MAX_REDUCTION, corr * 0.5)
+                adjustment_factors[less_important] = min(
+                    adjustment_factors[less_important], 1.0 - reduction
+                )
+
+        return adjustment_factors, correlated_pairs
+
+    except Exception as e:
+        logger.debug(f"Correlation adjustment failed: {e}")
+        return dict.fromkeys(weights, 1.0), []
 
 
 def _redistribute_weights(
@@ -221,6 +381,14 @@ def calibrate(
     db_path: str | None = None,
     semantic_available: bool = True,
     transitions_available: bool = True,
+    preset_weights: dict[str, float] | None = None,
+    keyword_use_case: str = "GENERAL",
+    keyword_confidence: float = 0.0,
+    behavioral_use_case: str = "GENERAL",
+    behavioral_confidence: float = 0.0,
+    blend_method: str = "general_fallback",
+    behavioral_signals: dict[str, float] | None = None,
+    agent_id: str | None = None,
 ) -> CalibrationResult:
     """
     Calibrate weights and thresholds from baseline statistics.
@@ -231,6 +399,14 @@ def calibrate(
         inferred_use_case: Use case from inference (determines preset weights)
         sensitivity: "strict" | "standard" | "relaxed"
         db_path: Optional database path
+        preset_weights: Optional pre-blended weights (bypasses USE_CASE_WEIGHTS lookup)
+        keyword_use_case: Keyword inference result
+        keyword_confidence: Keyword confidence
+        behavioral_use_case: Behavioral inference result
+        behavioral_confidence: Behavioral confidence
+        blend_method: How weights were blended
+        behavioral_signals: Extracted behavioral signals
+        agent_id: Optional agent ID for learned weights lookup
 
     Returns:
         CalibrationResult with calibrated parameters
@@ -276,6 +452,14 @@ def calibrate(
                     reliability_multipliers=cached.get("reliability_multipliers", {}),
                     inferred_use_case=inferred_use_case,
                     confidence=cached.get("confidence", 0.0),
+                    keyword_use_case=keyword_use_case,
+                    keyword_confidence=keyword_confidence,
+                    behavioral_use_case=behavioral_use_case,
+                    behavioral_confidence=behavioral_confidence,
+                    blend_method=blend_method,
+                    behavioral_signals=behavioral_signals,
+                    correlated_pairs=cached.get("correlated_pairs", []),
+                    correlation_adjusted=cached.get("correlation_adjusted", False),
                 )
 
         baseline_runs = backend.get_runs(deployment_version=baseline_version)
@@ -303,6 +487,8 @@ def calibrate(
                     "reliability_multipliers": result.reliability_multipliers,
                     "confidence": result.confidence,
                     "run_count_at_calibration": len(baseline_runs),
+                    "correlated_pairs": result.correlated_pairs,
+                    "correlation_adjusted": result.correlation_adjusted,
                 },
             )
 
@@ -331,21 +517,45 @@ def calibrate(
             stats[dim] = {"mean": mean, "std": std, "cv": cv}
             reliability_multipliers[dim] = reliability_multiplier
 
-        preset_weights = USE_CASE_WEIGHTS.get(
+        # Use provided preset_weights if available, otherwise lookup from use case
+        base_weights = preset_weights or USE_CASE_WEIGHTS.get(
             inferred_use_case, USE_CASE_WEIGHTS["GENERAL"]
         )
 
         raw_calibrated = {}
         for dim in DIMENSION_KEYS:
-            preset_weight = preset_weights.get(dim, 0.111)
+            base_weight = base_weights.get(dim, 0.111)
             reliability_mult = reliability_multipliers.get(dim, 1.0)
-            raw_calibrated[dim] = preset_weight * reliability_mult
+            raw_calibrated[dim] = base_weight * reliability_mult
 
         total = sum(raw_calibrated.values())
         if total > 0:
-            calibrated_weights = {dim: w / total for dim, w in raw_calibrated.items()}
+            reliability_adjusted_weights = {
+                dim: w / total for dim, w in raw_calibrated.items()
+            }
         else:
-            calibrated_weights = preset_weights
+            reliability_adjusted_weights = base_weights
+
+        # Apply correlation adjustment to reduce double-counting
+        corr_adjustments, correlated_pairs = _compute_correlation_adjustments(
+            dimension_scores,
+            reliability_adjusted_weights,
+        )
+        correlation_adjusted = len(correlated_pairs) > 0
+
+        correlation_adjusted_weights = {
+            dim: reliability_adjusted_weights[dim] * corr_adjustments[dim]
+            for dim in reliability_adjusted_weights
+        }
+
+        # Renormalize after correlation adjustment
+        total = sum(correlation_adjusted_weights.values())
+        if total > 0:
+            calibrated_weights = {
+                dim: w / total for dim, w in correlation_adjusted_weights.items()
+            }
+        else:
+            calibrated_weights = reliability_adjusted_weights
 
         # Redistribute weights if conditional dimensions are unavailable
         unavailable_dims = []
@@ -359,15 +569,52 @@ def calibrate(
                 calibrated_weights, unavailable_dims
             )
 
+        # Load learned weights if available and blend with calibrated weights
+        learned_weights_available = False
+        learned_weights_n = 0
+        top_predictors = []
+
+        if agent_id:
+            try:
+                learned_cache = backend.get_learned_weights(agent_id)
+                if learned_cache and learned_cache.get("n_total", 0) >= 10:
+                    learned_weights_data = learned_cache.get("weights", {})
+                    learned_metadata = learned_cache.get("metadata", {})
+                    learned_factor = learned_metadata.get("learned_factor", 0.0)
+
+                    # Blend learned weights on top of calibrated weights
+                    final_weights = {}
+                    for dim in DIMENSION_KEYS:
+                        learned_w = learned_weights_data.get(dim, 0.0)
+                        calibrated_w = calibrated_weights.get(dim, 0.0)
+                        final_weights[dim] = (
+                            learned_factor * learned_w
+                            + (1 - learned_factor) * calibrated_w
+                        )
+
+                    # Renormalize
+                    total = sum(final_weights.values())
+                    if total > 0:
+                        calibrated_weights = {
+                            dim: w / total for dim, w in final_weights.items()
+                        }
+
+                    learned_weights_available = True
+                    learned_weights_n = learned_cache.get("n_total", 0)
+                    top_predictors = learned_metadata.get("top_predictors", [])
+            except Exception as e:
+                logger.debug(f"Failed to load learned weights: {e}")
+
         per_dimension_thresholds = {}
+        n = len(baseline_runs)
         for dim in DIMENSION_KEYS:
             mean = stats[dim]["mean"]
             std = stats[dim]["std"]
 
             per_dimension_thresholds[dim] = {
-                "MONITOR": mean + 2.0 * std,
-                "REVIEW": mean + 3.0 * std,
-                "BLOCK": mean + 4.0 * std,
+                "MONITOR": _compute_threshold(mean, std, n, 2.0),
+                "REVIEW": _compute_threshold(mean, std, n, 3.0),
+                "BLOCK": _compute_threshold(mean, std, n, 4.0),
             }
 
         composite_thresholds = {}
@@ -399,15 +646,30 @@ def calibrate(
             for level in per_dimension_thresholds[dim]:
                 per_dimension_thresholds[dim][level] *= sensitivity_mult
 
+        calibration_method_final = (
+            "learned" if learned_weights_available else "statistical"
+        )
+
         result = CalibrationResult(
             calibrated_weights=calibrated_weights,
             thresholds=per_dimension_thresholds,
             composite_thresholds=composite_thresholds,
-            calibration_method="statistical",
+            calibration_method=calibration_method_final,
             baseline_n=len(baseline_runs),
             reliability_multipliers=reliability_multipliers,
             inferred_use_case=inferred_use_case,
             confidence=1.0,
+            keyword_use_case=keyword_use_case,
+            keyword_confidence=keyword_confidence,
+            behavioral_use_case=behavioral_use_case,
+            behavioral_confidence=behavioral_confidence,
+            blend_method=blend_method,
+            behavioral_signals=behavioral_signals,
+            learned_weights_available=learned_weights_available,
+            learned_weights_n=learned_weights_n,
+            top_predictors=top_predictors or [],
+            correlated_pairs=correlated_pairs or [],
+            correlation_adjusted=correlation_adjusted,
         )
 
         backend.set_calibration_cache(
@@ -421,6 +683,8 @@ def calibrate(
                 "reliability_multipliers": result.reliability_multipliers,
                 "confidence": result.confidence,
                 "run_count_at_calibration": len(baseline_runs) + eval_n,
+                "correlated_pairs": result.correlated_pairs,
+                "correlation_adjusted": result.correlation_adjusted,
             },
         )
 
@@ -465,6 +729,8 @@ def _preset_calibration_result(
         reliability_multipliers=dict.fromkeys(DIMENSION_KEYS, 1.0),
         inferred_use_case=use_case,
         confidence=0.5,
+        correlated_pairs=[],
+        correlation_adjusted=False,
     )
 
 
@@ -501,4 +767,6 @@ def _default_calibration_result(
         reliability_multipliers=dict.fromkeys(DIMENSION_KEYS, 1.0),
         inferred_use_case=use_case,
         confidence=0.0,
+        correlated_pairs=[],
+        correlation_adjusted=False,
     )

@@ -14,6 +14,8 @@ import pytest
 from driftbase.local.baseline_calibrator import (
     DIMENSION_KEYS,
     SENSITIVITY_MULTIPLIERS,
+    _compute_correlation_adjustments,
+    _compute_threshold,
     calibrate,
 )
 from driftbase.local.use_case_inference import USE_CASE_WEIGHTS
@@ -659,3 +661,394 @@ def test_redistribution_is_proportional():
 
     # Allow for small floating point differences
     assert abs(ratio_all - ratio_no_semantic) < 0.01
+
+
+def test_t_distribution_wider_than_normal_at_small_n():
+    """t-distribution threshold is wider than normal at n=30."""
+    mean = 1.0
+    std = 0.2
+    n = 30
+    sigma_multiplier = 3.0
+
+    # Compute threshold using t-distribution (via _compute_threshold)
+    t_threshold = _compute_threshold(mean, std, n, sigma_multiplier)
+
+    # Compute threshold using normal distribution (mean + sigma * std)
+    normal_threshold = mean + sigma_multiplier * std
+
+    # At n=30, t-distribution should be wider
+    assert t_threshold > normal_threshold, (
+        f"t-distribution threshold ({t_threshold}) should be wider than "
+        f"normal ({normal_threshold}) at n=30"
+    )
+
+    # The difference should be meaningful (at least 3%)
+    percent_wider = (t_threshold - normal_threshold) / normal_threshold
+    assert percent_wider > 0.03, (
+        f"t-distribution should be >3% wider, got {percent_wider:.2%}"
+    )
+
+
+def test_t_distribution_converges_to_normal_at_large_n():
+    """t-distribution threshold converges to normal at n=500."""
+    mean = 1.0
+    std = 0.2
+    n = 500
+    sigma_multiplier = 3.0
+
+    # Compute threshold using t-distribution
+    t_threshold = _compute_threshold(mean, std, n, sigma_multiplier)
+
+    # Compute threshold using normal distribution
+    normal_threshold = mean + sigma_multiplier * std
+
+    # At n=500, t-distribution should be very close to normal
+    # Allow 1% difference
+    percent_diff = abs(t_threshold - normal_threshold) / normal_threshold
+    assert percent_diff < 0.01, (
+        f"t-distribution should converge to normal at n=500, "
+        f"but diff is {percent_diff:.2%}"
+    )
+
+
+def test_block_threshold_wider_for_small_n():
+    """BLOCK threshold at n=30 is substantially wider than at n=200."""
+    mean = 1.0
+    std = 0.2
+    sigma_multiplier = 4.0  # BLOCK uses 4σ
+
+    threshold_n30 = _compute_threshold(mean, std, 30, sigma_multiplier)
+    threshold_n200 = _compute_threshold(mean, std, 200, sigma_multiplier)
+
+    # n=30 should be wider than n=200
+    assert threshold_n30 > threshold_n200, (
+        f"BLOCK threshold at n=30 ({threshold_n30}) should be wider than "
+        f"at n=200 ({threshold_n200})"
+    )
+
+    # The difference should be substantial (at least 5%)
+    percent_wider = (threshold_n30 - threshold_n200) / threshold_n200
+    assert percent_wider > 0.05, (
+        f"BLOCK threshold at n=30 should be >5% wider than at n=200, got {percent_wider:.2%}"
+    )
+
+
+def test_compute_threshold_never_raises():
+    """_compute_threshold never raises on edge inputs."""
+    # Should not raise on any of these edge cases
+
+    # n=1
+    result = _compute_threshold(1.0, 0.2, 1, 2.0)
+    assert result > 0, "Should return positive threshold for n=1"
+
+    # std=0
+    result = _compute_threshold(1.0, 0.0, 50, 2.0)
+    assert result > 0, "Should return positive threshold for std=0"
+
+    # mean=0
+    result = _compute_threshold(0.0, 0.2, 50, 2.0)
+    assert result >= 0, "Should return non-negative threshold for mean=0"
+
+    # All zeros
+    result = _compute_threshold(0.0, 0.0, 50, 2.0)
+    assert result >= 0, "Should return non-negative threshold for all zeros"
+
+    # Negative std (shouldn't happen but should be handled)
+    result = _compute_threshold(1.0, -0.1, 50, 2.0)
+    assert result > 0, "Should return positive threshold for negative std"
+
+
+def test_threshold_ordering_with_sigma_multipliers():
+    """All three sigma multipliers produce correct ordering: MONITOR < REVIEW < BLOCK."""
+    mean = 1.0
+    std = 0.2
+    n = 50
+
+    monitor = _compute_threshold(mean, std, n, 2.0)
+    review = _compute_threshold(mean, std, n, 3.0)
+    block = _compute_threshold(mean, std, n, 4.0)
+
+    # Should be in ascending order
+    assert monitor < review < block, (
+        f"Thresholds should be ordered MONITOR < REVIEW < BLOCK, "
+        f"got {monitor} < {review} < {block}"
+    )
+
+    # Also test at small n to ensure ordering holds with t-distribution
+    n_small = 30
+    monitor_small = _compute_threshold(mean, std, n_small, 2.0)
+    review_small = _compute_threshold(mean, std, n_small, 3.0)
+    block_small = _compute_threshold(mean, std, n_small, 4.0)
+
+    assert monitor_small < review_small < block_small, (
+        f"Thresholds should be ordered at n=30, "
+        f"got {monitor_small} < {review_small} < {block_small}"
+    )
+
+
+def test_correlation_adjustment_returns_ones_when_n_too_small():
+    """Correlation adjustment returns all 1.0 when n < 30."""
+    dimension_scores = {
+        "latency": [0.1] * 20,
+        "retry_rate": [0.2] * 20,
+        "error_rate": [0.15] * 20,
+    }
+    weights = {"latency": 0.4, "retry_rate": 0.3, "error_rate": 0.3}
+
+    adjustments, pairs = _compute_correlation_adjustments(dimension_scores, weights)
+
+    # All adjustment factors should be 1.0 (no adjustment)
+    assert all(adj == 1.0 for adj in adjustments.values())
+    assert len(pairs) == 0
+
+
+def test_correlation_adjustment_returns_ones_when_no_high_correlation():
+    """Correlation adjustment returns all 1.0 when no pairs exceed threshold."""
+    import numpy as np
+
+    np.random.seed(42)
+    # Create uncorrelated dimensions
+    dimension_scores = {
+        "latency": np.random.randn(50).tolist(),
+        "retry_rate": np.random.randn(50).tolist(),
+        "error_rate": np.random.randn(50).tolist(),
+    }
+    weights = {"latency": 0.4, "retry_rate": 0.3, "error_rate": 0.3}
+
+    adjustments, pairs = _compute_correlation_adjustments(dimension_scores, weights)
+
+    # All adjustment factors should be 1.0 (no high correlation)
+    assert all(adj == 1.0 for adj in adjustments.values())
+    assert len(pairs) == 0
+
+
+def test_correlation_adjustment_reduces_less_important_dimension():
+    """High correlation pair: less important dimension gets reduced weight."""
+    import numpy as np
+
+    np.random.seed(42)
+    # Create highly correlated dimensions
+    base = np.linspace(0, 1, 50)
+    dimension_scores = {
+        "latency": base.tolist(),
+        "retry_rate": (base + np.random.randn(50) * 0.05).tolist(),  # Highly correlated
+        "error_rate": np.random.randn(50).tolist(),  # Uncorrelated
+    }
+    weights = {"latency": 0.5, "retry_rate": 0.3, "error_rate": 0.2}
+
+    adjustments, pairs = _compute_correlation_adjustments(dimension_scores, weights)
+
+    # Should find latency ↔ retry_rate correlation
+    assert len(pairs) > 0
+
+    # Less important dimension (retry_rate, lower weight) should be reduced
+    assert adjustments["retry_rate"] < 1.0
+    # More important dimension (latency, higher weight) should not be reduced
+    assert adjustments["latency"] == 1.0
+    # Uncorrelated dimension should not be affected
+    assert adjustments["error_rate"] == 1.0
+
+
+def test_correlation_adjustment_more_important_never_reduced():
+    """More important dimension (higher weight) is never reduced."""
+    import numpy as np
+
+    np.random.seed(42)
+    base = np.linspace(0, 1, 50)
+    dimension_scores = {
+        "decision_drift": base.tolist(),
+        "tool_sequence": (base + np.random.randn(50) * 0.05).tolist(),
+    }
+    # decision_drift has higher weight
+    weights = {"decision_drift": 0.6, "tool_sequence": 0.4}
+
+    adjustments, pairs = _compute_correlation_adjustments(dimension_scores, weights)
+
+    if len(pairs) > 0:
+        # Higher weight dimension should never be reduced
+        assert adjustments["decision_drift"] == 1.0
+        # Lower weight dimension might be reduced
+        assert adjustments["tool_sequence"] <= 1.0
+
+
+def test_correlation_adjustment_max_reduction_cap():
+    """Weight reduction never exceeds MAX_REDUCTION (50%)."""
+    import numpy as np
+
+    np.random.seed(42)
+    # Create perfectly correlated dimensions
+    base = np.linspace(0, 1, 50)
+    dimension_scores = {
+        "latency": base.tolist(),
+        "loop_depth": base.tolist(),  # Perfect correlation
+    }
+    weights = {"latency": 0.6, "loop_depth": 0.4}
+
+    adjustments, pairs = _compute_correlation_adjustments(dimension_scores, weights)
+
+    # Even with perfect correlation, reduction should not exceed 50%
+    for dim, adj in adjustments.items():
+        assert adj >= 0.5, f"{dim} adjustment {adj} exceeds max reduction"
+
+
+def test_correlation_adjustment_weights_sum_to_one_after_renormalization():
+    """Weights still sum to 1.0 after correlation adjustment + renormalization."""
+    import numpy as np
+
+    np.random.seed(42)
+    base = np.linspace(0, 1, 50)
+    dimension_scores = {
+        "decision_drift": base.tolist(),
+        "latency": (base + np.random.randn(50) * 0.05).tolist(),
+        "error_rate": np.random.randn(50).tolist(),
+        "tool_sequence": np.random.randn(50).tolist(),
+    }
+    weights = {
+        "decision_drift": 0.4,
+        "latency": 0.3,
+        "error_rate": 0.2,
+        "tool_sequence": 0.1,
+    }
+
+    adjustments, pairs = _compute_correlation_adjustments(dimension_scores, weights)
+
+    # Apply adjustments
+    adjusted_weights = {dim: weights[dim] * adjustments[dim] for dim in weights}
+
+    # Renormalize
+    total = sum(adjusted_weights.values())
+    normalized_weights = {dim: w / total for dim, w in adjusted_weights.items()}
+
+    # Should sum to 1.0
+    assert abs(sum(normalized_weights.values()) - 1.0) < 0.001
+
+
+def test_correlation_adjustment_never_raises():
+    """Correlation adjustment never raises on edge inputs."""
+    # Empty dimension_scores
+    adjustments, pairs = _compute_correlation_adjustments({}, {})
+    assert len(adjustments) == 0
+    assert len(pairs) == 0
+
+    # Single dimension
+    adjustments, pairs = _compute_correlation_adjustments(
+        {"latency": [0.1] * 50}, {"latency": 1.0}
+    )
+    assert adjustments["latency"] == 1.0
+    assert len(pairs) == 0
+
+    # Zero variance dimensions
+    adjustments, pairs = _compute_correlation_adjustments(
+        {"latency": [0.5] * 50, "retry_rate": [0.5] * 50},
+        {"latency": 0.5, "retry_rate": 0.5},
+    )
+    assert all(adj == 1.0 for adj in adjustments.values())
+
+
+def test_correlated_pairs_populated_in_calibration_result():
+    """correlated_pairs is correctly populated in CalibrationResult."""
+    mock_backend = MagicMock()
+    import numpy as np
+
+    np.random.seed(42)
+    base = np.linspace(0, 1, 50)
+
+    # Create runs with highly correlated latency and retry_rate
+    runs = []
+    for i in range(50):
+        latency = int(base[i] * 1000 + 100)
+        retry = int(base[i] * 3)
+        runs.append(
+            {
+                "deployment_version": "v1.0",
+                "tool_sequence": '["tool_a"]',
+                "latency_ms": latency,
+                "error_count": 0,
+                "output_length": 200,
+                "loop_count": 1,
+                "time_to_first_tool_ms": 50,
+                "verbosity_ratio": 0.5,
+                "retry_count": retry,
+                "semantic_cluster": "cluster_0",
+            }
+        )
+
+    mock_backend.get_runs.return_value = runs
+    mock_backend.get_calibration_cache.return_value = None
+
+    with patch_backend(mock_backend):
+        result = calibrate("v1.0", "v2.0", "GENERAL", sensitivity="standard")
+
+    # Should have correlation metadata
+    assert hasattr(result, "correlated_pairs")
+    assert hasattr(result, "correlation_adjusted")
+    # If correlation was found and adjusted, should be True
+    if len(result.correlated_pairs) > 0:
+        assert result.correlation_adjusted is True
+
+
+def test_correlation_adjusted_false_when_n_too_small():
+    """correlation_adjusted = False when n < 30."""
+    mock_backend = MagicMock()
+    mock_backend.get_runs.return_value = [
+        {
+            "deployment_version": "v1.0",
+            "tool_sequence": '["tool_a"]',
+            "latency_ms": 100 + i,
+            "error_count": 0,
+            "output_length": 200,
+            "loop_count": 1,
+            "time_to_first_tool_ms": 50,
+            "verbosity_ratio": 0.5,
+            "retry_count": 0,
+            "semantic_cluster": "cluster_0",
+        }
+        for i in range(20)  # Below minimum for both calibration and correlation
+    ]
+    mock_backend.get_calibration_cache.return_value = None
+
+    with patch_backend(mock_backend):
+        result = calibrate("v1.0", "v2.0", "GENERAL", sensitivity="standard")
+
+    # Should be False because n < 30
+    assert result.correlation_adjusted is False
+    assert len(result.correlated_pairs) == 0
+
+
+def test_correlation_adjusted_true_when_pairs_found():
+    """correlation_adjusted = True when at least one pair was adjusted."""
+    mock_backend = MagicMock()
+    import numpy as np
+
+    np.random.seed(42)
+    base = np.linspace(0, 1, 100)
+
+    # Create strongly correlated latency and loop_depth
+    runs = []
+    for i in range(100):
+        latency = int(base[i] * 1000 + 100)
+        loop = int(base[i] * 10 + 1)
+        runs.append(
+            {
+                "deployment_version": "v1.0",
+                "tool_sequence": '["tool_a"]',
+                "latency_ms": latency,
+                "error_count": 0,
+                "output_length": 200,
+                "loop_count": loop,
+                "time_to_first_tool_ms": 50,
+                "verbosity_ratio": 0.5,
+                "retry_count": 0,
+                "semantic_cluster": "cluster_0",
+            }
+        )
+
+    mock_backend.get_runs.return_value = runs
+    mock_backend.get_calibration_cache.return_value = None
+
+    with patch_backend(mock_backend):
+        result = calibrate("v1.0", "v2.0", "GENERAL", sensitivity="standard")
+
+    # If correlation was found, should be True
+    if len(result.correlated_pairs) > 0:
+        assert result.correlation_adjusted is True

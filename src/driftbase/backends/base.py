@@ -101,3 +101,50 @@ class StorageBackend(ABC):
         raise NotImplementedError(
             "get_change_events_for_versions not implemented for this backend"
         )
+
+    def write_deploy_outcome(
+        self,
+        agent_id: str,
+        version: str,
+        outcome: str,
+        note: str = "",
+        labeled_by: str = "user",
+    ) -> None:
+        """Write deploy outcome label. On UNIQUE conflict, overwrite. Must not raise."""
+        raise NotImplementedError(
+            "write_deploy_outcome not implemented for this backend"
+        )
+
+    def get_deploy_outcome(self, agent_id: str, version: str) -> dict[str, Any] | None:
+        """Return deploy outcome for agent_id + version, or None if not found."""
+        raise NotImplementedError("get_deploy_outcome not implemented for this backend")
+
+    def get_deploy_outcomes(self, agent_id: str) -> list[dict[str, Any]]:
+        """Return all labeled versions for agent_id, ordered by labeled_at desc."""
+        raise NotImplementedError(
+            "get_deploy_outcomes not implemented for this backend"
+        )
+
+    def get_labeled_versions_with_drift(self, agent_id: str) -> list[dict[str, Any]]:
+        """
+        Return versions with both deploy_outcome AND DriftReport.
+        Training set for weight learning.
+        Each record: {version, outcome, drift_scores_per_dimension}.
+        """
+        raise NotImplementedError(
+            "get_labeled_versions_with_drift not implemented for this backend"
+        )
+
+    def write_learned_weights(
+        self, agent_id: str, learned_weights: dict[str, Any]
+    ) -> None:
+        """Write learned weights to cache. On UNIQUE conflict, overwrite. Must not raise."""
+        raise NotImplementedError(
+            "write_learned_weights not implemented for this backend"
+        )
+
+    def get_learned_weights(self, agent_id: str) -> dict[str, Any] | None:
+        """Return learned weights for agent_id, or None if not found."""
+        raise NotImplementedError(
+            "get_learned_weights not implemented for this backend"
+        )

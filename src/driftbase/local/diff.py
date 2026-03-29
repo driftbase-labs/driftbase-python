@@ -241,14 +241,21 @@ def compute_drift(
     from driftbase.local.baseline_calibrator import calibrate
     from driftbase.local.fingerprinter import build_fingerprint_from_runs
     from driftbase.local.local_store import DriftReport, run_dict_to_agent_run
-    from driftbase.local.use_case_inference import infer_use_case
+    from driftbase.local.use_case_inference import (
+        blend_inferences,
+        infer_use_case,
+        infer_use_case_from_behavior,
+    )
 
-    # Calibration: infer use case and derive weights/thresholds
+    # Calibration: infer use case from keywords + behavior, then blend
+    all_runs = (baseline_runs or []) + (current_runs or [])
     tool_names = []
-    if baseline_runs and current_runs:
-        tool_names = _extract_tool_names(baseline_runs + current_runs)
+    if all_runs:
+        tool_names = _extract_tool_names(all_runs)
 
-    inference_result = infer_use_case(tool_names)
+    keyword_result = infer_use_case(tool_names)
+    behavioral_result = infer_use_case_from_behavior(all_runs)
+    blend_result = blend_inferences(keyword_result, behavioral_result)
 
     baseline_version = baseline.deployment_version or "unknown"
     current_version = current.deployment_version or "unknown"
@@ -269,13 +276,28 @@ def compute_drift(
     # TODO: Check backend for transition matrix data when available
     transitions_available = False
 
+    # Extract agent_id for learned weights lookup
+    agent_id = None
+    if baseline_runs:
+        agent_id = baseline_runs[0].get("session_id")
+    elif current_runs:
+        agent_id = current_runs[0].get("session_id")
+
     calibration = calibrate(
         baseline_version=baseline_version,
         eval_version=current_version,
-        inferred_use_case=inference_result["use_case"],
+        inferred_use_case=blend_result["use_case"],
         sensitivity=effective_sensitivity,
         semantic_available=semantic_available,
         transitions_available=transitions_available,
+        preset_weights=blend_result["blended_weights"],
+        keyword_use_case=blend_result["keyword_use_case"],
+        keyword_confidence=blend_result["keyword_confidence"],
+        behavioral_use_case=blend_result["behavioral_use_case"],
+        behavioral_confidence=blend_result["behavioral_confidence"],
+        blend_method=blend_result["blend_method"],
+        behavioral_signals=blend_result["behavioral_signals"],
+        agent_id=agent_id,
     )
 
     calibrated_weights = calibration.calibrated_weights
@@ -444,12 +466,24 @@ def compute_drift(
         baseline_avg_time_to_first_tool_ms=baseline_planning,
         current_avg_time_to_first_tool_ms=current_planning,
         # Calibration metadata
-        inferred_use_case=inference_result["use_case"],
-        use_case_confidence=inference_result["confidence"],
+        inferred_use_case=blend_result["use_case"],
+        use_case_confidence=max(
+            blend_result["keyword_confidence"], blend_result["behavioral_confidence"]
+        ),
         calibration_method=calibration.calibration_method,
         calibrated_weights=calibration.calibrated_weights,
         composite_thresholds=calibration.composite_thresholds,
         baseline_n=calibration.baseline_n,
+        # Blend metadata
+        blend_method=blend_result["blend_method"],
+        behavioral_signals=blend_result["behavioral_signals"],
+        # Learned weights metadata
+        learned_weights_available=calibration.learned_weights_available,
+        learned_weights_n=calibration.learned_weights_n,
+        top_predictors=calibration.top_predictors,
+        # Correlation adjustment metadata
+        correlated_pairs=calibration.correlated_pairs,
+        correlation_adjusted=calibration.correlation_adjusted,
     )
 
     # Bootstrap 95% CI when run lists are provided

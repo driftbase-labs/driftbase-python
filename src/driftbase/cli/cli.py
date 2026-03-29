@@ -60,6 +60,7 @@ from driftbase.cli.cli_chart import cmd_chart
 from driftbase.cli.cli_compare import cmd_compare
 from driftbase.cli.cli_cost import cmd_cost
 from driftbase.cli.cli_demo import cmd_demo
+from driftbase.cli.cli_deploy import cmd_deploy
 from driftbase.cli.cli_diagnose import cmd_diagnose
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
@@ -97,6 +98,7 @@ cli.add_command(bookmark_group)
 cli.add_command(cmd_explore)
 cli.add_command(cmd_budgets)
 cli.add_command(cmd_changes)
+cli.add_command(cmd_deploy)
 # Phase 3 commands (future / high effort, high value)
 cli.add_command(git_group)
 cli.add_command(cmd_cost)
