@@ -34,7 +34,7 @@ from driftbase.local.rootcause import (
 )
 from driftbase.pricing import calculate_cost_per_10k, get_rates_for_display
 
-# Lazy import of heavy [analyze] dependencies
+# Import rich components (now core dependencies)
 Console, Panel, Table = safe_import_rich()
 
 MIN_SAMPLES_WARNING = 50

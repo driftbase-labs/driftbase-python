@@ -1029,11 +1029,7 @@ def _extract_behavioral_signals(runs: list[dict]) -> dict[str, float]:
     if not runs:
         return {}
 
-    try:
-        import numpy as np
-    except ImportError:
-        logger.debug("numpy not available for behavioral inference")
-        return {}
+    import numpy as np
 
     escalation_count = sum(1 for r in runs if r.get("error_count", 0) > 0)
     resolution_count = sum(1 for r in runs if r.get("error_count", 0) == 0)

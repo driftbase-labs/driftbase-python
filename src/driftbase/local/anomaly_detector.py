@@ -4,9 +4,6 @@ Isolation forest anomaly detection for multivariate behavioral drift.
 Supplementary signal to the weighted composite drift score.
 Catches correlated shifts across multiple dimensions that per-dimension
 scoring misses.
-
-Requires: scikit-learn (available in [analyze] extra via numpy/scipy deps)
-If scikit-learn is not available, all functions degrade gracefully to None.
 """
 
 from __future__ import annotations
@@ -14,6 +11,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+
+import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
@@ -134,11 +135,6 @@ def _identify_contributing_dimensions(
     Returns dimension names sorted by shift magnitude.
     """
     try:
-        import numpy as np
-    except ImportError:
-        return []
-
-    try:
         baseline_arr = np.array(baseline_matrix)
         eval_arr = np.array(eval_matrix)
 
@@ -173,7 +169,6 @@ def compute_anomaly_signal(
     Return AnomalySignal with aggregate score and contributing dimensions.
 
     Returns None if:
-    - scikit-learn not available
     - fewer than 30 baseline runs
     - fewer than 5 eval runs
     - any exception occurs
@@ -188,14 +183,6 @@ def compute_anomaly_signal(
     Returns:
         AnomalySignal if detection succeeds, None otherwise
     """
-    try:
-        import numpy as np
-        from sklearn.ensemble import IsolationForest
-        from sklearn.preprocessing import StandardScaler
-    except ImportError:
-        logger.debug("scikit-learn not available - anomaly detection disabled")
-        return None
-
     try:
         # Check minimum data requirements
         if len(baseline_runs) < 30:

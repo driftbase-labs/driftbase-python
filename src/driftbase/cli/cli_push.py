@@ -6,7 +6,7 @@ import httpx
 from driftbase.backends.factory import get_backend
 from driftbase.cli._deps import safe_import_rich
 
-# Lazy import of heavy [analyze] dependencies
+# Import rich components (now core dependencies)
 Console, Panel, Table = safe_import_rich()
 
 try:

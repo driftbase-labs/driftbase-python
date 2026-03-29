@@ -18,7 +18,7 @@ from driftbase.cli.demo_templates import (
 )
 from driftbase.local.local_store import enqueue_run
 
-# Lazy import of heavy [analyze] dependencies
+# Import rich components (now core dependencies)
 Console, Panel, Table, Markdown, Prompt, Confirm = safe_import_rich_extended()
 
 

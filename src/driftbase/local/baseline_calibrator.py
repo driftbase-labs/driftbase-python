@@ -12,6 +12,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+from scipy.stats import spearmanr
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_THRESHOLDS = {
@@ -167,13 +170,6 @@ def _compute_correlation_adjustments(
     Requires minimum 30 data points per dimension.
     """
     try:
-        import numpy as np
-        from scipy.stats import spearmanr
-    except ImportError:
-        logger.debug("scipy/numpy not available for correlation adjustment")
-        return dict.fromkeys(weights, 1.0), []
-
-    try:
         dimensions = list(weights.keys())
         n = min(len(v) for v in dimension_scores.values()) if dimension_scores else 0
 
@@ -316,12 +312,6 @@ def _extract_dimension_scores(runs: list[dict[str, Any]]) -> dict[str, list[floa
     """
     dimension_scores = {dim: [] for dim in DIMENSION_KEYS}
 
-    try:
-        import numpy as np
-    except ImportError:
-        logger.warning("numpy not available - calibration requires [analyze] extra")
-        return dimension_scores
-
     for run in runs:
         try:
             if "tool_sequence" in run and run["tool_sequence"]:
@@ -411,16 +401,6 @@ def calibrate(
     Returns:
         CalibrationResult with calibrated parameters
     """
-    try:
-        import numpy as np
-    except ImportError:
-        logger.warning("numpy required for calibration - install driftbase[analyze]")
-        return _default_calibration_result(
-            inferred_use_case,
-            semantic_available=semantic_available,
-            transitions_available=transitions_available,
-        )
-
     from driftbase.backends.factory import get_backend
     from driftbase.local.use_case_inference import USE_CASE_WEIGHTS
 

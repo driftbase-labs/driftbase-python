@@ -76,20 +76,14 @@ def learn_weights(
         LearnedWeights or None if insufficient data
     """
     try:
+        import numpy as np
+        from scipy.stats import pointbiserialr
+
         from driftbase.backends.factory import get_backend
         from driftbase.local.diff import compute_drift
         from driftbase.local.fingerprinter import build_fingerprint_from_runs
         from driftbase.local.local_store import run_dict_to_agent_run
         from driftbase.local.use_case_inference import USE_CASE_WEIGHTS
-
-        try:
-            import numpy as np
-            from scipy.stats import pointbiserialr
-        except ImportError:
-            logger.debug(
-                "scipy not available for weight learning - install driftbase[analyze]"
-            )
-            return None
 
         backend = get_backend()
 

@@ -229,13 +229,7 @@ def compute_drift(
     Returns:
         DriftReport with drift_score, severity, component drifts, and optional CI fields.
     """
-    try:
-        import numpy as np
-    except ImportError:
-        raise ImportError(
-            "numpy is required for drift computation with confidence intervals. "
-            "Install with: pip install 'driftbase[analyze]'"
-        )
+    import numpy as np
 
     from driftbase.config import get_settings
     from driftbase.local.anomaly_detector import compute_anomaly_signal

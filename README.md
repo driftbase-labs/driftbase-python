@@ -40,22 +40,15 @@ Driftbase gives you a single drift score, a financial delta in euros, a root-cau
 
 ### 1. Install
 
-| Install Command | What You Get | Use Case |
-|----------------|--------------|----------|
-| `pip install driftbase` | `@track()` decorator + basic CLI | **Production containers** — lightweight tracking only |
-| `pip install 'driftbase[analyze]'` | Everything above + numpy/scipy/rich for statistical analysis and CLI diff | **Local development & CI/CD** |
-| `pip install 'driftbase[semantic]'` | Semantic clustering via light-embed | **Advanced** — semantic drift detection |
-
-**Typical setup:**
 ```bash
-# Production (minimal)
 pip install driftbase
+```
 
-# Development (recommended)
-pip install 'driftbase[analyze]'
+That's it. All analysis features included.
 
-# Advanced
-pip install 'driftbase[analyze,semantic]'
+For semantic drift detection (optional, adds ~50MB):
+```bash
+pip install 'driftbase[semantic]'
 ```
 
 ### 2. Run the demo
@@ -442,7 +435,7 @@ GitHub Actions example:
 ```yaml
 - name: Drift check
   run: |
-    pip install 'driftbase[analyze]'
+    pip install driftbase
     driftbase diff ${{ env.BASELINE_VERSION }} ${{ env.DEPLOY_VERSION }} \
       --exit-nonzero-above 0.15
 ```
@@ -657,7 +650,7 @@ A: Very accurate. Token counts are read directly from LLM responses and multipli
 A: Yes. Any OpenAI-compatible client is supported.
 
 **Q: When should I use `[semantic]`?**
-A: When you care about whether the *meaning* of outputs shifts, not just their structure. Useful for RAG agents, content generation, and any use case where output content matters. Without it, semantic_drift weight is redistributed to other dimensions automatically.
+A: Only if you want semantic drift detection — detecting whether the meaning of agent outputs shifts over time. Requires ~50MB of additional model weights. Everything else works without it.
 
 **Q: Can I self-host the Pro dashboard?**
 A: Not yet. Enterprise self-hosted is on the roadmap. Email pro@driftbase.io for early access.
