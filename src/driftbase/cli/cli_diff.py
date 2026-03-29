@@ -656,6 +656,81 @@ def render_diff_report(
 
     console.print()
 
+    # Anomaly Detection (show when signal exists and level is not NORMAL)
+    anomaly_signal = getattr(report, "anomaly_signal", None)
+    anomaly_override = getattr(report, "anomaly_override", False)
+    anomaly_override_reason = getattr(report, "anomaly_override_reason", "")
+
+    if anomaly_signal and anomaly_signal.level != "NORMAL":
+        console.print("Anomaly Detection")
+        console.print("─" * 76)
+
+        # Level with color
+        level_color = (
+            "#FF6B6B"
+            if anomaly_signal.level == "CRITICAL"
+            else "#FFA94D"
+            if anomaly_signal.level == "HIGH"
+            else "#FFA94D"
+        )
+
+        # Show override warning if applicable
+        override_note = ""
+        if anomaly_override and anomaly_override_reason:
+            if "Overridden" in anomaly_override_reason:
+                override_note = "  [#FF6B6B]⚠ overrides SHIP verdict[/]"
+            elif "Escalated" in anomaly_override_reason:
+                override_note = "  [#FF6B6B]⚠ escalates to REVIEW[/]"
+
+        console.print(
+            f"Multivariate signal   [{level_color}bold]{anomaly_signal.level}[/]  (score: {anomaly_signal.score:.2f}){override_note}"
+        )
+
+        # Contributing dimensions (friendly names)
+        dim_map = {
+            "decision_drift": "decision",
+            "tool_sequence": "tool sequence",
+            "tool_distribution": "tool dist",
+            "latency": "latency",
+            "error_rate": "error rate",
+            "loop_depth": "loop depth",
+            "verbosity_ratio": "verbosity",
+            "retry_rate": "retry rate",
+            "output_length": "output length",
+            "time_to_first_tool": "planning",
+            "semantic_drift": "semantic",
+            "tool_sequence_transitions": "transitions",
+        }
+        contrib_names = [
+            dim_map.get(d, d.replace("_", " "))
+            for d in anomaly_signal.contributing_dimensions
+        ]
+        contrib_str = " · ".join(contrib_names)
+        console.print(f"Contributing dims     {contrib_str}")
+
+        # Note explaining the signal
+        if anomaly_signal.level == "CRITICAL":
+            if anomaly_override:
+                console.print(
+                    "Note                  Composite score is low but multivariate behavior is"
+                )
+                console.print(
+                    "                      highly anomalous. Recommend manual review."
+                )
+            else:
+                console.print(
+                    "Note                  Behavior unlike baseline pattern (REVIEW/BLOCK verdict)."
+                )
+        else:
+            console.print(
+                "Note                  No single dimension exceeded its threshold, but this"
+            )
+            console.print(
+                "                      combination is unlike the baseline behavioral pattern."
+            )
+
+        console.print()
+
     # Create summary table
     summary_table = Table(
         show_header=False,

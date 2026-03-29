@@ -36,6 +36,7 @@ analyze = [
     "numpy>=1.24.0",
     "scipy>=1.10.0",
     "rich>=13.0.0",
+    "scikit-learn>=1.3.0",
 ]
 semantic = [
     "light-embed>=1.0.0",

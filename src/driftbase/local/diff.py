@@ -238,6 +238,7 @@ def compute_drift(
         )
 
     from driftbase.config import get_settings
+    from driftbase.local.anomaly_detector import compute_anomaly_signal
     from driftbase.local.baseline_calibrator import calibrate
     from driftbase.local.fingerprinter import build_fingerprint_from_runs
     from driftbase.local.local_store import DriftReport, run_dict_to_agent_run
@@ -425,6 +426,29 @@ def compute_drift(
     baseline_dominant_tool = _get_dominant_tool(base_dist)
     current_dominant_tool = _get_dominant_tool(curr_dist)
 
+    # Compute anomaly signal (supplementary multivariate detection)
+    anomaly_signal = None
+    if baseline_runs is not None and current_runs is not None:
+        anomaly_signal = compute_anomaly_signal(
+            baseline_runs=baseline_runs,
+            eval_runs=current_runs,
+        )
+
+    # Apply verdict override if anomaly is CRITICAL
+    anomaly_override = False
+    anomaly_override_reason = ""
+    if anomaly_signal and anomaly_signal.level == "CRITICAL":
+        if severity in ["none", "low"]:
+            # SHIP → MONITOR
+            severity = "moderate"
+            anomaly_override = True
+            anomaly_override_reason = "Overridden by multivariate anomaly signal"
+        elif severity == "moderate":
+            # MONITOR → REVIEW
+            severity = "significant"
+            anomaly_override = True
+            anomaly_override_reason = "Escalated by multivariate anomaly signal"
+
     report = DriftReport(
         baseline_fingerprint_id=baseline.id,
         current_fingerprint_id=current.id,
@@ -484,6 +508,10 @@ def compute_drift(
         # Correlation adjustment metadata
         correlated_pairs=calibration.correlated_pairs,
         correlation_adjusted=calibration.correlation_adjusted,
+        # Anomaly detection
+        anomaly_signal=anomaly_signal,
+        anomaly_override=anomaly_override,
+        anomaly_override_reason=anomaly_override_reason,
     )
 
     # Bootstrap 95% CI when run lists are provided

@@ -155,6 +155,10 @@ class DriftReport:
     rollback_suggestion: Any = (
         None  # RollbackSuggestion | None (Any to avoid circular import)
     )
+    # Anomaly detection
+    anomaly_signal: Any = None  # AnomalySignal | None (Any to avoid circular import)
+    anomaly_override: bool = False
+    anomaly_override_reason: str = ""
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:
