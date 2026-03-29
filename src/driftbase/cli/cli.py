@@ -1,5 +1,5 @@
 """
-CLI for driftbase: versions, diff, watch, inspect, report, push, demo.
+CLI for driftbase: versions, diff, watch, inspect, push, demo.
 Uses click for parsing and rich for output.
 """
 
@@ -47,13 +47,15 @@ def _console_no_color(no_color_flag: bool) -> bool:
 )
 @click.pass_context
 def cli(ctx: click.Context, no_color: bool) -> None:
-    """Behavioral watchdog for AI agents — versions, diff, watch, inspect, report."""
+    """Behavioral watchdog for AI agents — versions, diff, watch, inspect."""
     ctx.ensure_object(dict)
     ctx.obj["console"] = Console(no_color=_console_no_color(no_color))
 
 
 from driftbase.cli.cli_baseline import baseline_group
 from driftbase.cli.cli_bookmark import bookmark_group
+from driftbase.cli.cli_budget import cmd_budgets
+from driftbase.cli.cli_changes import cmd_changes
 from driftbase.cli.cli_chart import cmd_chart
 from driftbase.cli.cli_compare import cmd_compare
 from driftbase.cli.cli_cost import cmd_cost
@@ -69,7 +71,6 @@ from driftbase.cli.cli_inspect import cmd_inspect
 from driftbase.cli.cli_plugin import plugin_group
 from driftbase.cli.cli_prune import cmd_prune
 from driftbase.cli.cli_push import cmd_push
-from driftbase.cli.cli_report import cmd_report
 from driftbase.cli.cli_status import cmd_status
 from driftbase.cli.cli_tail import cmd_tail
 from driftbase.cli.cli_upgrade import cmd_upgrade
@@ -77,7 +78,6 @@ from driftbase.cli.cli_upgrade import cmd_upgrade
 cli.add_command(cmd_init)
 cli.add_command(cmd_diff)
 cli.add_command(cmd_inspect)
-cli.add_command(cmd_report)
 cli.add_command(cmd_push)
 cli.add_command(cmd_demo)
 cli.add_command(cmd_diagnose)
@@ -95,6 +95,8 @@ cli.add_command(cmd_chart)
 cli.add_command(cmd_compare)
 cli.add_command(bookmark_group)
 cli.add_command(cmd_explore)
+cli.add_command(cmd_budgets)
+cli.add_command(cmd_changes)
 # Phase 3 commands (future / high effort, high value)
 cli.add_command(git_group)
 cli.add_command(cmd_cost)
@@ -287,7 +289,7 @@ def cmd_config(ctx: click.Context) -> None:
     """Show current Driftbase configuration (env, config file, and defaults)."""
     console: Console = ctx.obj["console"]
     table = Table(show_header=True, header_style="bold")
-    table.add_column("SETTING", style="cyan")
+    table.add_column("SETTING", style="#8B5CF6")
     table.add_column("VALUE")
     table.add_column("SOURCE")
     table.add_column("DESCRIPTION")
@@ -308,11 +310,11 @@ def cmd_db_stats(ctx: click.Context) -> None:
     console: Console = ctx.obj["console"]
     backend_name = (os.getenv("DRIFTBASE_BACKEND") or "sqlite").strip().lower()
     if backend_name != "sqlite":
-        console.print("db-stats is only supported for SQLite backend.", style="yellow")
+        console.print("db-stats is only supported for SQLite backend.", style="#FFA94D")
         ctx.exit(1)
     db_path = os.path.expanduser(os.getenv("DRIFTBASE_DB_PATH", "~/.driftbase/runs.db"))
     if not os.path.isfile(db_path):
-        console.print(f"Database not found: [bold]{db_path}[/]", style="red")
+        console.print(f"Database not found: [bold]{db_path}[/]", style="#FF6B6B")
         ctx.exit(1)
     try:
         conn = sqlite3.connect(db_path)
@@ -323,15 +325,17 @@ def cmd_db_stats(ctx: click.Context) -> None:
         conn.close()
     except sqlite3.OperationalError as e:
         if "no such table" in str(e).lower():
-            console.print(f"Table agent_runs_local not found in {db_path}", style="red")
+            console.print(
+                f"Table agent_runs_local not found in {db_path}", style="#FF6B6B"
+            )
         else:
-            console.print(f"Query failed: {e}", style="red")
+            console.print(f"Query failed: {e}", style="#FF6B6B")
         ctx.exit(1)
     if not rows:
         console.print("No rows in agent_runs_local (or empty table).")
         return
     table = Table(show_header=True, header_style="bold")
-    table.add_column("semantic_cluster", style="cyan")
+    table.add_column("semantic_cluster", style="#8B5CF6")
     table.add_column("COUNT(*)", justify="right")
     for cluster, count in rows:
         table.add_row(str(cluster) if cluster else "NULL", str(count))
@@ -505,11 +509,11 @@ def cmd_runs(
             total_count = len(runs)
 
     except Exception as e:
-        console.print(f"Backend error: [red]{e}[/]")
+        console.print(f"Backend error: #FF6B6B]{e}[/]")
         ctx.exit(1)
 
     if not runs:
-        console.print(f"[yellow]❌ No runs found for version[/] [cyan]{version}[/]\n")
+        console.print(f"#FFA94D]❌ No runs found for version[/] #8B5CF6]{version}[/]\n")
 
         # Provide helpful suggestions
         try:
@@ -524,19 +528,23 @@ def cmd_runs(
                     if version.lower() in v.lower() or v.lower() in version.lower()
                 ]
                 if similar:
-                    console.print(f"  • Did you mean: [cyan]{', '.join(similar)}[/]?")
+                    console.print(f"  • Did you mean: #8B5CF6]{', '.join(similar)}[/]?")
 
                 # Show available versions
                 available = ", ".join([v for v, _ in all_versions[:5]])
                 if len(all_versions) > 5:
                     available += f", ... ({len(all_versions)} total)"
                 console.print(f"  • Available versions: {available}")
-                console.print("  • Run [cyan]driftbase versions[/] to see all versions")
+                console.print(
+                    "  • Run #8B5CF6]driftbase versions[/] to see all versions"
+                )
             else:
                 console.print("💡 [dim]No versions found in database. Try:[/]")
-                console.print("  • Run [cyan]driftbase demo[/] to generate sample data")
                 console.print(
-                    f"  • Check DRIFTBASE_DB_PATH is correct: [cyan]{get_settings().DRIFTBASE_DB_PATH}[/]"
+                    "  • Run #8B5CF6]driftbase demo[/] to generate sample data"
+                )
+                console.print(
+                    f"  • Check DRIFTBASE_DB_PATH is correct: #8B5CF6]{get_settings().DRIFTBASE_DB_PATH}[/]"
                 )
         except Exception:
             pass
@@ -604,13 +612,13 @@ def cmd_versions(ctx: click.Context) -> None:
         backend = get_backend()
         versions = backend.get_versions()
     except Exception as e:
-        console.print(f"Backend error: [red]{e}[/]")
+        console.print(f"Backend error: #FF6B6B]{e}[/]")
         ctx.exit(1)
     if not versions:
         console.print("No versions in database.")
         return
     table = Table(show_header=True, header_style="bold")
-    table.add_column("VERSION", style="cyan")
+    table.add_column("VERSION", style="#8B5CF6")
     table.add_column("RUNS", justify="right")
     for version, count in versions:
         table.add_row(version, str(count))
@@ -643,7 +651,7 @@ def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
         backend = get_backend()
         n = backend.delete_runs(deployment_version=version)
     except Exception as e:
-        console.print(f"Backend error: [red]{e}[/]")
+        console.print(f"Backend error: #FF6B6B]{e}[/]")
         ctx.exit(1)
     console.print(f"Deleted {n} runs for version {version}.")
 

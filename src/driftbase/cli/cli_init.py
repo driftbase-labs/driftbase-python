@@ -154,7 +154,7 @@ def cmd_init(ctx: click.Context) -> None:
                 "if your agent's behavior changed unexpectedly.\n\n"
                 "[dim]This wizard will help you add tracking to your agent in 60 seconds.[/]",
                 title="[bold cyan]🚀 Getting Started[/]",
-                border_style="cyan",
+                border_style="#8B5CF6",
             )
         )
         console.print()
@@ -236,7 +236,7 @@ def cmd_init(ctx: click.Context) -> None:
         console.print(
             Panel(
                 "[bold]Copy and paste this code into your agent:[/]",
-                border_style="green",
+                border_style="#4ADE80",
             )
         )
     else:
@@ -258,16 +258,16 @@ def cmd_init(ctx: click.Context) -> None:
         console.print(
             Panel(
                 "[bold]Next steps:[/]\n\n"
-                "  [green]☐[/]  1. Add the code snippet above to your agent\n"
-                "  [green]☐[/]  2. Run your agent at least 50 times to collect baseline data\n"
-                "  [green]☐[/]  3. Verify runs are being captured:\n"
-                f"       [cyan]driftbase runs --version {version}[/]\n"
-                "  [green]☐[/]  4. After deploying a new version (e.g., v2.0), compare drift:\n"
-                f"       [cyan]driftbase diff {version} v2.0[/]\n\n"
+                "  #4ADE80]☐[/]  1. Add the code snippet above to your agent\n"
+                "  #4ADE80]☐[/]  2. Run your agent at least 50 times to collect baseline data\n"
+                "  #4ADE80]☐[/]  3. Verify runs are being captured:\n"
+                f"       #8B5CF6]driftbase runs --version {version}[/]\n"
+                "  #4ADE80]☐[/]  4. After deploying a new version (e.g., v2.0), compare drift:\n"
+                f"       #8B5CF6]driftbase diff {version} v2.0[/]\n\n"
                 "[dim]💡 Tip: Driftbase stores all data locally in ~/.driftbase/runs.db\n"
                 "   No data leaves your machine unless you use --remote.[/]",
                 title="[bold yellow]✓ Setup Complete![/]",
-                border_style="yellow",
+                border_style="#FFA94D",
             )
         )
     else:

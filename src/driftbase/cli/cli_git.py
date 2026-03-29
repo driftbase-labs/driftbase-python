@@ -55,7 +55,7 @@ def git_status(ctx: click.Context):
     git_ctx = get_git_context()
 
     if not git_ctx.enabled:
-        console.print("[yellow]Not in a git repository or git not available[/]")
+        console.print("#FFA94D]Not in a git repository or git not available[/]")
         console.print("\nGit integration features require:")
         console.print("  • git command available in PATH")
         console.print("  • Working directory is within a git repository")
@@ -64,7 +64,7 @@ def git_status(ctx: click.Context):
     # Display git context
     if Table:
         table = Table(show_header=False, box=None, padding=(0, 2))
-        table.add_column("Key", style="cyan")
+        table.add_column("Key", style="#8B5CF6")
         table.add_column("Value")
 
         table.add_row("Branch", git_ctx.branch or "detached HEAD")
@@ -149,7 +149,7 @@ def git_compare(
 
     # Check git availability
     if not is_git_repo():
-        console.print("[red]Error:[/] Not in a git repository")
+        console.print("#FF6B6B]Error:[/] Not in a git repository")
         console.print(
             "\nThis command requires working directory to be in a git repository."
         )
@@ -158,7 +158,7 @@ def git_compare(
     # Get commit SHAs for base and head
     base_sha = get_commit_sha_for_branch(base)
     if not base_sha:
-        console.print(f"[red]Error:[/] Could not resolve base '{base}' to a commit")
+        console.print(f"#FF6B6B]Error:[/] Could not resolve base '{base}' to a commit")
         ctx.exit(1)
 
     if head is None:
@@ -170,7 +170,9 @@ def git_compare(
         head_sha = get_commit_sha_for_branch(head)
         head_label = head
         if not head_sha:
-            console.print(f"[red]Error:[/] Could not resolve head '{head}' to a commit")
+            console.print(
+                f"#FF6B6B]Error:[/] Could not resolve head '{head}' to a commit"
+            )
             ctx.exit(1)
 
     # Get common ancestor
@@ -179,7 +181,7 @@ def git_compare(
     try:
         backend = get_backend()
     except Exception as e:
-        console.print(f"[red]Error:[/] {e}")
+        console.print(f"#FF6B6B]Error:[/] {e}")
         ctx.exit(1)
 
     # Query runs for each commit
@@ -198,14 +200,14 @@ def git_compare(
 
     if not runs:
         console.print(
-            f"[yellow]No runs found{' for version ' + version if version else ''}[/]"
+            f"#FFA94D]No runs found{' for version ' + version if version else ''}[/]"
         )
         ctx.exit(0)
 
     # TODO: Filter by git commit when git_commit column is added
     # For now, show a message about future enhancement
     console.print(
-        "[yellow]Note:[/] Git commit filtering not yet implemented in database schema."
+        "#FFA94D]Note:[/] Git commit filtering not yet implemented in database schema."
     )
     console.print(
         "This feature requires storing git metadata with runs (planned enhancement)."
@@ -253,7 +255,7 @@ def git_tag(ctx: click.Context, enable: bool):
         save_config("DRIFTBASE_GIT_TAGGING", "1" if enable else "0", scope="global")
 
         if enable:
-            console.print("[green]✓[/] Git auto-tagging enabled")
+            console.print("#4ADE80]✓[/] Git auto-tagging enabled")
             console.print()
             console.print("All tracked runs will now include:")
             console.print("  • Git commit SHA")
@@ -262,12 +264,12 @@ def git_tag(ctx: click.Context, enable: bool):
             console.print()
             console.print("Use 'driftbase git compare' to compare branches")
         else:
-            console.print("[green]✓[/] Git auto-tagging disabled")
+            console.print("#4ADE80]✓[/] Git auto-tagging disabled")
             console.print()
             console.print("Runs will no longer capture git metadata")
 
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to save configuration: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to save configuration: {e}")
         ctx.exit(1)
 
     ctx.exit(0)

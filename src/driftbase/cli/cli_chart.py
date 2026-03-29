@@ -124,11 +124,11 @@ def cmd_chart(
         backend = get_backend()
         runs = backend.get_runs(deployment_version=version, limit=limit)
     except Exception as e:
-        console.print(f"[red]Error:[/] {e}")
+        console.print(f"#FF6B6B]Error:[/] {e}")
         ctx.exit(1)
 
     if not runs:
-        console.print(f"[yellow]No runs found for version {version}[/]")
+        console.print(f"#FFA94D]No runs found for version {version}[/]")
         ctx.exit(0)
 
     # Generate chart based on metric
@@ -137,7 +137,7 @@ def cmd_chart(
         latencies = [val for val in latencies if val > 0]  # Filter zeros
 
         if not latencies:
-            console.print("[yellow]No latency data available[/]")
+            console.print("#FFA94D]No latency data available[/]")
             ctx.exit(0)
 
         # Calculate statistics
@@ -187,7 +187,7 @@ def cmd_chart(
                 pass
 
         if not tool_counts:
-            console.print("[yellow]No tool usage data available[/]")
+            console.print("#FFA94D]No tool usage data available[/]")
             ctx.exit(0)
 
         console.print(

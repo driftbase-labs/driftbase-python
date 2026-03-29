@@ -39,7 +39,7 @@ def cmd_inspect(ctx: click.Context, run_id: str) -> None:
             Panel(
                 f"No run found matching ID: [bold]{run_id}[/]",
                 title="Error",
-                border_style="red",
+                border_style="#FF6B6B",
             )
         )
         ctx.exit(1)
@@ -78,7 +78,9 @@ def cmd_inspect(ctx: click.Context, run_id: str) -> None:
         tool_steps = " ➔ ".join(f"[bold cyan]{t}[/]" for t in tools)
         console.print(
             Panel(
-                tool_steps, title="[bold]Tool Execution Chain[/]", border_style="cyan"
+                tool_steps,
+                title="[bold]Tool Execution Chain[/]",
+                border_style="#8B5CF6",
             )
         )
     else:
@@ -96,7 +98,7 @@ def cmd_inspect(ctx: click.Context, run_id: str) -> None:
             Panel(
                 Markdown(raw_prompt),
                 title="[bold yellow]Raw Prompt[/] [dim](Local Only)[/]",
-                border_style="yellow",
+                border_style="#FFA94D",
             )
         )
 
@@ -106,7 +108,7 @@ def cmd_inspect(ctx: click.Context, run_id: str) -> None:
             Panel(
                 Markdown(raw_output),
                 title="[bold green]Raw Output[/] [dim](Local Only)[/]",
-                border_style="green",
+                border_style="#4ADE80",
             )
         )
 

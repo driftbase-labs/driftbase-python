@@ -89,9 +89,9 @@ def cmd_doctor(ctx: click.Context, fix: bool) -> None:
                 db_dir = os.path.dirname(settings.DRIFTBASE_DB_PATH)
                 if db_dir:
                     os.makedirs(db_dir, exist_ok=True)
-                    console.print("[green]✓[/] Created database directory")
+                    console.print("#4ADE80]✓[/] Created database directory")
             except Exception as fix_err:
-                console.print(f"[red]✗[/] Failed to create directory: {fix_err}")
+                console.print(f"#FF6B6B]✗[/] Failed to create directory: {fix_err}")
 
     # Check 3: Database schema version (basic check - table exists)
     try:
@@ -182,18 +182,18 @@ def cmd_doctor(ctx: click.Context, fix: bool) -> None:
     # Display results
     if Table:
         table = Table(show_header=True, header_style="bold")
-        table.add_column("Check", style="cyan")
+        table.add_column("Check", style="#8B5CF6")
         table.add_column("Status")
         table.add_column("Details")
 
         for check_name, status, details in checks_results:
             # Color status based on result
             if "PASS" in status:
-                status_colored = f"[green]{status}[/]"
+                status_colored = f"#4ADE80]{status}[/]"
             elif "WARN" in status:
-                status_colored = f"[yellow]{status}[/]"
+                status_colored = f"#FFA94D]{status}[/]"
             elif "FAIL" in status:
-                status_colored = f"[red]{status}[/]"
+                status_colored = f"#FF6B6B]{status}[/]"
             else:
                 status_colored = f"[dim]{status}[/]"
 
@@ -214,14 +214,14 @@ def cmd_doctor(ctx: click.Context, fix: bool) -> None:
     if has_failures:
         if Console:
             console.print(
-                "[red]⚠[/] Health check failed. Please review the errors above."
+                "#FF6B6B]⚠[/] Health check failed. Please review the errors above."
             )
         else:
             print("⚠ Health check failed. Please review the errors above.")
         ctx.exit(1)
     else:
         if Console:
-            console.print("[green]✓[/] All checks passed or warnings only.")
+            console.print("#4ADE80]✓[/] All checks passed or warnings only.")
         else:
             print("✓ All checks passed or warnings only.")
         ctx.exit(0)

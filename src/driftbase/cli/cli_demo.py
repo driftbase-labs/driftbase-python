@@ -118,7 +118,6 @@ def generate_synthetic_runs(
             "raw_prompt": prompt_text,
             "raw_output": output_text,
             "loop_count": loop_count,
-            "tool_call_sequence": json.dumps(tools),
             "time_to_first_tool_ms": time_to_first_tool_ms,
             "verbosity_ratio": verbosity_ratio,
         }
@@ -379,7 +378,7 @@ def interactive_tutorial(console: Any, runs: int) -> None:
             "interpret the results together.\n\n"
             "[dim]Press Enter to continue...[/]",
             title="Tutorial Mode",
-            border_style="cyan",
+            border_style="#8B5CF6",
         )
     )
     input()
@@ -388,44 +387,44 @@ def interactive_tutorial(console: Any, runs: int) -> None:
     console.print("\n[bold]Step 1: Understanding Baseline vs Regression[/]\n")
     console.print(
         "We'll generate two versions of agent data:\n"
-        "  • [green]v1.0 (Baseline)[/]: Efficient agent with low latency, minimal token usage\n"
-        "  • [red]v2.0 (Regression)[/]: Same agent after changes caused performance issues\n"
+        "  • #4ADE80]v1.0 (Baseline)[/]: Efficient agent with low latency, minimal token usage\n"
+        "  • #FF6B6B]v2.0 (Regression)[/]: Same agent after changes caused performance issues\n"
     )
     console.print(
-        "\n[yellow]💡 Key Metrics We Track:[/]\n"
-        "  • [cyan]Tool sequences[/]: Which tools are called and in what order\n"
-        "  • [cyan]Token usage[/]: Prompt + completion tokens (affects cost)\n"
-        "  • [cyan]Latency[/]: Response time (affects user experience)\n"
-        "  • [cyan]Loop count[/]: How many reasoning iterations\n"
-        "  • [cyan]Retry count[/]: Failed tool calls requiring retries\n"
-        "  • [cyan]Escalation rate[/]: How often agent gives up\n"
+        "\n#FFA94D]💡 Key Metrics We Track:[/]\n"
+        "  • #8B5CF6]Tool sequences[/]: Which tools are called and in what order\n"
+        "  • #8B5CF6]Token usage[/]: Prompt + completion tokens (affects cost)\n"
+        "  • #8B5CF6]Latency[/]: Response time (affects user experience)\n"
+        "  • #8B5CF6]Loop count[/]: How many reasoning iterations\n"
+        "  • #8B5CF6]Retry count[/]: Failed tool calls requiring retries\n"
+        "  • #8B5CF6]Escalation rate[/]: How often agent gives up\n"
     )
     console.print("\n[dim]Press Enter to generate baseline data...[/]")
     input()
 
     # Generate baseline
-    console.print(f"\n[cyan]Generating {runs} baseline runs (v1.0)...[/]")
+    console.print(f"\n#8B5CF6]Generating {runs} baseline runs (v1.0)...[/]")
     baseline, regression = get_baseline_regression_scenarios(None, None)
     generate_synthetic_runs("v1.0", runs, baseline, annotate=True, console=console)
     time.sleep(0.5)
-    console.print("[green]✓ Baseline complete![/]\n")
+    console.print("#4ADE80]✓ Baseline complete![/]\n")
 
     # Step 2: Explain regression
     console.print("[bold]Step 2: Simulating a Regression[/]\n")
     console.print(
         "Now we'll generate v2.0 data with these problems:\n"
-        "  • [red]Excessive loops[/]: Agent retries operations unnecessarily\n"
-        "  • [red]Tool sequence changes[/]: Different problem-solving approach\n"
-        "  • [red]Higher escalation rate[/]: Agent gives up more often\n"
-        "  • [red]Token bloat[/]: Wordier outputs without added value\n"
+        "  • #FF6B6B]Excessive loops[/]: Agent retries operations unnecessarily\n"
+        "  • #FF6B6B]Tool sequence changes[/]: Different problem-solving approach\n"
+        "  • #FF6B6B]Higher escalation rate[/]: Agent gives up more often\n"
+        "  • #FF6B6B]Token bloat[/]: Wordier outputs without added value\n"
     )
     console.print("\n[dim]Press Enter to generate regression data...[/]")
     input()
 
-    console.print(f"\n[cyan]Generating {runs} regression runs (v2.0)...[/]")
+    console.print(f"\n#8B5CF6]Generating {runs} regression runs (v2.0)...[/]")
     generate_synthetic_runs("v2.0", runs, regression, annotate=True, console=console)
     time.sleep(0.5)
-    console.print("[green]✓ Regression complete![/]\n")
+    console.print("#4ADE80]✓ Regression complete![/]\n")
 
     # Step 3: Run the diff
     console.print("[bold]Step 3: Detecting Drift[/]\n")
@@ -436,40 +435,40 @@ def interactive_tutorial(console: Any, runs: int) -> None:
     console.print("\n[dim]Press Enter to run: driftbase diff v1.0 v2.0[/]")
     input()
 
-    console.print("\n[cyan]Running drift detection...[/]\n")
+    console.print("\n#8B5CF6]Running drift detection...[/]\n")
     time.sleep(1)
-    console.print("[bold green]Now run:[/] [cyan]driftbase diff v1.0 v2.0[/]\n")
+    console.print("[bold green]Now run:[/] #8B5CF6]driftbase diff v1.0 v2.0[/]\n")
 
     # Step 4: What to look for
     console.print("[bold]Step 4: Interpreting Results[/]\n")
     console.print("In the diff output, pay attention to:\n")
     console.print(
-        "  1. [yellow]Overall drift score[/]: Is it above your threshold (default: 0.20)?\n"
-        "  2. [yellow]Component scores[/]: Which dimension drifted most?\n"
+        "  1. #FFA94D]Overall drift score[/]: Is it above your threshold (default: 0.20)?\n"
+        "  2. #FFA94D]Component scores[/]: Which dimension drifted most?\n"
         "     • Decisions (escalation rate)\n"
         "     • Latency (p95 response time)\n"
         "     • Tool sequences (behavioral changes)\n"
-        "  3. [yellow]Financial impact[/]: How much will this cost per 10k runs?\n"
-        "  4. [yellow]Verdict & root cause[/]: Plain-English explanation\n"
+        "  3. #FFA94D]Financial impact[/]: How much will this cost per 10k runs?\n"
+        "  4. #FFA94D]Verdict & root cause[/]: Plain-English explanation\n"
     )
 
     # Step 5: Next steps
     console.print("\n[bold]Step 5: Exploring Further[/]\n")
     console.print("Try these commands to dive deeper:\n")
     console.print(
-        "  • [cyan]driftbase runs -v v2.0 --slow[/]\n"
+        "  • #8B5CF6]driftbase runs -v v2.0 --slow[/]\n"
         "    [dim]Inspect slow runs to understand latency regression[/]\n"
     )
     console.print(
-        "  • [cyan]driftbase chart -v v1.0 -m tools[/]\n"
+        "  • #8B5CF6]driftbase chart -v v1.0 -m tools[/]\n"
         "    [dim]Visualize tool usage patterns in baseline[/]\n"
     )
     console.print(
-        "  • [cyan]driftbase compare v1.0 v2.0 --matrix[/]\n"
+        "  • #8B5CF6]driftbase compare v1.0 v2.0 --matrix[/]\n"
         "    [dim]Detailed component-by-component breakdown[/]\n"
     )
     console.print(
-        "  • [cyan]driftbase cost -v v2.0[/]\n"
+        "  • #8B5CF6]driftbase cost -v v2.0[/]\n"
         "    [dim]Detailed cost analysis with projections[/]\n"
     )
 
@@ -490,7 +489,8 @@ def export_fixtures(console: Any, format_type: str, output_dir: str) -> None:
 
     if not v1_runs or not v2_runs:
         console.print(
-            "[yellow]No demo data found. Run 'driftbase demo' first.[/]", style="yellow"
+            "#FFA94D]No demo data found. Run 'driftbase demo' first.[/]",
+            style="#FFA94D",
         )
         return
 
@@ -550,7 +550,7 @@ def test_detects_token_bloat(baseline_runs, regression_runs):
 
         fixture_file = output_path / "test_fixtures.py"
         fixture_file.write_text(fixture_content)
-        console.print(f"[green]✓ Generated pytest fixtures:[/] {fixture_file}")
+        console.print(f"#4ADE80]✓ Generated pytest fixtures:[/] {fixture_file}")
 
     elif format_type == "json":
         # Generate JSON fixtures
@@ -563,7 +563,7 @@ def test_detects_token_bloat(baseline_runs, regression_runs):
 
         fixture_file = output_path / "drift_fixtures.json"
         fixture_file.write_text(json.dumps(fixtures, indent=2, default=str))
-        console.print(f"[green]✓ Generated JSON fixtures:[/] {fixture_file}")
+        console.print(f"#4ADE80]✓ Generated JSON fixtures:[/] {fixture_file}")
 
 
 def show_cost_impact(
@@ -579,7 +579,7 @@ def show_cost_impact(
     v2_runs = backend.get_runs("v2.0", limit=runs)
 
     if not v1_runs or not v2_runs:
-        console.print("[yellow]No demo data found. Run without --cost-model first.[/]")
+        console.print("#FFA94D]No demo data found. Run without --cost-model first.[/]")
         return
 
     # Get cost model
@@ -621,7 +621,7 @@ def show_cost_impact(
             f"  Completion tokens: €{model['rate_completion_1m']:.2f} per 1M\n\n"
             f"[bold]Volume:[/] {volume_per_month:,} runs/month",
             title="💰 Cost Impact Simulator",
-            border_style="yellow",
+            border_style="#FFA94D",
         )
     )
 
@@ -632,13 +632,13 @@ def show_cost_impact(
     table.add_column("Cost/Run", justify="right")
 
     table.add_row(
-        "[green]v1.0[/]",
+        "#4ADE80]v1.0[/]",
         f"{v1_avg_prompt:.0f}",
         f"{v1_avg_completion:.0f}",
         f"€{v1_cost_per_run:.4f}",
     )
     table.add_row(
-        "[red]v2.0[/]",
+        "#FF6B6B]v2.0[/]",
         f"{v2_avg_prompt:.0f}",
         f"{v2_avg_completion:.0f}",
         f"€{v2_cost_per_run:.4f}",
@@ -650,11 +650,11 @@ def show_cost_impact(
         Panel(
             f"[bold]v1.0 Baseline:[/] €{v1_monthly:,.2f}/month\n"
             f"[bold]v2.0 Regression:[/] €{v2_monthly:,.2f}/month\n\n"
-            f"[bold {'red' if delta_monthly > 0 else 'green'}]Delta:[/] "
+            f"[bold {'#FF6B6B' if delta_monthly > 0 else '#4ADE80'}]Delta:[/] "
             f"€{delta_monthly:+,.2f}/month ({delta_pct:+.1f}%)\n\n"
-            f"[yellow]💡 Projected Annual Impact:[/] €{delta_monthly * 12:,.2f}/year",
+            f"[#FFA94D]💡 Projected Annual Impact:[/] €{delta_monthly * 12:,.2f}/year",
             title="📊 Monthly Cost Projection",
-            border_style="red" if delta_monthly > 0 else "green",
+            border_style="#FF6B6B" if delta_monthly > 0 else "#4ADE80",
         )
     )
 
@@ -742,6 +742,11 @@ def show_cost_impact(
     default=100000,
     help="Monthly run volume for cost projections (default: 100k)",
 )
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Show detailed technical output (disables narrative mode)",
+)
 @click.pass_context
 def cmd_demo(
     ctx: click.Context,
@@ -760,6 +765,7 @@ def cmd_demo(
     output_dir: str,
     cost_model: str | None,
     volume: int,
+    verbose: bool,
 ) -> None:
     """Inject synthetic runs to instantly see the drift engine in action.
 
@@ -817,7 +823,7 @@ def cmd_demo(
 
         generate_template_yaml(init_scenario)
         console.print(
-            f"[green]✓ Generated scenario template:[/] {init_scenario}\n"
+            f"#4ADE80]✓ Generated scenario template:[/] {init_scenario}\n"
             f"[dim]Edit the template and run with: driftbase demo --scenario {init_scenario}[/]"
         )
         return
@@ -826,7 +832,27 @@ def cmd_demo(
     if quick:
         runs = 10
 
-    # Interactive tutorial mode
+    # Narrative mode (default, unless --verbose or customization flags are used)
+    is_narrative_mode = not verbose and all(
+        [
+            scenario is None,
+            shadow_from is None,
+            benchmark is None,
+            regression_type is None,
+            template is None,
+            not annotate,
+            not export_fixtures_flag,
+            cost_model is None,
+        ]
+    )
+
+    if is_narrative_mode:
+        from driftbase.cli.demo_narrative import run_narrative_demo
+
+        run_narrative_demo(ctx, quick, interactive)
+        return
+
+    # Interactive tutorial mode (legacy, for verbose/customized demos)
     if interactive:
         interactive_tutorial(console, runs)
         return
@@ -841,9 +867,9 @@ def cmd_demo(
 
         try:
             baseline, regression = load_yaml_scenario(scenario)
-            console.print(f"[green]✓ Loaded custom scenario from:[/] {scenario}\n")
+            console.print(f"#4ADE80]✓ Loaded custom scenario from:[/] {scenario}\n")
         except Exception as e:
-            console.print(f"[red]Error loading scenario:[/] {e}")
+            console.print(f"#FF6B6B]Error loading scenario:[/] {e}")
             return
 
     # Priority 2: Shadow mode (analyze agent code)
@@ -856,29 +882,29 @@ def cmd_demo(
         console.print(
             Panel(
                 f"[bold]🔍 Shadow Mode: Analyzing Agent Code[/]\n\n"
-                f"[cyan]File:[/] {shadow_from}\n"
+                f"#8B5CF6]File:[/] {shadow_from}\n"
                 f"[dim]Extracting tool definitions and patterns...[/]",
                 title="Shadow Mode",
-                border_style="cyan",
+                border_style="#8B5CF6",
             )
         )
 
         try:
             analysis = analyze_agent_code(shadow_from)
-            console.print(f"\n[green]✓ Detected {analysis['tool_count']} tools:[/]")
+            console.print(f"\n#4ADE80]✓ Detected {analysis['tool_count']} tools:[/]")
             console.print(
                 f"  [dim]{', '.join(analysis['tools'][:10])}{'...' if len(analysis['tools']) > 10 else ''}[/]\n"
             )
 
             if analysis["frameworks"]:
                 console.print(
-                    f"[cyan]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n"
+                    f"#8B5CF6]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n"
                 )
 
             baseline, regression = generate_scenarios_from_code_analysis(analysis)
-            console.print("[green]✓ Generated scenarios from code analysis[/]\n")
+            console.print("#4ADE80]✓ Generated scenarios from code analysis[/]\n")
         except Exception as e:
-            console.print(f"[red]Error analyzing agent code:[/] {e}")
+            console.print(f"#FF6B6B]Error analyzing agent code:[/] {e}")
             console.print(
                 "\n[dim]💡 Tip: Ensure tool functions follow naming conventions:[/]\n"
                 "  • Use @tool decorator (LangChain)\n"
@@ -894,7 +920,7 @@ def cmd_demo(
             Panel(
                 f"[bold]{bench_info['name']}[/]\n\n"
                 f"{bench_info['description']}\n\n"
-                f"[yellow]Target Metrics:[/]\n"
+                f"#FFA94D]Target Metrics:[/]\n"
                 f"  • P50 Latency: {bench_info['metrics']['p50_latency']}ms\n"
                 f"  • P95 Latency: {bench_info['metrics']['p95_latency']}ms\n"
                 f"  • Avg Tokens: {bench_info['metrics']['avg_prompt_tokens']} prompt, "
@@ -902,7 +928,7 @@ def cmd_demo(
                 f"  • Tool Calls: {bench_info['metrics']['tool_call_count']} per run\n"
                 f"  • Error Rate: {bench_info['metrics']['error_rate']:.1%}",
                 title="🎯 Industry Benchmark",
-                border_style="cyan",
+                border_style="#8B5CF6",
             )
         )
 
@@ -937,10 +963,10 @@ def cmd_demo(
         console.print(
             Panel(
                 f"[bold]{rt['name']}[/]\n\n{rt['description']}\n\n"
-                f"[yellow]Expected Drift:[/]\n"
+                f"#FFA94D]Expected Drift:[/]\n"
                 + "\n".join(f"  • {k}: {v}" for k, v in rt["expected_drift"].items()),
                 title="🧪 Regression Type Demo",
-                border_style="cyan",
+                border_style="#8B5CF6",
             )
         )
     elif template:
@@ -948,9 +974,9 @@ def cmd_demo(
         console.print(
             Panel(
                 f"[bold]{tmpl['name']}[/]\n\n{tmpl['description']}\n\n"
-                f"[cyan]Tools:[/] {', '.join(tmpl['tools'][:5])}...",
+                f"#8B5CF6]Tools:[/] {', '.join(tmpl['tools'][:5])}...",
                 title="🔧 Framework Template",
-                border_style="cyan",
+                border_style="#8B5CF6",
             )
         )
     else:
@@ -964,13 +990,13 @@ def cmd_demo(
 
     # Generate baseline
     console.print(
-        f"  {'[cyan]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v1.0[/] [dim](Baseline)[/]"
+        f"  {'#8B5CF6]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v1.0[/] [dim](Baseline)[/]"
     )
     generate_synthetic_runs("v1.0", runs, baseline, annotate=annotate, console=console)
 
     # Generate regression
     console.print(
-        f"  {'[cyan]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v2.0[/] [dim](Regression)[/]"
+        f"  {'#8B5CF6]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v2.0[/] [dim](Regression)[/]"
     )
     generate_synthetic_runs(
         "v2.0", runs, regression, annotate=annotate, console=console
@@ -994,18 +1020,18 @@ def cmd_demo(
 
     # Show next steps
     console.print("[bold]Try these commands:[/]")
-    console.print("  👉 [cyan]driftbase diff v1.0 v2.0[/]")
+    console.print("  👉 #8B5CF6]driftbase diff v1.0 v2.0[/]")
     console.print("     [dim]See overall drift score, cost impact, and verdict[/]\n")
 
     if regression_type == "latency-creep":
-        console.print("  👉 [cyan]driftbase runs -v v2.0 --slow[/]")
+        console.print("  👉 #8B5CF6]driftbase runs -v v2.0 --slow[/]")
         console.print("     [dim]Inspect slow runs to understand latency issues[/]\n")
     elif regression_type == "tool-dropout":
-        console.print("  👉 [cyan]driftbase chart -v v1.0 -m tools[/]")
+        console.print("  👉 #8B5CF6]driftbase chart -v v1.0 -m tools[/]")
         console.print("     [dim]Compare tool usage: what's missing in v2.0?[/]\n")
     else:
-        console.print("  👉 [cyan]driftbase compare v1.0 v2.0 --matrix[/]")
+        console.print("  👉 #8B5CF6]driftbase compare v1.0 v2.0 --matrix[/]")
         console.print("     [dim]Detailed component-by-component comparison[/]\n")
 
-    console.print("  👉 [cyan]driftbase cost -v v2.0[/]")
+    console.print("  👉 #8B5CF6]driftbase cost -v v2.0[/]")
     console.print("     [dim]Analyze cost impact with projections[/]\n")

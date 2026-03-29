@@ -268,7 +268,7 @@ def cmd_diagnose(
     current_runs = backend.get_runs(runs, limit=limit)
 
     if not current_runs:
-        console.print(f"[red]No runs found for version: {runs}[/]")
+        console.print(f"#FF6B6B]No runs found for version: {runs}[/]")
         return
 
     console.print(
@@ -277,7 +277,7 @@ def cmd_diagnose(
             f"[bold]Runs analyzed:[/] {len(current_runs)}\n"
             f"[bold]Time range:[/] {current_runs[-1].get('started_at')} → {current_runs[0].get('started_at')}",
             title="🔬 Drift Diagnostics",
-            border_style="cyan",
+            border_style="#8B5CF6",
         )
     )
 
@@ -320,7 +320,7 @@ def cmd_diagnose(
 
         if not baseline_runs:
             console.print(
-                f"\n[yellow]Warning: No runs found for baseline version: {compare}[/]"
+                f"\n#FFA94D]Warning: No runs found for baseline version: {compare}[/]"
             )
         else:
             baseline_metrics = _calculate_metrics(baseline_runs)
@@ -329,7 +329,7 @@ def cmd_diagnose(
             console.print(f"\n[bold]Comparison vs {compare}:[/]")
             comparison_table = Table(show_header=True, header_style="bold")
             comparison_table.add_column("Metric")
-            comparison_table.add_column(compare, justify="right", style="green")
+            comparison_table.add_column(compare, justify="right", style="#4ADE80")
             comparison_table.add_column(runs, justify="right")
             comparison_table.add_column("Change", justify="right")
 
@@ -363,11 +363,11 @@ def cmd_diagnose(
                     )
 
                 if abs(change_pct) < 10:
-                    change_str = f"[green]{change_pct:+.0f}%[/]"
+                    change_str = f"#4ADE80]{change_pct:+.0f}%[/]"
                 elif change_pct < 50:
-                    change_str = f"[yellow]{change_pct:+.0f}%[/]"
+                    change_str = f"#FFA94D]{change_pct:+.0f}%[/]"
                 else:
-                    change_str = f"[red]{change_pct:+.0f}%[/]"
+                    change_str = f"#FF6B6B]{change_pct:+.0f}%[/]"
 
                 comparison_table.add_row(
                     key.replace("avg_", "").replace("_", " ").title(),
@@ -474,7 +474,7 @@ def cmd_diagnose(
         console.print(tool_table)
 
     console.print(
-        "\n[dim]💡 For detailed drift analysis, run:[/] [cyan]driftbase diff {compare} {runs}[/]".format(
+        "\n[dim]💡 For detailed drift analysis, run:[/] #8B5CF6]driftbase diff {compare} {runs}[/]".format(
             compare=compare or "baseline",
             runs=runs,
         )

@@ -27,6 +27,14 @@ import requests
 from driftbase.config import get_settings
 from driftbase.local.local_store import _log_track_error, enqueue_run
 
+# Track persisted budget configs to avoid repeated writes
+_budget_configs_persisted: set[tuple[str, str]] = set()
+
+# Track persisted change events to avoid repeated writes
+_change_events_persisted: set[tuple[str, str, str]] = (
+    set()
+)  # (agent_id, version, change_type)
+
 # Ensure logger doesn't pollute the user's stdout by default
 logger = logging.getLogger("driftbase")
 logger.setLevel(logging.ERROR)
@@ -215,6 +223,7 @@ def _build_payload(
     session_id: str,
     deployment_version: str,
     environment: str,
+    sensitivity: str | None = None,
 ) -> dict[str, Any]:
     completed = ctx.completed_at or datetime.utcnow()
     tool_sequence_json = json.dumps([t.get("name", "") for t in ctx.tool_calls])
@@ -227,7 +236,7 @@ def _build_payload(
     # Serialize tool_call_sequence to JSON
     tool_call_sequence_json = json.dumps(ctx.tool_call_sequence)
 
-    return {
+    payload = {
         "session_id": session_id,
         "deployment_version": deployment_version,
         "environment": environment,
@@ -250,6 +259,11 @@ def _build_payload(
         "time_to_first_tool_ms": ctx.time_to_first_tool_ms,
         "verbosity_ratio": verbosity_ratio,
     }
+
+    if sensitivity is not None:
+        payload["sensitivity"] = sensitivity
+
+    return payload
 
 
 def _capture_generic(
@@ -483,7 +497,31 @@ def track(
     version: str = "unknown",
     environment: str | None = None,
     api_key: str | None = None,
+    sensitivity: str | None = None,
+    budget: dict[str, Any] | None = None,
+    changes: dict[str, Any] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    # Parse budget at decoration time (fail fast on invalid keys)
+    budget_config = None
+    if budget:
+        from driftbase.local.budget import parse_budget
+
+        budget_config = parse_budget(budget)
+
+    # Validate changes at decoration time (fail fast on invalid keys)
+    if changes:
+        valid_change_types = {
+            "model_version",
+            "prompt_hash",
+            "rag_snapshot",
+            "tool_version",
+        }
+        for key in changes:
+            if key not in valid_change_types and not key.startswith("custom_"):
+                raise ValueError(
+                    f"Unknown change type: '{key}'. "
+                    f"Supported types: {', '.join(sorted(valid_change_types))} or any key prefixed with 'custom_'"
+                )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         framework = _detect_framework(func)
@@ -494,6 +532,52 @@ def track(
             env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
 
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
+
+            # Persist budget config on first run (before function execution, idempotent)
+            if budget_config and budget_config.limits:
+                session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
+                agent_id = session_id or run_id
+                config_key = (agent_id, version)
+                if config_key not in _budget_configs_persisted:
+                    try:
+                        from driftbase.backends.factory import get_backend
+
+                        backend = get_backend()
+                        backend.write_budget_config(
+                            agent_id=agent_id,
+                            version=version,
+                            config=budget_config.limits,
+                            source="decorator",
+                        )
+                        _budget_configs_persisted.add(config_key)
+                    except Exception:
+                        pass  # Never crash decorated function
+
+            # Persist change events on first run (before function execution, idempotent)
+            if changes:
+                session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
+                agent_id = session_id or run_id
+                for change_type, current_value in changes.items():
+                    event_key = (agent_id, version, change_type)
+                    if event_key not in _change_events_persisted:
+                        try:
+                            from driftbase.backends.factory import get_backend
+
+                            backend = get_backend()
+                            backend.write_change_event(
+                                {
+                                    "agent_id": agent_id,
+                                    "version": version,
+                                    "change_type": change_type,
+                                    "previous": None,  # Don't know previous value
+                                    "current": str(current_value),
+                                    "source": "decorator",
+                                }
+                            )
+                            _change_events_persisted.add(event_key)
+                        except Exception:
+                            pass  # Never crash decorated function
+
             ctx = RunContext()
             ctx.framework = framework
 
@@ -530,7 +614,9 @@ def track(
                 if ctx.latency_ms == 0:
                     ctx.latency_ms = 1
                 try:
-                    payload = _build_payload(ctx, session_id or run_id, version, env)
+                    payload = _build_payload(
+                        ctx, session_id or run_id, version, env, sensitivity
+                    )
                     enqueue_run(payload)
                 except Exception as enq_err:
                     _log_track_error(
@@ -588,6 +674,52 @@ def track(
             env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
 
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
+
+            # Persist budget config on first run (before function execution, idempotent)
+            if budget_config and budget_config.limits:
+                session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
+                agent_id = session_id or run_id
+                config_key = (agent_id, version)
+                if config_key not in _budget_configs_persisted:
+                    try:
+                        from driftbase.backends.factory import get_backend
+
+                        backend = get_backend()
+                        backend.write_budget_config(
+                            agent_id=agent_id,
+                            version=version,
+                            config=budget_config.limits,
+                            source="decorator",
+                        )
+                        _budget_configs_persisted.add(config_key)
+                    except Exception:
+                        pass  # Never crash decorated function
+
+            # Persist change events on first run (before function execution, idempotent)
+            if changes:
+                session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
+                agent_id = session_id or run_id
+                for change_type, current_value in changes.items():
+                    event_key = (agent_id, version, change_type)
+                    if event_key not in _change_events_persisted:
+                        try:
+                            from driftbase.backends.factory import get_backend
+
+                            backend = get_backend()
+                            backend.write_change_event(
+                                {
+                                    "agent_id": agent_id,
+                                    "version": version,
+                                    "change_type": change_type,
+                                    "previous": None,  # Don't know previous value
+                                    "current": str(current_value),
+                                    "source": "decorator",
+                                }
+                            )
+                            _change_events_persisted.add(event_key)
+                        except Exception:
+                            pass  # Never crash decorated function
+
             ctx = RunContext()
             ctx.framework = framework
             start = time.perf_counter()
@@ -625,7 +757,9 @@ def track(
                 ctx.error_type = type(e).__name__
                 ctx.raw_output = _scrub_pii(str(e))
                 try:
-                    payload = _build_payload(ctx, session_id or run_id, version, env)
+                    payload = _build_payload(
+                        ctx, session_id or run_id, version, env, sensitivity
+                    )
                     enqueue_run(payload)
                 except Exception as enq_err:
                     _log_track_error(

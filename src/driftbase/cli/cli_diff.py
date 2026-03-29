@@ -6,6 +6,7 @@ All computation runs locally unless --remote is specified. Output via rich Conso
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import time
@@ -14,6 +15,8 @@ from datetime import datetime
 from typing import Any
 
 import click
+
+logger = logging.getLogger(__name__)
 
 from driftbase.backends.base import StorageBackend
 from driftbase.cli._deps import safe_import_rich
@@ -349,7 +352,7 @@ def cmd_diff(
                 Panel(
                     "No versions in DB; cannot diff 'local' without a baseline. Use: driftbase diff VERSION local",
                     title="Error",
-                    border_style="red",
+                    border_style="#FF6B6B",
                 ),
             )
             ctx.exit(1)
@@ -373,7 +376,7 @@ def cmd_diff(
             Panel(
                 "Either provide two versions (e.g. driftbase diff v1.0 v2.0) or use --last N --against VERSION",
                 title="Error",
-                border_style="red",
+                border_style="#FF6B6B",
             ),
         )
         ctx.exit(1)
@@ -493,13 +496,78 @@ def render_diff_report(
         current_label=current_label,
     )
 
-    console.print("─" * 60)
+    console.print("─" * 76)
     console.print(
-        f"  [bold]DRIFTBASE[/]  {baseline_label} → {current_label}  ·  {baseline_n} vs {current_n} runs"
+        f"  [bold]DRIFTBASE[/]  [default]{baseline_label}[/] → [default]{current_label}[/]  ·  [default]{baseline_n} vs {current_n} runs[/]"
     )
-    console.print("─" * 60)
+    console.print("─" * 76)
     console.print()
 
+    # Calibration transparency (always shown)
+    use_case = getattr(report, "inferred_use_case", "GENERAL")
+    use_case_confidence = getattr(report, "use_case_confidence", 0.0)
+    calibration_method = getattr(report, "calibration_method", "default")
+    calibrated_weights = getattr(report, "calibrated_weights", None)
+    composite_thresholds = getattr(report, "composite_thresholds", None)
+    baseline_n_calibration = getattr(report, "baseline_n", baseline_n)
+
+    # Format use case for display (lowercase with underscores to title case)
+    use_case_display = use_case.lower().replace("_", " ")
+
+    # One-line calibration summary (always visible)
+    calibration_line = f"Calibration   {use_case_display} · {calibration_method} · baseline n={baseline_n_calibration}"
+    if use_case_confidence > 0:
+        calibration_line += f" ({use_case_confidence:.0%} confidence)"
+    console.print(f"[dim]{calibration_line}[/]")
+
+    # Show top weighted dimensions and thresholds if calibrated
+    if calibrated_weights and composite_thresholds:
+        # Get top 3 weighted dimensions
+        sorted_dims = sorted(
+            calibrated_weights.items(), key=lambda x: x[1], reverse=True
+        )[:3]
+        dim_names_map = {
+            "decision_drift": "decision patterns",
+            "latency_drift": "latency",
+            "error_drift": "error rate",
+            "semantic_drift": "outcome patterns",
+            "verbosity_drift": "verbosity",
+            "loop_depth_drift": "reasoning depth",
+            "output_drift": "output structure",
+            "output_length_drift": "output length",
+            "tool_sequence_drift": "tool sequencing",
+            "retry_drift": "retry rate",
+            "planning_latency_drift": "planning latency",
+        }
+        top_dims_str = ", ".join(
+            [
+                f"{dim_names_map.get(dim, dim)} ({weight:.2f})"
+                for dim, weight in sorted_dims
+            ]
+        )
+        console.print(f"[dim]  Top dimensions: {top_dims_str}[/]")
+
+        # Show adjusted thresholds
+        monitor_t = composite_thresholds.get("MONITOR", 0.15)
+        review_t = composite_thresholds.get("REVIEW", 0.28)
+        block_t = composite_thresholds.get("BLOCK", 0.42)
+        console.print(
+            f"[dim]  Thresholds: MONITOR {monitor_t:.2f} · REVIEW {review_t:.2f} · BLOCK {block_t:.2f}[/]"
+        )
+
+    console.print()
+
+    # Create summary table
+    summary_table = Table(
+        show_header=False,
+        box=None,
+        padding=(0, 2, 0, 0),
+        collapse_padding=True,
+    )
+    summary_table.add_column("Metric", style="dim", width=22)
+    summary_table.add_column("Value", style="", no_wrap=False)
+
+    # Overall drift with CI
     ci_display = ""
     if (
         hasattr(report, "drift_score_upper")
@@ -509,30 +577,69 @@ def render_diff_report(
     ):
         lower, upper = report.drift_score_lower, report.drift_score_upper
         if upper - lower > 0.01:
-            ci_display = f"  [{lower:.2f}–{upper:.2f}, 95% CI]"
-    console.print(f"  Overall drift      [bold]{report.drift_score:.2f}[/]{ci_display}")
+            ci_display = f"  [dim]95% CI: [{lower:.2f}–{upper:.2f}][/]"
+
+    drift_color = (
+        "#FF6B6B"
+        if report.drift_score >= 0.50
+        else "#FFA94D"
+        if report.drift_score >= 0.20
+        else "#4ADE80"
+    )
+    summary_table.add_row(
+        "Overall Drift Score:",
+        f"[{drift_color} bold]{report.drift_score:.2f}[/]{ci_display}",
+    )
 
     # Cost impact (per 10k runs) when token data is available
     if baseline_cost_per_10k is not None and current_cost_per_10k is not None:
         delta_cost = current_cost_per_10k - baseline_cost_per_10k
-        cost_color = "red" if delta_cost > 0 else "green" if delta_cost < 0 else "dim"
-        cost_sign = "+" if delta_cost > 0 else ""
-        console.print(
-            f"  Cost (per 10k runs) [bold]{baseline_cost_per_10k:.2f}[/] €  →  [bold]{current_cost_per_10k:.2f}[/] €  "
-            f"([{cost_color}]{cost_sign}{delta_cost:.2f} €[/])"
+        cost_pct_change = (
+            (delta_cost / baseline_cost_per_10k * 100)
+            if baseline_cost_per_10k > 0
+            else 0
         )
+        cost_color = (
+            "#FF8787"
+            if delta_cost > 0
+            else "#4ADE80"
+            if delta_cost < 0
+            else "bright_black"
+        )
+        cost_sign = "+" if delta_cost > 0 else ""
+
+        cost_display = (
+            f"[bold]{baseline_cost_per_10k:.2f}[/] → [bold]{current_cost_per_10k:.2f}[/] €  "
+            f"([{cost_color}]{cost_sign}{delta_cost:.2f} €, {cost_sign}{cost_pct_change:.0f}%[/])"
+        )
+        summary_table.add_row("Cost per 10k runs:", cost_display)
+
         from driftbase.pricing import get_rates_for_display
 
         rate_p, rate_c = get_rates_for_display()
-        console.print(
-            f"  [dim]Rates: €{rate_p:.2f}/1M prompt, €{rate_c:.2f}/1M completion (DRIFTBASE_RATE_* to override)[/]"
+        summary_table.add_row(
+            "Pricing:", f"[dim]€{rate_p:.2f}/1M prompt · €{rate_c:.2f}/1M completion[/]"
         )
+
+    console.print(summary_table)
+    console.print()
+    console.print(
+        "[dim]  Tip: Set DRIFTBASE_RATE_* env vars to override default pricing[/]"
+    )
     console.print()
 
+    # Build dimension data with context
+    dims_data = []
     dims = [
-        ("decision_drift", "Decisions", report.decision_drift),
+        ("decision_drift", "Decision patterns", report.decision_drift),
         ("latency_drift", "Latency", report.latency_drift),
-        ("error_drift", "Errors", report.error_drift),
+        (
+            "planning_latency_drift",
+            "Planning latency",
+            getattr(report, "planning_latency_drift", 0.0),
+        ),
+        ("error_drift", "Error rate", report.error_drift),
+        ("semantic_drift", "Outcome patterns", getattr(report, "semantic_drift", 0.0)),
         ("verbosity_drift", "Verbosity", getattr(report, "verbosity_drift", 0.0)),
         (
             "loop_depth_drift",
@@ -541,10 +648,11 @@ def render_diff_report(
         ),
         (
             "tool_sequence_drift",
-            "Tool sequence",
+            "Tool sequencing",
             getattr(report, "tool_sequence_drift", 0.0),
         ),
         ("retry_drift", "Retry rate", getattr(report, "retry_drift", 0.0)),
+        ("output_drift", "Output structure", getattr(report, "output_drift", 0.0)),
         (
             "output_length_drift",
             "Output length",
@@ -554,91 +662,154 @@ def render_diff_report(
 
     for dim_key, dim_name, score in dims:
         status = _dimension_status(score)
-        style = _dimension_style(score, threshold)
 
-        if score >= 0.5:
-            symbol = "⚠"
-        elif score >= 0.2 or score >= 0.1:
-            symbol = "·"
-        else:
-            symbol = "✓"
-
+        # Build context string
         context = ""
         if dim_key == "decision_drift" and score > 0.2:
             baseline_esc = getattr(report, "baseline_escalation_rate", 0.0) * 100
             current_esc = getattr(report, "current_escalation_rate", 0.0) * 100
             if baseline_esc > 0 or current_esc > 0:
-                context = f"\n    └─ escalation rate jumped from {baseline_esc:.0f}% → {current_esc:.0f}%"
+                context = f"escalation {baseline_esc:.0f}% → {current_esc:.0f}%"
                 if current_esc > baseline_esc * 1.5:
                     multiplier = current_esc / max(baseline_esc, 1)
-                    context += (
-                        f"\n    └─ agent is routing {multiplier:.1f}× more to humans"
-                    )
+                    context += f" ({multiplier:.1f}× to humans)"
             else:
-                context = "\n    └─ outcome distribution changed"
+                context = "outcome distribution changed"
         elif dim_key == "latency_drift" and score > 0.15:
             baseline_p95 = getattr(report, "baseline_p95_latency_ms", 0.0)
             current_p95 = getattr(report, "current_p95_latency_ms", 0.0)
             if baseline_p95 > 0:
-                context = (
-                    f"\n    └─ p95 increased {baseline_p95:.0f}ms → {current_p95:.0f}ms"
-                )
+                context = f"p95: {baseline_p95:.0f}ms → {current_p95:.0f}ms"
             else:
                 pct_change = score * 100
-                context = f"\n    └─ p95 +{pct_change:.0f}%"
+                context = f"p95 +{pct_change:.0f}%"
         elif dim_key == "error_drift":
             baseline_err = getattr(report, "baseline_error_rate", 0.0) * 100
             current_err = getattr(report, "current_error_rate", 0.0) * 100
-            if score < 0.05:
-                context = "\n    └─ stable"
-            elif baseline_err > 0 or current_err > 0:
-                context = (
-                    f"\n    └─ error rate {baseline_err:.1f}% → {current_err:.1f}%"
-                )
-            else:
-                err_pct = score * 50
-                context = f"\n    └─ error rate +{err_pct:.1f}%"
+            if score >= 0.05:
+                if baseline_err > 0 or current_err > 0:
+                    context = f"{baseline_err:.1f}% → {current_err:.1f}%"
+                else:
+                    err_pct = score * 50
+                    context = f"+{err_pct:.1f}%"
         elif dim_key == "verbosity_drift" and score > 0.15:
             baseline_v = getattr(report, "baseline_avg_verbosity_ratio", 0.0)
             current_v = getattr(report, "current_avg_verbosity_ratio", 0.0)
             if baseline_v > 0 or current_v > 0:
-                context = (
-                    f"\n    └─ response verbosity {baseline_v:.2f} → {current_v:.2f}"
+                pct_change = (
+                    ((current_v - baseline_v) / baseline_v * 100)
+                    if baseline_v > 0
+                    else 0
                 )
+                if pct_change > 0:
+                    context = f"+{pct_change:.0f}% wordier"
+                else:
+                    context = f"{pct_change:.0f}% more concise"
             else:
-                context = "\n    └─ output style changed"
+                context = "output style changed"
         elif dim_key == "loop_depth_drift" and score > 0.15:
             baseline_loop = getattr(report, "baseline_avg_loop_count", 0.0)
             current_loop = getattr(report, "current_avg_loop_count", 0.0)
             if baseline_loop > 0 or current_loop > 0:
-                context = (
-                    f"\n    └─ reasoning steps {baseline_loop:.1f} → {current_loop:.1f}"
-                )
+                context = f"{baseline_loop:.1f} → {current_loop:.1f} steps"
             else:
-                context = "\n    └─ tool iteration pattern changed"
+                context = "iteration pattern changed"
         elif dim_key == "tool_sequence_drift" and score > 0.15:
-            context = "\n    └─ tools are being called in different order"
+            context = "different ordering"
         elif dim_key == "retry_drift" and score > 0.15:
             baseline_retry = getattr(report, "baseline_avg_retry_count", 0.0)
             current_retry = getattr(report, "current_avg_retry_count", 0.0)
             if baseline_retry > 0 or current_retry > 0:
-                context = (
-                    f"\n    └─ retry count {baseline_retry:.2f} → {current_retry:.2f}"
-                )
+                context = f"{baseline_retry:.2f} → {current_retry:.2f}"
             else:
-                context = "\n    └─ tool reliability changed"
+                context = "reliability changed"
+        elif dim_key == "planning_latency_drift" and score > 0.15:
+            baseline_plan = getattr(report, "baseline_avg_time_to_first_tool_ms", 0.0)
+            current_plan = getattr(report, "current_avg_time_to_first_tool_ms", 0.0)
+            if baseline_plan > 0 or current_plan > 0:
+                context = f"{baseline_plan:.0f}ms → {current_plan:.0f}ms thinking time"
+            else:
+                context = "planning behavior changed"
+        elif dim_key == "semantic_drift" and score > 0.15:
+            baseline_esc = getattr(report, "baseline_escalation_rate", 0.0) * 100
+            current_esc = getattr(report, "current_escalation_rate", 0.0) * 100
+            if baseline_esc > 0 or current_esc > 0:
+                context = f"escalated: {baseline_esc:.0f}% → {current_esc:.0f}%"
+            else:
+                context = "outcome distribution changed"
+        elif dim_key == "output_drift" and score > 0.15:
+            baseline_out = getattr(report, "baseline_avg_output_length", 0.0)
+            current_out = getattr(report, "current_avg_output_length", 0.0)
+            if baseline_out > 0 or current_out > 0:
+                pct_change = (
+                    ((current_out - baseline_out) / baseline_out * 100)
+                    if baseline_out > 0
+                    else 0
+                )
+                context = f"structure {pct_change:+.0f}%"
+            else:
+                context = "format changed"
         elif dim_key == "output_length_drift" and score > 0.15:
             baseline_len = getattr(report, "baseline_avg_output_length", 0.0)
             current_len = getattr(report, "current_avg_output_length", 0.0)
             if baseline_len > 0 or current_len > 0:
-                context = f"\n    └─ output length {baseline_len:.0f} → {current_len:.0f} chars"
+                context = f"{baseline_len:.0f} → {current_len:.0f} chars"
             else:
-                context = "\n    └─ response detail level changed"
+                context = "detail level changed"
 
-        console.print(
-            f"  {dim_name:<18} [{style}]{score:.2f}  {symbol} {status}[/]{context}"
+        dims_data.append((dim_name, score, status, context))
+
+    # Sort by score (highest first) so critical issues appear at top
+    dims_data.sort(key=lambda x: x[1], reverse=True)
+
+    # Create dimensions table
+    dim_table = Table(
+        show_header=True,
+        header_style="bold #8B5CF6",  # Purple-blue header
+        border_style="dim",
+        box=None,
+        pad_edge=False,
+        collapse_padding=False,
+        show_edge=False,
+    )
+    dim_table.add_column("Dimension", style="", width=20)
+    dim_table.add_column("Score", justify="center", width=8)
+    dim_table.add_column("Status", justify="center", width=12)
+    dim_table.add_column("Details", style="dim", width=40)
+
+    for dim_name, score, status, context in dims_data:
+        # Color and symbol based on score - modern palette
+        if score >= 0.5:
+            score_style = "#FF6B6B bold"  # Coral red for critical
+            symbol = "⚠"
+        elif score >= 0.2:
+            score_style = "#FFA94D"  # Orange for moderate
+            symbol = "△"
+        elif score >= 0.1:
+            score_style = "bright_black"  # Gray for low
+            symbol = "○"
+        else:
+            score_style = "#4ADE80"  # Green for stable
+            symbol = "✓"
+
+        # Status styling - consistent colors
+        if status == "HIGH":
+            status_display = f"[#FF6B6B]{symbol} {status}[/]"
+        elif status == "MODERATE":
+            status_display = f"[#FFA94D]{symbol} {status}[/]"
+        elif status == "LOW":
+            status_display = f"[bright_black]{symbol} {status}[/]"
+        else:
+            status_display = f"[#4ADE80]{symbol} {status}[/]"
+
+        dim_table.add_row(
+            dim_name,
+            f"[{score_style}]{score:.2f}[/]",
+            status_display,
+            context if context else "—",
         )
 
+    console.print(dim_table)
     console.print()
     console.print("─" * 60)
 
@@ -653,9 +824,16 @@ def render_diff_report(
 
     verdict_content = verdict_result.explanation
 
+    # Include all hypotheses in the verdict box (not just top one)
     if hypotheses:
-        top_hypothesis = hypotheses[0]
-        verdict_content += f"\n\n[bold]Most likely cause:[/]\n  → {top_hypothesis['observation']}\n  [dim]{top_hypothesis['likely_cause']}[/]"
+        verdict_content += "\n\n[bold]Root cause analysis:[/]"
+        for i, h in enumerate(hypotheses):
+            verdict_content += f"\n  → {h['observation']}"
+            verdict_content += f"\n    [dim]{h['likely_cause']}[/]"
+            verdict_content += f"\n    [dim]Action: {h['recommended_action']}[/]"
+            # Add spacing between hypotheses if there are multiple
+            if i < len(hypotheses) - 1:
+                verdict_content += "\n"
 
     verdict_content += "\n\n[bold]Next steps:[/]\n" + "\n".join(
         f"  □ {step}" for step in verdict_result.next_steps
@@ -666,16 +844,205 @@ def render_diff_report(
             verdict_content,
             title=f"[bold {verdict_result.style}]VERDICT  {verdict_title}[/]",
             border_style=verdict_result.style,
+            width=100,
         )
     )
     console.print()
+
+    # Budget section (if budgets exist for the current version)
+    try:
+        from driftbase.backends.factory import get_backend
+
+        backend = get_backend()
+        # Try to get budget breaches for the current version
+        breaches = backend.get_budget_breaches(version=current_label)
+        budget_config_row = backend.get_budget_config(
+            agent_id="", version=current_label
+        )
+
+        # Show budget section if config exists or breaches exist
+        if budget_config_row or breaches:
+            budget_table = Table(
+                title=f"Budget ({current_label})",
+                show_header=True,
+                header_style="bold #8B5CF6",
+                border_style="dim",
+                width=100,
+            )
+            budget_table.add_column("Dimension", style="", width=25)
+            budget_table.add_column("Limit", justify="right", width=15)
+            budget_table.add_column("Actual", justify="right", width=15)
+            budget_table.add_column("Status", justify="center", width=20)
+            budget_table.add_column("Window", justify="center", width=15)
+
+            # Get budget config
+            budget_limits = {}
+            if budget_config_row:
+                budget_limits = budget_config_row.get("config", {})
+
+            # Create a map of breaches by budget_key
+            breaches_map = {b["budget_key"]: b for b in breaches}
+
+            # Display all budget keys from config
+            for budget_key, limit_value in budget_limits.items():
+                breach = breaches_map.get(budget_key)
+
+                if breach:
+                    # Breached
+                    actual_value = breach["actual"]
+                    run_count = breach["run_count"]
+
+                    # Format values based on dimension
+                    if "latency" in budget_key:
+                        limit_str = f"{limit_value:.1f}s"
+                        actual_str = f"{actual_value / 1000:.1f}s"
+                    elif "rate" in budget_key or "ratio" in budget_key:
+                        limit_str = f"{limit_value * 100:.1f}%"
+                        actual_str = f"{actual_value * 100:.1f}%"
+                    else:
+                        limit_str = f"{limit_value:.1f}"
+                        actual_str = f"{actual_value:.1f}"
+
+                    status = "[#FF6B6B bold]BREACHED[/]"
+                    window_str = f"n={run_count}"
+                else:
+                    # No breach - would need to compute current value
+                    # For now, just show as "ok" without actual value
+                    if "latency" in budget_key:
+                        limit_str = f"{limit_value:.1f}s"
+                    elif "rate" in budget_key or "ratio" in budget_key:
+                        limit_str = f"{limit_value * 100:.1f}%"
+                    else:
+                        limit_str = f"{limit_value:.1f}"
+
+                    actual_str = "—"
+                    status = "[#4ADE80]ok[/]"
+                    window_str = "—"
+
+                budget_table.add_row(
+                    budget_key.replace("_", " "),
+                    limit_str,
+                    actual_str,
+                    status,
+                    window_str,
+                )
+
+            console.print(budget_table)
+            console.print()
+    except Exception as e:
+        logger.debug(f"Failed to display budget section: {e}")
+
+    # Root Cause section
+    try:
+        root_cause = getattr(report, "root_cause", None)
+        if root_cause and root_cause.has_changes:
+            # Only show if winner has HIGH or MEDIUM confidence
+            if root_cause.winner_confidence in ("HIGH", "MEDIUM"):
+                from rich.text import Text
+
+                root_table = Table(
+                    title="Root Cause",
+                    show_header=False,
+                    border_style="dim",
+                    width=100,
+                    box=None,
+                )
+                root_table.add_column("Label", style="dim", width=20)
+                root_table.add_column("Value", width=75)
+
+                # Most likely cause
+                change_display = root_cause.winner.replace("_", " ")
+                if root_cause.winner_previous and root_cause.winner_current:
+                    change_detail = (
+                        f"{root_cause.winner_previous} → {root_cause.winner_current}"
+                    )
+                else:
+                    change_detail = root_cause.winner_current or "changed"
+
+                confidence_color = (
+                    "#4ADE80" if root_cause.winner_confidence == "HIGH" else "#FFA94D"
+                )
+                root_table.add_row(
+                    "Most likely cause",
+                    f"[bold]{change_display}[/]  (confidence: [{confidence_color}]{root_cause.winner_confidence}[/])\n"
+                    f"[dim]{change_detail}[/]",
+                )
+
+                # Affected dimensions
+                if root_cause.affected_dimensions:
+                    affected_str = "  ".join(
+                        [f"{d} ✓" for d in root_cause.affected_dimensions]
+                    )
+                    root_table.add_row("Affected dims", affected_str)
+
+                # Ruled out
+                if root_cause.ruled_out:
+                    ruled_out_str = "  ".join(
+                        [f"{r} (unchanged)" for r in root_cause.ruled_out]
+                    )
+                    root_table.add_row("Ruled out", f"[dim]{ruled_out_str}[/]")
+
+                # Suggested action
+                if root_cause.suggested_action:
+                    root_table.add_row("Suggested action", root_cause.suggested_action)
+
+                console.print(root_table)
+                console.print()
+            elif root_cause.winner_confidence in ("LOW", "UNLIKELY"):
+                # Low confidence - show brief message
+                console.print(
+                    "[dim]Root cause inconclusive — multiple changes recorded but weak correlation with drifted dimensions.[/]"
+                )
+                if root_cause.all_scores:
+                    recorded_changes = ", ".join(root_cause.all_scores.keys())
+                    console.print(f"[dim]Recorded changes: {recorded_changes}[/]")
+                console.print()
+    except Exception as e:
+        logger.debug(f"Failed to display root cause section: {e}")
+
+    # Rollback section
+    try:
+        rollback = getattr(report, "rollback_suggestion", None)
+        if rollback:
+            rollback_table = Table(
+                title="Rollback",
+                show_header=False,
+                border_style="dim",
+                width=100,
+                box=None,
+            )
+            rollback_table.add_column("Label", style="dim", width=20)
+            rollback_table.add_column("Value", width=75)
+
+            # Rollback target
+            rollback_table.add_row(
+                "Suggested version", f"[bold]{rollback.suggested_version}[/]"
+            )
+
+            # Reason
+            rollback_table.add_row("Reason", rollback.reason)
+
+            # Command
+            rollback_table.add_row(
+                "Command",
+                f"[dim]driftbase rollback <agent_id> {rollback.suggested_version}[/]",
+            )
+
+            console.print(rollback_table)
+            console.print(
+                "[dim]Note: Driftbase does not execute rollbacks. This is the version to target in your deploy pipeline.[/]"
+            )
+            console.print()
+    except Exception as e:
+        logger.debug(f"Failed to display rollback section: {e}")
 
     if getattr(report, "sample_size_warning", False):
         console.print(
             Panel(
                 "Low sample count — confidence interval may be wide. Run more iterations for a tighter estimate.",
                 title="[bold yellow]⚠  Sample Size Warning[/]",
-                border_style="yellow",
+                border_style="#FFA94D",
+                width=100,
             )
         )
         console.print()
@@ -683,10 +1050,10 @@ def render_diff_report(
     tools_table = Table(
         title="Tool call frequency diff",
         show_header=True,
-        header_style="bold",
+        header_style="bold #8B5CF6",  # Purple-blue header
         border_style="dim",
     )
-    tools_table.add_column("Tool", style="cyan")
+    tools_table.add_column("Tool", style="")
     tools_table.add_column("Baseline count", justify="right")
     tools_table.add_column("Current count", justify="right")
     tools_table.add_column("Baseline %", justify="right")
@@ -695,9 +1062,19 @@ def render_diff_report(
 
     for row in tool_frequency_diffs[:20]:
         delta_pct = row["delta_pct"]
-        delta_style = "red" if delta_pct > 10 else "green" if delta_pct < -10 else "dim"
+        # Modern color palette - only color the delta percentage
+        abs_delta = abs(delta_pct)
+        if abs_delta > 100:
+            delta_style = "#FF6B6B bold"  # Coral red for extreme changes
+        elif abs_delta > 50:
+            delta_style = "#FF8787"  # Light red for high changes
+        elif abs_delta > 20:
+            delta_style = "#FFA94D"  # Orange for moderate changes
+        else:
+            delta_style = "bright_black"  # Gray for small changes
+
         tools_table.add_row(
-            row["tool"],
+            row["tool"],  # Tool name stays default color
             str(row["baseline_count"]),
             str(row["current_count"]),
             f"{row['baseline_pct']:.0f}%",
@@ -709,38 +1086,56 @@ def render_diff_report(
 
     if top_sequence_shifts_list:
         seq_table = Table(
-            title="Top 3 sequence shifts (Markov transitions)",
+            title="Tool Sequence Changes (Markov transitions showing workflow pattern shifts)",
             show_header=True,
-            header_style="bold",
+            header_style="bold #8B5CF6",  # Purple-blue header
             border_style="dim",
         )
-        seq_table.add_column("Transition", style="cyan")
-        seq_table.add_column("Baseline %", justify="right")
-        seq_table.add_column("Current %", justify="right")
-        seq_table.add_column("Δ %", justify="right")
+        seq_table.add_column("Transition", style="", width=50)
+        seq_table.add_column("Baseline", justify="right", width=10)
+        seq_table.add_column("Current", justify="right", width=10)
+        seq_table.add_column("Change", justify="right", width=12)
+        seq_table.add_column("Impact", justify="left", width=15)
+
         for row in top_sequence_shifts_list:
             dp = row["delta_pct"]
-            style = "red" if dp > 5 else "green" if dp < -5 else "dim"
+            baseline_pct = row["baseline_pct"]
+            current_pct = row["current_pct"]
+
+            # Modern color palette - transition name stays default, only color Change and Impact
+            if baseline_pct == 0 and current_pct > 0:
+                # NEW pattern
+                change_style = "#FF6B6B bold"
+                impact = "[#FF6B6B]NEW pattern[/]"
+                arrow = "→"
+            elif current_pct == 0 and baseline_pct > 0:
+                # REMOVED pattern
+                change_style = "#FF6B6B bold"
+                impact = "[#FF6B6B]REMOVED[/]"
+                arrow = "×"
+            elif abs(dp) > 5:
+                # Major change (either direction) is high-impact
+                change_style = "#FF8787"
+                impact = "[#FF8787]Major shift[/]"
+                arrow = "↑↑" if dp > 0 else "↓↓"
+            elif abs(dp) > 2:
+                # Moderate change
+                change_style = "#FFA94D"
+                impact = "[#FFA94D]Moderate shift[/]"
+                arrow = "↑" if dp > 0 else "↓"
+            else:
+                change_style = "bright_black"
+                impact = "[bright_black]Stable[/]"
+                arrow = "→"
+
             seq_table.add_row(
-                row["transition"],
-                f"{row['baseline_pct']:.1f}%",
-                f"{row['current_pct']:.1f}%",
-                f"[{style}]{dp:+.1f}%[/]",
+                row["transition"],  # Transition name stays default color
+                f"{baseline_pct:.1f}%",
+                f"{current_pct:.1f}%",
+                f"[{change_style}]{arrow} {dp:+.1f}%[/]",
+                impact,
             )
         console.print(seq_table)
-
-    if len(hypotheses) > 1:
-        from driftbase.local.hypothesis_engine import format_hypotheses
-
-        remaining_hypotheses = hypotheses[1:]
-        hypothesis_text = format_hypotheses(remaining_hypotheses)
-        console.print(
-            Panel(
-                hypothesis_text,
-                title="[dim]Additional Analysis (hypothesis engine)[/]",
-                border_style="dim",
-            )
-        )
         console.print()
 
     console.print("─" * 60)
@@ -837,6 +1232,83 @@ def diff_local(
     report = compute_drift(
         baseline_fp, current_fp, baseline_run_dicts, current_run_dicts
     )
+
+    # Root cause correlation
+    try:
+        from driftbase.local.rootcause import correlate_drift_with_changes
+
+        # Extract agent_id from runs (use first run's session_id, or empty string)
+        agent_id = ""
+        if baseline_run_dicts:
+            agent_id = baseline_run_dicts[0].get("session_id", "")
+        elif current_run_dicts:
+            agent_id = current_run_dicts[0].get("session_id", "")
+
+        # Get change events for both versions
+        change_events = backend.get_change_events_for_versions(
+            agent_id, baseline_label, current_label
+        )
+
+        # Identify drifted dimensions (above MONITOR threshold = 0.15)
+        drifted_dimensions = []
+        threshold = 0.15
+        if report.decision_drift > threshold:
+            drifted_dimensions.append("decision_drift")
+        if report.latency_drift > threshold:
+            drifted_dimensions.append("latency_drift")
+        if report.error_drift > threshold:
+            drifted_dimensions.append("error_drift")
+        if report.semantic_drift > threshold:
+            drifted_dimensions.append("semantic_drift")
+        if report.verbosity_drift > threshold:
+            drifted_dimensions.append("verbosity_drift")
+        if report.output_length_drift > threshold:
+            drifted_dimensions.append("output_length_drift")
+        if report.tool_sequence_drift > threshold:
+            drifted_dimensions.append("tool_sequence_drift")
+        if report.retry_drift > threshold:
+            drifted_dimensions.append("retry_drift")
+        if getattr(report, "error_rate", 0.0) > threshold:
+            drifted_dimensions.append("error_rate")
+
+        # Correlate drift with changes
+        if change_events.get("v1") or change_events.get("v2"):
+            root_cause = correlate_drift_with_changes(
+                report, change_events, drifted_dimensions
+            )
+            report.root_cause = root_cause
+    except Exception:
+        # Never crash on root cause failure
+        pass
+
+    # Rollback suggestion
+    try:
+        from driftbase.local.rootcause import get_rollback_suggestion
+        from driftbase.verdict import compute_verdict
+
+        # Need to compute verdict to know if it's BLOCK/REVIEW
+        verdict_result = compute_verdict(
+            report,
+            baseline_tools=baseline_fp.tool_call_distribution if baseline_fp else {},
+            current_tools=current_fp.tool_call_distribution if current_fp else {},
+            baseline_n=len(baseline_run_dicts),
+            current_n=len(current_run_dicts),
+            baseline_label=baseline_label,
+            current_label=current_label,
+        )
+
+        rollback = get_rollback_suggestion(
+            agent_id=agent_id,
+            eval_version=current_label,
+            current_verdict=verdict_result.verdict.value.upper(),
+            baseline_version=baseline_label,
+            baseline_run_count=len(baseline_run_dicts),
+        )
+        report.rollback_suggestion = rollback
+    except Exception:
+        # Never crash on rollback suggestion failure
+        pass
+
     return report, baseline_fp, current_fp, None
 
 
@@ -878,7 +1350,7 @@ def run_diff(
 
     if err:
         console.print(
-            Panel(err, title="[bold red]Error[/]", border_style="red"),
+            Panel(err, title="[bold red]Error[/]", border_style="#FF6B6B"),
         )
         return 1
     if report is None or baseline_fp is None or current_fp is None:
@@ -886,7 +1358,7 @@ def run_diff(
             Panel(
                 "Failed to compute diff.",
                 title="[bold red]Error[/]",
-                border_style="red",
+                border_style="#FF6B6B",
             ),
         )
         return 1
@@ -900,7 +1372,7 @@ def run_diff(
                 f"Minimum recommended sample size is [bold]{MIN_SAMPLES_WARNING}[/]. "
                 f"Baseline n={baseline_n}, current n={current_n}. Results may be noisy.",
                 title="[bold yellow]⚠ Low sample size[/]",
-                border_style="yellow",
+                border_style="#FFA94D",
             ),
         )
 
@@ -938,7 +1410,7 @@ def run_diff(
 
     tool_frequency_diffs = tool_frequency_diff(baseline_run_dicts, current_run_dicts)
     top_sequence_shifts_list = top_sequence_shifts(
-        baseline_run_dicts, current_run_dicts, top_n=3
+        baseline_run_dicts, current_run_dicts, top_n=10
     )
     explanation = build_explanation(
         report, baseline_fp, current_fp, tool_frequency_diffs, threshold
@@ -977,6 +1449,7 @@ def run_diff(
             "loop_depth_drift": getattr(report, "loop_depth_drift", 0.0),
             "tool_sequence_drift": getattr(report, "tool_sequence_drift", 0.0),
             "retry_drift": getattr(report, "retry_drift", 0.0),
+            "planning_latency_drift": getattr(report, "planning_latency_drift", 0.0),
             "output_length_drift": getattr(report, "output_length_drift", 0.0),
             "tool_frequency_diffs": tool_frequency_diffs,
             "top_sequence_shifts": top_sequence_shifts_list,
@@ -1068,7 +1541,7 @@ def run_watch(
 
         if not is_notification_supported():
             console.print(
-                "[yellow]⚠[/] Desktop notifications not supported on this platform"
+                "#FFA94D]⚠[/] Desktop notifications not supported on this platform"
             )
             console.print(
                 "[dim]Continuing without notifications. Install required packages:[/]"
@@ -1097,7 +1570,7 @@ def run_watch(
             if n_current < min_runs:
                 console.clear()
                 console.print(
-                    f"[bold]DRIFTBASE WATCH[/] — live · polling every {interval_seconds}s · against [cyan]{against_version}[/]"
+                    f"[bold]DRIFTBASE WATCH[/] — live · polling every {interval_seconds}s · against [#8B5CF6]{against_version}[/]"
                 )
                 console.print(
                     f"[dim]Waiting for at least {min_runs} runs (have {n_current}). Ctrl+C to exit.[/]"
@@ -1117,7 +1590,7 @@ def run_watch(
             console.clear()
             now = datetime.utcnow().strftime("%H:%M:%S")
             console.print(
-                f"[bold]DRIFTBASE WATCH[/] — live · every {interval_seconds}s · against [cyan]{against_version}[/]"
+                f"[bold]DRIFTBASE WATCH[/] — live · every {interval_seconds}s · against [#8B5CF6]{against_version}[/]"
             )
             console.print(
                 f"[dim]Last updated: {now} · {n_current} runs in current window[/]"
@@ -1126,7 +1599,7 @@ def run_watch(
 
             if err:
                 console.print(
-                    Panel(err, title="[bold red]Error[/]", border_style="red"),
+                    Panel(err, title="[bold red]Error[/]", border_style="#FF6B6B"),
                 )
             elif report and baseline_fp and current_fp:
                 baseline_tools = tool_usage_distribution(baseline_run_dicts)
@@ -1135,7 +1608,7 @@ def run_watch(
                     baseline_run_dicts, current_run_dicts
                 )
                 top_sequence_shifts_list = top_sequence_shifts(
-                    baseline_run_dicts, current_run_dicts, top_n=3
+                    baseline_run_dicts, current_run_dicts, top_n=10
                 )
                 explanation = build_explanation(
                     report,

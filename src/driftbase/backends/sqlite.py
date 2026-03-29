@@ -49,6 +49,83 @@ class AgentRunLocal(SQLModel, table=True):
     tool_call_sequence: str = "[]"
     time_to_first_tool_ms: int = 0
     verbosity_ratio: float = 0.0
+    sensitivity: str | None = None
+
+
+class CalibrationCache(SQLModel, table=True):
+    """Cache for baseline calibration results."""
+
+    __tablename__ = "calibration_cache"
+
+    id: int | None = Field(default=None, primary_key=True)
+    cache_key: str = Field(index=True, unique=True)
+    calibrated_weights: str = "{}"
+    thresholds: str = "{}"
+    composite_thresholds: str = "{}"
+    calibration_method: str = "default"
+    baseline_n: int = 0
+    run_count_at_calibration: int = 0
+    reliability_multipliers: str = "{}"
+    confidence: float = 0.0
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DeployEvent(SQLModel, table=True):
+    """Deploy events (schema stabilized for future use)."""
+
+    __tablename__ = "deploy_events"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = ""
+    version: str = ""
+    environment: str = ""
+    deployed_at: datetime = Field(default_factory=datetime.utcnow)
+    triggered_by: str = ""
+
+
+class BudgetBreach(SQLModel, table=True):
+    """Budget breach records."""
+
+    __tablename__ = "budget_breaches"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True)
+    version: str = Field(index=True)
+    dimension: str
+    budget_key: str
+    limit_value: float
+    actual_value: float
+    direction: str
+    run_count: int
+    breached_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BudgetConfig(SQLModel, table=True):
+    """Budget configuration per agent + version."""
+
+    __tablename__ = "budget_configs"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True)
+    version: str = Field(index=True)
+    config: str = "{}"  # JSON serialized budget limits
+    source: str = "decorator"  # "decorator" | "config_file"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ChangeEvent(SQLModel, table=True):
+    """Change events for root cause analysis."""
+
+    __tablename__ = "change_events"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True)
+    version: str = Field(index=True)
+    change_type: str  # model_version|prompt_hash|rag_snapshot|tool_version|custom
+    previous: str | None = None  # value before change (may not be known)
+    current: str  # value after change
+    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    source: str  # "decorator" | "cli" | "auto"
 
 
 def _ensure_dir(path: str) -> None:
@@ -129,6 +206,11 @@ def _migrate_schema(engine: Any) -> None:
                     )
                 )
                 conn.commit()
+            if "sensitivity" not in columns:
+                conn.execute(
+                    text("ALTER TABLE agent_runs_local ADD COLUMN sensitivity TEXT")
+                )
+                conn.commit()
     except Exception as e:
         logger.debug("Schema migration skip: %s", e)
 
@@ -164,6 +246,7 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "tool_call_sequence": r.tool_call_sequence,
         "time_to_first_tool_ms": r.time_to_first_tool_ms,
         "verbosity_ratio": r.verbosity_ratio,
+        "sensitivity": r.sensitivity,
     }
 
 
@@ -195,7 +278,25 @@ class SQLiteBackend(StorageBackend):
             cursor.close()
 
         AgentRunLocal.__table__.create(self._engine, checkfirst=True)
+        CalibrationCache.__table__.create(self._engine, checkfirst=True)
+        DeployEvent.__table__.create(self._engine, checkfirst=True)
+        BudgetBreach.__table__.create(self._engine, checkfirst=True)
+        BudgetConfig.__table__.create(self._engine, checkfirst=True)
+        ChangeEvent.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
+
+        # Add UNIQUE constraint for change_events if not exists
+        try:
+            with self._engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_change_events_unique "
+                        "ON change_events(agent_id, version, change_type)"
+                    )
+                )
+                conn.commit()
+        except Exception:
+            pass
 
     def prune_if_needed(self) -> None:
         """
@@ -607,3 +708,296 @@ class SQLiteBackend(StorageBackend):
                 "oldest_run": oldest_run,
                 "newest_run": newest_run,
             }
+
+    def get_calibration_cache(self, cache_key: str) -> dict[str, Any] | None:
+        """Retrieve calibration from cache by key."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                stmt = select(CalibrationCache).where(
+                    CalibrationCache.cache_key == cache_key
+                )
+                result = session.execute(stmt)
+                row = result.scalars().first()
+
+                if row is None:
+                    return None
+
+                return {
+                    "calibrated_weights": json.loads(row.calibrated_weights),
+                    "thresholds": json.loads(row.thresholds),
+                    "composite_thresholds": json.loads(row.composite_thresholds),
+                    "calibration_method": row.calibration_method,
+                    "baseline_n": row.baseline_n,
+                    "run_count_at_calibration": row.run_count_at_calibration,
+                    "reliability_multipliers": json.loads(row.reliability_multipliers),
+                    "confidence": row.confidence,
+                }
+        except Exception as e:
+            logger.debug(f"Failed to read calibration cache: {e}")
+            return None
+
+    def set_calibration_cache(self, cache_key: str, data: dict[str, Any]) -> None:
+        """Store calibration in cache (upsert by cache_key)."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                stmt = select(CalibrationCache).where(
+                    CalibrationCache.cache_key == cache_key
+                )
+                result = session.execute(stmt)
+                existing = result.scalars().first()
+
+                if existing:
+                    existing.calibrated_weights = json.dumps(data["calibrated_weights"])
+                    existing.thresholds = json.dumps(data["thresholds"])
+                    existing.composite_thresholds = json.dumps(
+                        data["composite_thresholds"]
+                    )
+                    existing.calibration_method = data["calibration_method"]
+                    existing.baseline_n = data["baseline_n"]
+                    existing.run_count_at_calibration = data["run_count_at_calibration"]
+                    existing.reliability_multipliers = json.dumps(
+                        data.get("reliability_multipliers", {})
+                    )
+                    existing.confidence = data.get("confidence", 0.0)
+                    existing.computed_at = datetime.utcnow()
+                else:
+                    cache = CalibrationCache(
+                        cache_key=cache_key,
+                        calibrated_weights=json.dumps(data["calibrated_weights"]),
+                        thresholds=json.dumps(data["thresholds"]),
+                        composite_thresholds=json.dumps(data["composite_thresholds"]),
+                        calibration_method=data["calibration_method"],
+                        baseline_n=data["baseline_n"],
+                        run_count_at_calibration=data["run_count_at_calibration"],
+                        reliability_multipliers=json.dumps(
+                            data.get("reliability_multipliers", {})
+                        ),
+                        confidence=data.get("confidence", 0.0),
+                    )
+                    session.add(cache)
+
+                session.commit()
+        except Exception as e:
+            logger.debug(f"Failed to write calibration cache: {e}")
+
+    def write_budget_breach(self, breach: dict[str, Any]) -> None:
+        """Write a budget breach record."""
+        try:
+            with Session(self._engine) as session:
+                breach_record = BudgetBreach(
+                    agent_id=breach["agent_id"],
+                    version=breach["version"],
+                    dimension=breach["dimension"],
+                    budget_key=breach["budget_key"],
+                    limit_value=breach["limit"],
+                    actual_value=breach["actual"],
+                    direction=breach["direction"],
+                    run_count=breach["run_count"],
+                    breached_at=breach.get("breached_at", datetime.utcnow()),
+                )
+                session.add(breach_record)
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_budget_breach failed: {e}")
+
+    def get_budget_breaches(
+        self, agent_id: str | None = None, version: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return budget breaches, optionally filtered by agent_id and version."""
+        with Session(self._engine) as session:
+            stmt = select(BudgetBreach).order_by(BudgetBreach.breached_at.desc())
+
+            if agent_id is not None:
+                stmt = stmt.where(BudgetBreach.agent_id == agent_id)
+            if version is not None:
+                stmt = stmt.where(BudgetBreach.version == version)
+
+            result = session.execute(stmt)
+            rows = result.scalars().all()
+
+            return [
+                {
+                    "id": row.id,
+                    "agent_id": row.agent_id,
+                    "version": row.version,
+                    "dimension": row.dimension,
+                    "budget_key": row.budget_key,
+                    "limit": row.limit_value,
+                    "actual": row.actual_value,
+                    "direction": row.direction,
+                    "run_count": row.run_count,
+                    "breached_at": row.breached_at,
+                }
+                for row in rows
+            ]
+
+    def write_budget_config(
+        self, agent_id: str, version: str, config: dict[str, Any], source: str
+    ) -> None:
+        """Write a budget config (upsert by agent_id + version)."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                # Check if config already exists
+                stmt = select(BudgetConfig).where(
+                    BudgetConfig.agent_id == agent_id, BudgetConfig.version == version
+                )
+                result = session.execute(stmt)
+                existing = result.scalars().first()
+
+                if existing:
+                    # Update existing config
+                    existing.config = json.dumps(config)
+                    existing.source = source
+                    existing.created_at = datetime.utcnow()
+                else:
+                    # Create new config
+                    budget_config = BudgetConfig(
+                        agent_id=agent_id,
+                        version=version,
+                        config=json.dumps(config),
+                        source=source,
+                    )
+                    session.add(budget_config)
+
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_budget_config failed: {e}")
+
+    def get_budget_config(self, agent_id: str, version: str) -> dict[str, Any] | None:
+        """Return budget config for agent_id + version, or None if not found."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                stmt = select(BudgetConfig).where(
+                    BudgetConfig.agent_id == agent_id, BudgetConfig.version == version
+                )
+                result = session.execute(stmt)
+                row = result.scalars().first()
+
+                if row is None:
+                    return None
+
+                return {
+                    "agent_id": row.agent_id,
+                    "version": row.version,
+                    "config": json.loads(row.config),
+                    "source": row.source,
+                    "created_at": row.created_at,
+                }
+        except Exception as e:
+            logger.debug(f"SQLite get_budget_config failed: {e}")
+            return None
+
+    def delete_budget_breaches(
+        self, agent_id: str | None = None, version: str | None = None
+    ) -> int:
+        """Delete budget breaches, optionally filtered. Returns number deleted."""
+        try:
+            with Session(self._engine) as session:
+                stmt = text("DELETE FROM budget_breaches WHERE 1=1")
+                params: dict[str, Any] = {}
+
+                if agent_id is not None or version is not None:
+                    conditions = []
+                    if agent_id is not None:
+                        conditions.append("agent_id = :agent_id")
+                        params["agent_id"] = agent_id
+                    if version is not None:
+                        conditions.append("version = :version")
+                        params["version"] = version
+
+                    where_clause = " AND ".join(conditions)
+                    stmt = text(f"DELETE FROM budget_breaches WHERE {where_clause}")
+
+                result = session.execute(stmt, params)
+                session.commit()
+                return result.rowcount
+        except Exception as e:
+            logger.debug(f"SQLite delete_budget_breaches failed: {e}")
+            return 0
+
+    def write_change_event(self, event: dict[str, Any]) -> None:
+        """Write a change event. On UNIQUE conflict, log warning and do not overwrite."""
+        try:
+            with Session(self._engine) as session:
+                # Check if event already exists
+                stmt = select(ChangeEvent).where(
+                    ChangeEvent.agent_id == event["agent_id"],
+                    ChangeEvent.version == event["version"],
+                    ChangeEvent.change_type == event["change_type"],
+                )
+                result = session.execute(stmt)
+                existing = result.scalars().first()
+
+                if existing:
+                    logger.warning(
+                        f"Change event already exists for {event['agent_id']}/{event['version']}/{event['change_type']}. "
+                        f"Keeping first recorded value: {existing.current}"
+                    )
+                    return
+
+                change_event = ChangeEvent(
+                    agent_id=event["agent_id"],
+                    version=event["version"],
+                    change_type=event["change_type"],
+                    previous=event.get("previous"),
+                    current=event["current"],
+                    recorded_at=event.get("recorded_at", datetime.utcnow()),
+                    source=event["source"],
+                )
+                session.add(change_event)
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_change_event failed: {e}")
+
+    def get_change_events(self, agent_id: str, version: str) -> list[dict[str, Any]]:
+        """Return change events for agent_id + version."""
+        try:
+            with Session(self._engine) as session:
+                stmt = (
+                    select(ChangeEvent)
+                    .where(
+                        ChangeEvent.agent_id == agent_id,
+                        ChangeEvent.version == version,
+                    )
+                    .order_by(ChangeEvent.recorded_at.desc())
+                )
+
+                result = session.execute(stmt)
+                rows = result.scalars().all()
+
+                return [
+                    {
+                        "id": row.id,
+                        "agent_id": row.agent_id,
+                        "version": row.version,
+                        "change_type": row.change_type,
+                        "previous": row.previous,
+                        "current": row.current,
+                        "recorded_at": row.recorded_at,
+                        "source": row.source,
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.debug(f"SQLite get_change_events failed: {e}")
+            return []
+
+    def get_change_events_for_versions(
+        self, agent_id: str, v1: str, v2: str
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return change events for two versions. Returns {"v1": [...], "v2": [...]}."""
+        try:
+            v1_events = self.get_change_events(agent_id, v1)
+            v2_events = self.get_change_events(agent_id, v2)
+            return {"v1": v1_events, "v2": v2_events}
+        except Exception as e:
+            logger.debug(f"SQLite get_change_events_for_versions failed: {e}")
+            return {"v1": [], "v2": []}

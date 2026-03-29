@@ -46,7 +46,7 @@ class TestVerdictEngine(unittest.TestCase):
 
     def test_monitor_verdict_minor_drift(self) -> None:
         """Drift score 0.10–0.20 → MONITOR verdict."""
-        report = _make_report(drift_score=0.15, decision_drift=0.12)
+        report = _make_report(drift_score=0.16, decision_drift=0.12)
         result = compute_verdict(report)
 
         self.assertEqual(result.verdict, Verdict.MONITOR)

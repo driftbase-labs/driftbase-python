@@ -124,7 +124,7 @@ def _generate_next_steps(
         baseline_ref = baseline_label or report.baseline_fingerprint_id
         current_ref = current_label or report.current_fingerprint_id
         steps.append(
-            f"Run 'driftbase report {baseline_ref} {current_ref} --format html' for full analysis"
+            f"Run 'driftbase diagnose {baseline_ref} {current_ref}' for detailed root cause analysis"
         )
 
     # If we generated no specific steps, add generic review step
@@ -144,16 +144,12 @@ def compute_verdict(
     current_label: str = "",
 ) -> VerdictResult:
     """
-    Compute shipping verdict from drift report.
+    Compute shipping verdict from drift report using dynamic thresholds.
 
-    Decision logic:
-    - BLOCK: drift_score > 0.40 OR decision_drift > 0.40
-    - REVIEW: drift_score > 0.20 OR decision_drift > 0.25
-    - MONITOR: drift_score > 0.10
-    - SHIP: drift_score <= 0.10
+    Thresholds come from report.composite_thresholds (calibrated) or defaults.
 
     Args:
-        report: DriftReport with computed metrics
+        report: DriftReport with computed metrics and calibrated thresholds
         baseline_tools: Tool usage distribution for baseline (for next steps)
         current_tools: Tool usage distribution for current (for next steps)
         baseline_n: Number of baseline runs (for context)
@@ -167,8 +163,19 @@ def compute_verdict(
     score = report.drift_score
     highest_dim, highest_score = _get_highest_dimension(report)
 
+    # Use calibrated thresholds or defaults
+    thresholds = report.composite_thresholds or {
+        "MONITOR": 0.15,
+        "REVIEW": 0.28,
+        "BLOCK": 0.42,
+    }
+
+    monitor_threshold = thresholds.get("MONITOR", 0.15)
+    review_threshold = thresholds.get("REVIEW", 0.28)
+    block_threshold = thresholds.get("BLOCK", 0.42)
+
     # BLOCK - major divergence
-    if score > 0.40 or report.decision_drift > 0.40:
+    if score > block_threshold or report.decision_drift > 0.40:
         return VerdictResult(
             verdict=Verdict.BLOCK,
             title="DO NOT SHIP",
@@ -189,7 +196,7 @@ def compute_verdict(
         )
 
     # REVIEW - moderate drift requiring review
-    if score > 0.20 or report.decision_drift > 0.25:
+    if score > review_threshold or report.decision_drift > 0.25:
         dimension_context = ""
         if report.decision_drift > 0.25:
             if report.escalation_rate_delta > 0.08:
@@ -230,7 +237,7 @@ def compute_verdict(
         )
 
     # MONITOR - minor drift, ship with awareness
-    if score > 0.10:
+    if score > monitor_threshold:
         return VerdictResult(
             verdict=Verdict.MONITOR,
             title="SHIP WITH MONITORING",

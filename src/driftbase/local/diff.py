@@ -10,6 +10,21 @@ if TYPE_CHECKING:
     from driftbase.local.local_store import BehavioralFingerprint, DriftReport
 
 
+def _extract_tool_names(runs: list[dict[str, Any]]) -> list[str]:
+    """Extract unique tool names from runs for use case inference."""
+    tool_names = set()
+    for run in runs:
+        try:
+            tool_seq = run.get("tool_sequence", "[]")
+            if isinstance(tool_seq, str):
+                tools = json.loads(tool_seq)
+                if isinstance(tools, list):
+                    tool_names.update(str(t) for t in tools if t)
+        except Exception:
+            continue
+    return list(tool_names)
+
+
 def _jensen_shannon_divergence(p: dict[str, float], q: dict[str, float]) -> float:
     """Compute Jensen-Shannon divergence between two probability distributions.
 
@@ -197,6 +212,7 @@ def compute_drift(
     current: "BehavioralFingerprint",
     baseline_runs: list[dict[str, Any]] | None = None,
     current_runs: list[dict[str, Any]] | None = None,
+    sensitivity: str | None = None,
 ) -> "DriftReport":
     """Compute a drift report between two behavioral fingerprints.
 
@@ -221,8 +237,48 @@ def compute_drift(
             "Install with: pip install 'driftbase[analyze]'"
         )
 
+    from driftbase.config import get_settings
+    from driftbase.local.baseline_calibrator import calibrate
     from driftbase.local.fingerprinter import build_fingerprint_from_runs
     from driftbase.local.local_store import DriftReport, run_dict_to_agent_run
+    from driftbase.local.use_case_inference import infer_use_case
+
+    # Calibration: infer use case and derive weights/thresholds
+    tool_names = []
+    if baseline_runs and current_runs:
+        tool_names = _extract_tool_names(baseline_runs + current_runs)
+
+    inference_result = infer_use_case(tool_names)
+
+    baseline_version = baseline.deployment_version or "unknown"
+    current_version = current.deployment_version or "unknown"
+
+    settings = get_settings()
+    effective_sensitivity = sensitivity or settings.DRIFTBASE_SENSITIVITY
+
+    # Detect semantic data availability
+    base_sem_check = json.loads(
+        getattr(baseline, "semantic_cluster_distribution", "{}") or "{}"
+    )
+    curr_sem_check = json.loads(
+        getattr(current, "semantic_cluster_distribution", "{}") or "{}"
+    )
+    semantic_available = bool(base_sem_check and curr_sem_check)
+
+    # Detect transition matrix availability
+    # TODO: Check backend for transition matrix data when available
+    transitions_available = False
+
+    calibration = calibrate(
+        baseline_version=baseline_version,
+        eval_version=current_version,
+        inferred_use_case=inference_result["use_case"],
+        sensitivity=effective_sensitivity,
+        semantic_available=semantic_available,
+        transitions_available=transitions_available,
+    )
+
+    calibrated_weights = calibration.calibrated_weights
 
     base_dist = json.loads(baseline.tool_sequence_distribution)
     curr_dist = json.loads(current.tool_sequence_distribution)
@@ -294,29 +350,47 @@ def compute_drift(
     retry_drift = min(1.0, retry_delta * 2.0)
     sigma_retry = _sigmoid_contribution(retry_delta, k=4.0, c=0.2)
 
-    # Rebalanced weights to include new dimensions (each new dimension max 0.08)
-    w_jsd = 0.40  # reduced from 0.55
-    w_latency = 0.12  # reduced from 0.15
-    w_errors = 0.12  # reduced from 0.15
-    w_semantic = 0.08  # reduced from 0.10
-    w_output = 0.04  # reduced from 0.05
-    w_verbosity = 0.06  # new
-    w_loop = 0.06  # new
-    w_out_len = 0.04  # new
-    w_tool_seq = 0.04  # new (already covered by w_jsd, so small weight)
-    w_retry = 0.04  # new
+    # Planning latency drift: time to first tool call (thinking time before action)
+    baseline_planning = getattr(baseline, "avg_time_to_first_tool_ms", 0.0)
+    current_planning = getattr(current, "avg_time_to_first_tool_ms", 0.0)
+    planning_delta = abs(current_planning - baseline_planning) / max(
+        baseline_planning, 1.0
+    )
+    planning_latency_drift = min(1.0, planning_delta)
+    sigma_planning = _sigmoid_contribution(planning_delta, k=2.0, c=0.5)
+
+    # Tool sequence transitions drift: transitions between different tool pairs
+    # TODO: Compute from transition matrix when available
+    # For now, use decision_drift as proxy (similar to tool_sequence_drift)
+    tool_sequence_transitions_drift = decision_drift
+
+    # Use calibrated weights (fallback to defaults if missing)
+    w_jsd = calibrated_weights.get("decision_drift", 0.38)
+    w_latency = calibrated_weights.get("latency", 0.12)
+    w_errors = calibrated_weights.get("error_rate", 0.12)
+    w_semantic = calibrated_weights.get("semantic_drift", 0.08)
+    w_tool_dist = calibrated_weights.get("tool_distribution", 0.08)
+    w_verbosity = calibrated_weights.get("verbosity_ratio", 0.06)
+    w_loop = calibrated_weights.get("loop_depth", 0.06)
+    w_out_len = calibrated_weights.get("output_length", 0.04)
+    w_tool_seq = calibrated_weights.get("tool_sequence", 0.04)
+    w_retry = calibrated_weights.get("retry_rate", 0.04)
+    w_planning = calibrated_weights.get("time_to_first_tool", 0.02)
+    w_tool_transitions = calibrated_weights.get("tool_sequence_transitions", 0.0)
 
     drift_score = (
         w_jsd * decision_drift
         + w_latency * sigma_latency
         + w_errors * sigma_errors
         + w_semantic * sigma_semantic
-        + w_output * sigma_output
+        + w_tool_dist * decision_drift  # tool_distribution uses decision_drift as proxy
         + w_verbosity * verbosity_drift
         + w_loop * sigma_loop
         + w_out_len * sigma_out_len
         + w_tool_seq * tool_sequence_drift
         + w_retry * sigma_retry
+        + w_planning * sigma_planning
+        + w_tool_transitions * tool_sequence_transitions_drift
     )
     drift_score = min(1.0, max(0.0, drift_score))
     if decision_drift > 0.30:
@@ -356,6 +430,8 @@ def compute_drift(
         output_length_drift=output_length_drift,
         tool_sequence_drift=tool_sequence_drift,
         retry_drift=retry_drift,
+        planning_latency_drift=planning_latency_drift,
+        tool_sequence_transitions_drift=tool_sequence_transitions_drift,
         # Context values for new dimensions
         baseline_avg_verbosity_ratio=baseline_verbosity,
         current_avg_verbosity_ratio=current_verbosity,
@@ -365,6 +441,15 @@ def compute_drift(
         current_avg_output_length=current_out_len,
         baseline_avg_retry_count=baseline_retry,
         current_avg_retry_count=current_retry,
+        baseline_avg_time_to_first_tool_ms=baseline_planning,
+        current_avg_time_to_first_tool_ms=current_planning,
+        # Calibration metadata
+        inferred_use_case=inference_result["use_case"],
+        use_case_confidence=inference_result["confidence"],
+        calibration_method=calibration.calibration_method,
+        calibrated_weights=calibration.calibrated_weights,
+        composite_thresholds=calibration.composite_thresholds,
+        baseline_n=calibration.baseline_n,
     )
 
     # Bootstrap 95% CI when run lists are provided

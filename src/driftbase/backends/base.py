@@ -51,3 +51,53 @@ class StorageBackend(ABC):
     def get_all_runs(self) -> list[dict[str, Any]]:
         """Return all runs for sync to dashboard (e.g. driftbase push). Default: get_runs(limit=500_000)."""
         return self.get_runs(deployment_version=None, environment=None, limit=500_000)
+
+    def write_budget_breach(self, breach: dict[str, Any]) -> None:
+        """Write a budget breach record. Must not raise; log and swallow errors."""
+        raise NotImplementedError(
+            "write_budget_breach not implemented for this backend"
+        )
+
+    def get_budget_breaches(
+        self, agent_id: str | None = None, version: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return budget breaches, optionally filtered by agent_id and version."""
+        raise NotImplementedError(
+            "get_budget_breaches not implemented for this backend"
+        )
+
+    def write_budget_config(
+        self, agent_id: str, version: str, config: dict[str, Any], source: str
+    ) -> None:
+        """Write a budget config. Must not raise; log and swallow errors."""
+        raise NotImplementedError(
+            "write_budget_config not implemented for this backend"
+        )
+
+    def get_budget_config(self, agent_id: str, version: str) -> dict[str, Any] | None:
+        """Return budget config for agent_id + version, or None if not found."""
+        raise NotImplementedError("get_budget_config not implemented for this backend")
+
+    def delete_budget_breaches(
+        self, agent_id: str | None = None, version: str | None = None
+    ) -> int:
+        """Delete budget breaches, optionally filtered. Returns number deleted."""
+        raise NotImplementedError(
+            "delete_budget_breaches not implemented for this backend"
+        )
+
+    def write_change_event(self, event: dict[str, Any]) -> None:
+        """Write a change event. On UNIQUE conflict, log warning and do not overwrite."""
+        raise NotImplementedError("write_change_event not implemented for this backend")
+
+    def get_change_events(self, agent_id: str, version: str) -> list[dict[str, Any]]:
+        """Return change events for agent_id + version."""
+        raise NotImplementedError("get_change_events not implemented for this backend")
+
+    def get_change_events_for_versions(
+        self, agent_id: str, v1: str, v2: str
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return change events for two versions. Returns {"v1": [...], "v2": [...]}."""
+        raise NotImplementedError(
+            "get_change_events_for_versions not implemented for this backend"
+        )

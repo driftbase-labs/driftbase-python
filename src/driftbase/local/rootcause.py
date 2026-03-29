@@ -5,15 +5,20 @@ Provides:
 - Tool call frequency diff (absolute and percentage change per tool)
 - Sequence shift detection (Markov-style transitions; top N that changed most)
 - Human-readable explanation string when drift exceeds threshold.
+- Root cause pinpointing via change event correlation
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 from driftbase.local.local_store import BehavioralFingerprint, DriftReport
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_tool_sequence(seq: Any) -> list[str]:
@@ -188,3 +193,329 @@ def build_explanation(
         return f"Drift score {report.drift_score:.2f} exceeds threshold {threshold:.2f}. Review dimension breakdown and tool changes."
 
     return "Drift driven by " + " and ".join(parts) + "."
+
+
+# ============================================================================
+# ROOT CAUSE PINPOINTING VIA CHANGE EVENT CORRELATION
+# ============================================================================
+
+
+@dataclass
+class RootCauseReport:
+    """Root cause analysis correlating drift with recorded change events."""
+
+    has_changes: bool
+    winner: str | None  # change type, or None
+    winner_confidence: str | None  # HIGH | MEDIUM | LOW | UNLIKELY | None
+    winner_score: float | None  # 0.0 - 1.0
+    winner_previous: str | None  # v1 value
+    winner_current: str | None  # v2 value
+    affected_dimensions: list[str]  # drifted dims that correlate with winner
+    ruled_out: list[str]  # change types identical between versions
+    suggested_action: str | None
+    all_scores: dict[str, float]  # all change type correlation scores
+
+
+@dataclass
+class RollbackSuggestion:
+    """Rollback suggestion when a clear regression is detected."""
+
+    suggested_version: str
+    suggested_version_verdict: str  # SHIP | MONITOR
+    suggested_version_runs: int
+    reason: str  # plain-English one-liner
+
+
+# Correlation matrix: which dimensions correlate with which change types
+DIMENSION_CORRELATIONS = {
+    "model_version": {
+        "decision_drift",
+        "error_drift",
+        "tool_sequence_drift",
+        "semantic_drift",
+        "verbosity_drift",
+        "output_length_drift",
+        "error_rate",
+    },
+    "prompt_hash": {
+        "decision_drift",
+        "semantic_drift",
+        "verbosity_drift",
+        "output_length_drift",
+        "tool_sequence_drift",
+    },
+    "rag_snapshot": {
+        "semantic_drift",
+        "output_length_drift",
+        "tool_sequence_drift",
+    },
+    "tool_version": {
+        "error_drift",
+        "tool_sequence_drift",
+        "latency_drift",
+        "retry_drift",
+        "error_rate",
+    },
+}
+
+
+def _get_suggested_action(
+    change_type: str, v1_value: str | None, v2_value: str | None
+) -> str:
+    """Map change type to plain-English suggested action."""
+    if change_type == "model_version":
+        if v1_value and v2_value:
+            return (
+                f"Pin model version explicitly in your API call to isolate whether this "
+                f'is model-induced. Compare: model="{v1_value}" vs model="{v2_value}"'
+            )
+        return "Pin model version explicitly in your API call to isolate model-induced drift"
+
+    if change_type == "prompt_hash":
+        return (
+            "Review the system prompt diff between versions. Even small wording "
+            "changes can shift decision distributions significantly."
+        )
+
+    if change_type == "rag_snapshot":
+        return (
+            "Compare the document sets in each RAG snapshot. New or removed documents "
+            "directly affect retrieval behavior and output content."
+        )
+
+    if change_type == "tool_version":
+        return (
+            "Check the changelog for the tool between the two versions. Tool "
+            "behavior changes are a common source of sequence and error drift."
+        )
+
+    if change_type.startswith("custom"):
+        return (
+            f"Review the recorded change ({change_type}={v2_value}) and assess "
+            "whether it could affect agent decision logic."
+        )
+
+    return "Review the recorded change and assess its impact on agent behavior."
+
+
+def correlate_drift_with_changes(
+    drift_report: DriftReport,
+    change_events: dict[str, list[dict[str, Any]]],
+    drifted_dimensions: list[str],
+) -> RootCauseReport:
+    """
+    Correlate detected drift with recorded change events.
+
+    Args:
+        drift_report: Computed drift report
+        change_events: {"v1": list[ChangeEvent], "v2": list[ChangeEvent]}
+        drifted_dimensions: Dimensions with score above MONITOR threshold
+
+    Returns:
+        RootCauseReport with correlation analysis
+
+    Never raises - returns empty report on any error.
+    """
+    try:
+        v1_events = change_events.get("v1", [])
+        v2_events = change_events.get("v2", [])
+
+        # If no change events for either version, return empty report
+        if not v1_events and not v2_events:
+            return RootCauseReport(
+                has_changes=False,
+                winner=None,
+                winner_confidence=None,
+                winner_score=None,
+                winner_previous=None,
+                winner_current=None,
+                affected_dimensions=[],
+                ruled_out=[],
+                suggested_action="Record change events at deploy time using @track(changes={...}) or "
+                "driftbase changes record to enable root cause analysis.",
+                all_scores={},
+            )
+
+        # Build maps of change_type -> current value for each version
+        v1_map = {e["change_type"]: e["current"] for e in v1_events}
+        v2_map = {e["change_type"]: e["current"] for e in v2_events}
+
+        # Identify which change types differ between v1 and v2
+        all_change_types = set(v1_map.keys()) | set(v2_map.keys())
+        changed_types = []
+        ruled_out = []
+
+        for change_type in all_change_types:
+            v1_val = v1_map.get(change_type)
+            v2_val = v2_map.get(change_type)
+
+            if v1_val != v2_val:
+                changed_types.append((change_type, v1_val, v2_val))
+            else:
+                ruled_out.append(change_type)
+
+        # If no changes between versions, return empty report
+        if not changed_types:
+            return RootCauseReport(
+                has_changes=True,
+                winner=None,
+                winner_confidence="UNLIKELY",
+                winner_score=0.0,
+                winner_previous=None,
+                winner_current=None,
+                affected_dimensions=[],
+                ruled_out=list(all_change_types),
+                suggested_action="No changes detected between versions despite having recorded change events.",
+                all_scores={},
+            )
+
+        # Compute correlation score for each changed type
+        scores = {}
+        for change_type, _v1_val, _v2_val in changed_types:
+            # Get correlated dimensions for this change type
+            correlated_dims = DIMENSION_CORRELATIONS.get(change_type)
+
+            # Custom changes correlate with all dimensions equally
+            if correlated_dims is None:
+                correlated_dims = set(drifted_dimensions)
+
+            # Count how many drifted dimensions correlate with this change
+            matching_dims = [d for d in drifted_dimensions if d in correlated_dims]
+            if drifted_dimensions:
+                score = len(matching_dims) / len(drifted_dimensions)
+            else:
+                score = 0.0
+
+            scores[change_type] = score
+
+        # Find winner (highest score)
+        if not scores:
+            return RootCauseReport(
+                has_changes=True,
+                winner=None,
+                winner_confidence="UNLIKELY",
+                winner_score=0.0,
+                winner_previous=None,
+                winner_current=None,
+                affected_dimensions=[],
+                ruled_out=ruled_out,
+                suggested_action="Changes recorded but no correlation with drifted dimensions.",
+                all_scores={},
+            )
+
+        winner_type = max(scores.keys(), key=lambda k: scores[k])
+        winner_score = scores[winner_type]
+
+        # Find winner values
+        winner_v1 = None
+        winner_v2 = None
+        for change_type, v1_val, v2_val in changed_types:
+            if change_type == winner_type:
+                winner_v1 = v1_val
+                winner_v2 = v2_val
+                break
+
+        # Determine confidence
+        if winner_score >= 0.8:
+            confidence = "HIGH"
+        elif winner_score >= 0.5:
+            confidence = "MEDIUM"
+        elif winner_score >= 0.2:
+            confidence = "LOW"
+        else:
+            confidence = "UNLIKELY"
+
+        # Get affected dimensions
+        correlated_dims = DIMENSION_CORRELATIONS.get(winner_type)
+        if correlated_dims is None:
+            correlated_dims = set(drifted_dimensions)
+        affected_dims = [d for d in drifted_dimensions if d in correlated_dims]
+
+        # Get suggested action
+        suggested_action = _get_suggested_action(winner_type, winner_v1, winner_v2)
+
+        return RootCauseReport(
+            has_changes=True,
+            winner=winner_type,
+            winner_confidence=confidence,
+            winner_score=winner_score,
+            winner_previous=winner_v1,
+            winner_current=winner_v2,
+            affected_dimensions=affected_dims,
+            ruled_out=ruled_out,
+            suggested_action=suggested_action,
+            all_scores=scores,
+        )
+
+    except Exception as e:
+        logger.error(f"Root cause correlation failed: {e}")
+        return RootCauseReport(
+            has_changes=False,
+            winner=None,
+            winner_confidence=None,
+            winner_score=None,
+            winner_previous=None,
+            winner_current=None,
+            affected_dimensions=[],
+            ruled_out=[],
+            suggested_action=None,
+            all_scores={},
+        )
+
+
+def get_rollback_suggestion(
+    agent_id: str,
+    eval_version: str,
+    current_verdict: str,
+    baseline_version: str | None = None,
+    baseline_run_count: int = 0,
+) -> RollbackSuggestion | None:
+    """
+    Returns RollbackSuggestion if a clear rollback target exists.
+    Returns None if conditions are not met.
+    Never raises.
+
+    The simplest and most practical approach: if the current version has BLOCK/REVIEW,
+    suggest rolling back to the baseline version used in the comparison if it has >= 30 runs.
+
+    Args:
+        agent_id: Agent identifier
+        eval_version: Current version being evaluated
+        current_verdict: Verdict string (SHIP/MONITOR/REVIEW/BLOCK)
+        baseline_version: The baseline version used in the comparison
+        baseline_run_count: Number of runs for the baseline version
+
+    Returns:
+        RollbackSuggestion if clear rollback target exists, None otherwise
+    """
+    try:
+        # Only suggest rollback for BLOCK or REVIEW verdicts
+        if current_verdict not in ("BLOCK", "REVIEW", "block", "review"):
+            return None
+
+        # Must have a baseline version to roll back to
+        if not baseline_version:
+            return None
+
+        # Baseline must have sufficient data
+        if baseline_run_count < 30:
+            return None
+
+        # Don't suggest rolling back to the same version
+        if baseline_version == eval_version:
+            return None
+
+        # The baseline is implicitly stable because we're comparing against it
+        # If the current version is BLOCK/REVIEW and baseline exists with >= 30 runs,
+        # baseline is the natural rollback target
+        reason = f"{baseline_version} was last stable (SHIP) with {baseline_run_count} runs recorded"
+        return RollbackSuggestion(
+            suggested_version=baseline_version,
+            suggested_version_verdict="SHIP",  # Assume stable
+            suggested_version_runs=baseline_run_count,
+            reason=reason,
+        )
+
+    except Exception as e:
+        logger.error(f"Rollback suggestion failed: {e}")
+        return None

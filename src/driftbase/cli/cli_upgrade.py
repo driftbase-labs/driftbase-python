@@ -50,7 +50,7 @@ def cmd_upgrade(ctx: click.Context, check_only: bool) -> None:
     except Exception:
         current_version = "unknown"
 
-    console.print(f"Current version: [cyan]{current_version}[/]")
+    console.print(f"Current version: #8B5CF6]{current_version}[/]")
 
     if check_only:
         # Check PyPI for latest version
@@ -61,23 +61,23 @@ def cmd_upgrade(ctx: click.Context, check_only: bool) -> None:
             if response.status_code == 200:
                 data = response.json()
                 latest_version = data["info"]["version"]
-                console.print(f"Latest version:  [cyan]{latest_version}[/]")
+                console.print(f"Latest version:  #8B5CF6]{latest_version}[/]")
 
                 if current_version != latest_version and current_version != "unknown":
                     console.print(
-                        f"\n[yellow]⚠[/] Update available: {current_version} → {latest_version}"
+                        f"\n#FFA94D]⚠[/] Update available: {current_version} → {latest_version}"
                     )
                     console.print(
-                        "Run [cyan]driftbase upgrade[/] to install the latest version"
+                        "Run #8B5CF6]driftbase upgrade[/] to install the latest version"
                     )
                 else:
-                    console.print("\n[green]✓[/] You are on the latest version")
+                    console.print("\n#4ADE80]✓[/] You are on the latest version")
             else:
                 console.print(
-                    f"[yellow]⚠[/] Could not check for updates (status {response.status_code})"
+                    f"#FFA94D]⚠[/] Could not check for updates (status {response.status_code})"
                 )
         except Exception as e:
-            console.print(f"[yellow]⚠[/] Could not check for updates: {e}")
+            console.print(f"#FFA94D]⚠[/] Could not check for updates: {e}")
         return
 
     # Perform upgrade
@@ -104,7 +104,7 @@ def cmd_upgrade(ctx: click.Context, check_only: bool) -> None:
                     metadata._cache.clear()
                 new_version = metadata.version("driftbase")
                 console.print(
-                    f"\n[green]✓[/] Successfully upgraded driftbase to version [cyan]{new_version}[/]"
+                    f"\n#4ADE80]✓[/] Successfully upgraded driftbase to version #8B5CF6]{new_version}[/]"
                 )
 
                 if new_version != current_version:
@@ -114,16 +114,16 @@ def cmd_upgrade(ctx: click.Context, check_only: bool) -> None:
                 else:
                     console.print("[dim]Already on the latest version[/]")
             except Exception:
-                console.print("\n[green]✓[/] Successfully upgraded driftbase")
+                console.print("\n#4ADE80]✓[/] Successfully upgraded driftbase")
         else:
-            console.print("\n[red]✗[/] Upgrade failed")
+            console.print("\n#FF6B6B]✗[/] Upgrade failed")
             if result.stderr:
-                console.print(f"[red]{result.stderr}[/]")
+                console.print(f"#FF6B6B]{result.stderr}[/]")
             ctx.exit(1)
 
     except Exception as e:
-        console.print(f"\n[red]✗[/] Upgrade failed: {e}[/]")
+        console.print(f"\n#FF6B6B]✗[/] Upgrade failed: {e}[/]")
         console.print(
-            "\n[dim]You can manually upgrade with:[/] [cyan]pip install --upgrade driftbase[/]"
+            "\n[dim]You can manually upgrade with:[/] #8B5CF6]pip install --upgrade driftbase[/]"
         )
         ctx.exit(1)

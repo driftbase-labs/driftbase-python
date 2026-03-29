@@ -108,7 +108,7 @@ def bookmark_save(ctx: click.Context, name: str, command: tuple[str, ...]):
 
     # Check if bookmark exists
     if name in bookmarks:
-        console.print(f"[yellow]⚠[/] Bookmark '{name}' already exists")
+        console.print(f"#FFA94D]⚠[/] Bookmark '{name}' already exists")
         console.print(f"  Current: {bookmarks[name]}")
         console.print(f"  New:     {command_str}")
 
@@ -120,9 +120,9 @@ def bookmark_save(ctx: click.Context, name: str, command: tuple[str, ...]):
     bookmarks[name] = command_str
     _save_bookmarks(bookmarks)
 
-    console.print(f"[green]✓[/] Bookmark saved: [cyan]{name}[/]")
+    console.print(f"#4ADE80]✓[/] Bookmark saved: #8B5CF6]{name}[/]")
     console.print(f"  Command: [dim]{command_str}[/]")
-    console.print(f"\nRun with: [cyan]driftbase bookmark run {name}[/]")
+    console.print(f"\nRun with: #8B5CF6]driftbase bookmark run {name}[/]")
 
     ctx.exit(0)
 
@@ -148,7 +148,7 @@ def bookmark_run(ctx: click.Context, name: str):
     bookmarks = _load_bookmarks()
 
     if name not in bookmarks:
-        console.print(f"[red]✗[/] Bookmark '{name}' not found")
+        console.print(f"#FF6B6B]✗[/] Bookmark '{name}' not found")
         console.print("\nAvailable bookmarks:")
         if bookmarks:
             for bookmark_name in sorted(bookmarks.keys()):
@@ -158,7 +158,7 @@ def bookmark_run(ctx: click.Context, name: str):
         ctx.exit(1)
 
     command_str = bookmarks[name]
-    console.print(f"[dim]Running bookmark:[/] [cyan]{name}[/]")
+    console.print(f"[dim]Running bookmark:[/] #8B5CF6]{name}[/]")
     console.print(f"[dim]Command:[/] driftbase {command_str}\n")
 
     # Execute the bookmark command
@@ -169,7 +169,7 @@ def bookmark_run(ctx: click.Context, name: str):
         )
         ctx.exit(result.returncode)
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to run bookmark: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to run bookmark: {e}")
         ctx.exit(1)
 
 
@@ -192,16 +192,16 @@ def bookmark_list(ctx: click.Context):
     bookmarks = _load_bookmarks()
 
     if not bookmarks:
-        console.print("[yellow]No bookmarks saved yet[/]")
+        console.print("#FFA94D]No bookmarks saved yet[/]")
         console.print("\nSave a bookmark with:")
-        console.print('  [cyan]driftbase bookmark save <name> "<command>"[/]')
+        console.print('  #8B5CF6]driftbase bookmark save <name> "<command>"[/]')
         ctx.exit(0)
 
     console.print(f"\n[bold cyan]📑 Saved Bookmarks[/] ({len(bookmarks)})\n")
 
     if Table:
         table = Table(show_header=True, header_style="bold")
-        table.add_column("Name", style="cyan")
+        table.add_column("Name", style="#8B5CF6")
         table.add_column("Command", style="dim")
 
         for name, command in sorted(bookmarks.items()):
@@ -212,7 +212,7 @@ def bookmark_list(ctx: click.Context):
         for name, command in sorted(bookmarks.items()):
             print(f"{name:20s} : {command}")
 
-    console.print("\n[dim]Run with:[/] [cyan]driftbase bookmark run <name>[/]\n")
+    console.print("\n[dim]Run with:[/] #8B5CF6]driftbase bookmark run <name>[/]\n")
     ctx.exit(0)
 
 
@@ -237,13 +237,13 @@ def bookmark_delete(ctx: click.Context, name: str, yes: bool):
     bookmarks = _load_bookmarks()
 
     if name not in bookmarks:
-        console.print(f"[red]✗[/] Bookmark '{name}' not found")
+        console.print(f"#FF6B6B]✗[/] Bookmark '{name}' not found")
         ctx.exit(1)
 
     command = bookmarks[name]
 
     if not yes:
-        console.print(f"Delete bookmark: [cyan]{name}[/]")
+        console.print(f"Delete bookmark: #8B5CF6]{name}[/]")
         console.print(f"  Command: [dim]{command}[/]")
         if not click.confirm("Are you sure?", default=False):
             console.print("[dim]Cancelled[/]")
@@ -252,5 +252,5 @@ def bookmark_delete(ctx: click.Context, name: str, yes: bool):
     del bookmarks[name]
     _save_bookmarks(bookmarks)
 
-    console.print(f"[green]✓[/] Bookmark deleted: [cyan]{name}[/]")
+    console.print(f"#4ADE80]✓[/] Bookmark deleted: #8B5CF6]{name}[/]")
     ctx.exit(0)

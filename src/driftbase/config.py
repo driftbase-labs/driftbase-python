@@ -370,6 +370,22 @@ class Settings:
         """Default environment for runs. Default: production."""
         return self._get("DRIFTBASE_ENVIRONMENT", "production")
 
+    @property
+    def DRIFTBASE_SENSITIVITY(self) -> str:
+        """Drift detection sensitivity: strict | standard | relaxed. Default: standard."""
+        raw = self._get("DRIFTBASE_SENSITIVITY", "standard")
+        if raw.lower() not in ("strict", "standard", "relaxed"):
+            logger.warning(
+                f"Invalid DRIFTBASE_SENSITIVITY='{raw}'. Must be 'strict', 'standard', or 'relaxed'. Using 'standard'."
+            )
+            return "standard"
+        return raw.lower()
+
+    @property
+    def DRIFTBASE_BUDGET_WINDOW(self) -> int:
+        """Budget rolling window size (number of runs). Default: 10, min: 5."""
+        return self._get_int("DRIFTBASE_BUDGET_WINDOW", 10, min_val=5)
+
 
 _settings: Settings | None = None
 
@@ -398,6 +414,8 @@ KNOWN_CONFIG_KEYS = {
     "DRIFTBASE_WATCH_WEBHOOK_URL": str,
     "DRIFTBASE_ENVIRONMENT": str,
     "DRIFTBASE_GIT_TAGGING": bool,
+    "DRIFTBASE_SENSITIVITY": str,
+    "DRIFTBASE_BUDGET_WINDOW": int,
 }
 
 

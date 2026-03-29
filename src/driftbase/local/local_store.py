@@ -46,7 +46,6 @@ class AgentRun:
     raw_output: str = ""
     # New behavioral metrics
     loop_count: int = 0
-    tool_call_sequence: str = "[]"  # JSON serialized list
     time_to_first_tool_ms: int = 0
     verbosity_ratio: float = 0.0
     prompt_tokens: int = 0
@@ -120,6 +119,8 @@ class DriftReport:
     output_length_drift: float = 0.0
     tool_sequence_drift: float = 0.0
     retry_drift: float = 0.0
+    planning_latency_drift: float = 0.0
+    tool_sequence_transitions_drift: float = 0.0
     # Context values for new dimensions
     baseline_avg_verbosity_ratio: float = 0.0
     current_avg_verbosity_ratio: float = 0.0
@@ -129,6 +130,21 @@ class DriftReport:
     current_avg_output_length: float = 0.0
     baseline_avg_retry_count: float = 0.0
     current_avg_retry_count: float = 0.0
+    baseline_avg_time_to_first_tool_ms: float = 0.0
+    current_avg_time_to_first_tool_ms: float = 0.0
+    # Calibration metadata
+    inferred_use_case: str = "GENERAL"
+    use_case_confidence: float = 0.0
+    calibration_method: str = "default"
+    calibrated_weights: dict[str, float] | None = None
+    composite_thresholds: dict[str, float] | None = None
+    baseline_n: int = 0
+    # Root cause analysis
+    root_cause: Any = None  # RootCauseReport | None (Any to avoid circular import)
+    # Rollback suggestion
+    rollback_suggestion: Any = (
+        None  # RollbackSuggestion | None (Any to avoid circular import)
+    )
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:
@@ -164,7 +180,6 @@ def run_dict_to_agent_run(d: dict[str, Any]) -> AgentRun:
         raw_output=str(d.get("raw_output", "") or ""),
         # New behavioral metrics with safe defaults
         loop_count=int(d.get("loop_count", 0)),
-        tool_call_sequence=str(d.get("tool_call_sequence", "[]")),
         time_to_first_tool_ms=int(d.get("time_to_first_tool_ms", 0)),
         verbosity_ratio=float(d.get("verbosity_ratio", 0.0)),
         prompt_tokens=int(d.get("prompt_tokens", 0)),
@@ -235,12 +250,104 @@ def _prune_if_needed() -> None:
         # Never crash the worker thread
 
 
+def _check_budgets_for_batch(batch: list[dict[str, Any]]) -> None:
+    """
+    Check budgets for all agent_id + version combinations in the batch.
+
+    This runs in the background worker thread after runs are written.
+    Must never raise - all exceptions are caught to prevent worker crashes.
+    """
+    if not batch:
+        return
+
+    try:
+        from driftbase.config import get_settings
+        from driftbase.local.budget import (
+            check_budget,
+            format_breach_warning,
+            parse_budget,
+        )
+
+        backend = get_backend()
+        settings = get_settings()
+        window = settings.DRIFTBASE_BUDGET_WINDOW
+
+        # Get unique agent_id + version pairs from batch
+        agent_versions = set()
+        for payload in batch:
+            agent_id = payload.get("session_id", "")
+            version = payload.get("deployment_version", "unknown")
+            if agent_id and version:
+                agent_versions.add((agent_id, version))
+
+        # Check budgets for each unique agent_id + version
+        for agent_id, version in agent_versions:
+            try:
+                # Load budget config from SQLite
+                budget_config_row = backend.get_budget_config(agent_id, version)
+                if not budget_config_row:
+                    continue
+
+                budget_dict = budget_config_row.get("config", {})
+                if not budget_dict:
+                    continue
+
+                budget_config = parse_budget(budget_dict)
+                if not budget_config.limits:
+                    continue
+
+                # Load last N runs for this agent_id + version
+                runs = backend.get_runs(
+                    deployment_version=version,
+                    environment=None,
+                    limit=window,
+                )
+
+                # Filter by session_id to match agent_id
+                runs = [r for r in runs if r.get("session_id") == agent_id]
+
+                if len(runs) < 5:
+                    # Need at least 5 runs before checking budgets
+                    continue
+
+                # Check budget
+                breaches = check_budget(budget_config, runs, window)
+
+                # Write breaches and log warnings
+                for breach in breaches:
+                    breach_dict = {
+                        "agent_id": breach.agent_id,
+                        "version": breach.version,
+                        "dimension": breach.dimension,
+                        "budget_key": breach.budget_key,
+                        "limit": breach.limit,
+                        "actual": breach.actual,
+                        "direction": breach.direction,
+                        "run_count": breach.run_count,
+                        "breached_at": breach.breached_at,
+                    }
+                    backend.write_budget_breach(breach_dict)
+
+                    # Log warning to console
+                    warning = format_breach_warning(breach)
+                    logger.warning(f"[driftbase] {warning}")
+
+            except Exception as e:
+                logger.debug(f"Budget check failed for {agent_id}/{version}: {e}")
+                # Never crash the worker thread
+
+    except Exception as e:
+        logger.debug(f"Budget batch check failed: {e}")
+        # Never crash the worker thread
+
+
 def _worker_loop() -> None:
     """
     Background worker loop that processes queued runs in batches.
 
     After writing each batch, increments a counter and triggers retention
     pruning once every PRUNE_EVERY_N_BATCHES to avoid excessive overhead.
+    Also checks budgets after each batch is written.
     """
     global _batch_counter
     batch: list[dict[str, Any]] = []
@@ -250,6 +357,7 @@ def _worker_loop() -> None:
             if payload is None:
                 if batch:
                     _flush_batch(batch)
+                    _check_budgets_for_batch(batch)
                     _batch_counter += 1
                     # Prune after final batch on shutdown if counter threshold reached
                     if _batch_counter >= PRUNE_EVERY_N_BATCHES:
@@ -259,6 +367,7 @@ def _worker_loop() -> None:
             batch.append(payload)
             if len(batch) >= BATCH_SIZE:
                 _flush_batch(batch)
+                _check_budgets_for_batch(batch)
                 _batch_counter += 1
                 # Check if it's time to prune (once every 100 batches)
                 if _batch_counter >= PRUNE_EVERY_N_BATCHES:
@@ -268,6 +377,7 @@ def _worker_loop() -> None:
         except queue.Empty:
             if batch:
                 _flush_batch(batch)
+                _check_budgets_for_batch(batch)
                 _batch_counter += 1
                 # Check if it's time to prune
                 if _batch_counter >= PRUNE_EVERY_N_BATCHES:

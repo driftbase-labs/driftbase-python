@@ -48,7 +48,7 @@ def cmd_push(ctx: click.Context):
     runs = backend.get_all_runs()
 
     if not runs:
-        console.print("[yellow]No local runs to sync.[/]")
+        console.print("#FFA94D]No local runs to sync.[/]")
         console.print(
             "[dim]Run your instrumented agent or 'driftbase demo', then try again.[/]"
         )

@@ -1,0 +1,722 @@
+"""
+Compare command: Batch comparisons and tournament mode for multiple versions.
+"""
+
+from __future__ import annotations
+
+import click
+
+from driftbase.backends.factory import get_backend
+
+
+def _safe_import_rich():
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        return Console, Table
+    except ImportError:
+        return None, None
+
+
+def _fingerprint_from_runs(run_dicts: list, label: str) -> object | None:
+    """Create fingerprint from run dicts."""
+    try:
+        from datetime import datetime
+        from driftbase.local.fingerprinter import build_fingerprint_from_runs
+        from driftbase.local.local_store import run_dict_to_agent_run
+
+        if not run_dicts:
+            return None
+
+        runs = [run_dict_to_agent_run(r) for r in run_dicts]
+        timestamps = [r.started_at for r in runs if r.started_at]
+        window_start = min(timestamps) if timestamps else datetime.utcnow()
+        window_end = max(timestamps) if timestamps else datetime.utcnow()
+
+        return build_fingerprint_from_runs(
+            runs, window_start, window_end, label, "production"
+        )
+    except Exception:
+        return None
+
+
+def _compute_drift_and_metrics(baseline_runs: list, current_runs: list) -> dict | None:
+    """Compute drift score and all dimension metrics between two run sets."""
+    try:
+        from driftbase.local.diff import compute_drift
+
+        if len(baseline_runs) < 2 or len(current_runs) < 2:
+            return None
+
+        baseline_fp = _fingerprint_from_runs(baseline_runs, "baseline")
+        current_fp = _fingerprint_from_runs(current_runs, "current")
+
+        if not baseline_fp or not current_fp:
+            return None
+
+        drift_report = compute_drift(
+            baseline_fp, current_fp, baseline_runs, current_runs
+        )
+
+        # Calculate key metrics
+        baseline_latency = baseline_fp.p95_latency_ms
+        current_latency = current_fp.p95_latency_ms
+        latency_change_pct = ((current_latency - baseline_latency) / max(baseline_latency, 1)) * 100
+
+        baseline_errors = baseline_fp.error_rate
+        current_errors = current_fp.error_rate
+        error_change = current_errors - baseline_errors
+
+        # Return ALL dimensions from drift report
+        return {
+            "drift_score": drift_report.drift_score,
+            "decision_drift": drift_report.decision_drift,
+            "latency_drift": drift_report.latency_drift,
+            "error_drift": drift_report.error_drift,
+            "semantic_drift": drift_report.semantic_drift,
+            "verbosity_drift": drift_report.verbosity_drift,
+            "loop_depth_drift": drift_report.loop_depth_drift,
+            "output_drift": drift_report.output_drift,
+            "output_length_drift": drift_report.output_length_drift,
+            "tool_sequence_drift": drift_report.tool_sequence_drift,
+            "retry_drift": drift_report.retry_drift,
+            "latency_ms": current_latency,
+            "latency_change_pct": latency_change_pct,
+            "error_rate": current_errors,
+            "error_change": error_change,
+            "escalation_rate": getattr(drift_report, "current_escalation_rate", 0.0),
+            "sample_count": len(current_runs),
+            "report": drift_report,  # Keep full report for detailed analysis
+        }
+    except Exception as e:
+        return None
+
+
+@click.command(name="compare")
+@click.argument("versions", nargs=-1, required=True)
+@click.option(
+    "--matrix",
+    is_flag=True,
+    help="Show comparison matrix (tournament mode).",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=1000,
+    help="Max runs per version (default 1000).",
+)
+@click.pass_context
+def cmd_compare(
+    ctx: click.Context,
+    versions: tuple[str, ...],
+    matrix: bool,
+    limit: int,
+) -> None:
+    """
+    Compare multiple versions at once (batch comparison).
+
+    \b
+    Examples:
+      driftbase compare v1.0 v1.5 v2.0           # Compare 3 versions
+      driftbase compare v1.0 v1.5 v2.0 --matrix  # Show drift matrix
+      driftbase compare $(driftbase versions --names)  # Compare all versions
+    """
+    Console, Table = _safe_import_rich()
+    console = ctx.obj.get("console") if Console else None
+
+    if not console:
+        console = type("PlainConsole", (), {"print": lambda self, x: print(x)})()
+
+    if len(versions) < 2:
+        console.print("#FF6B6B]Error:[/] Need at least 2 versions to compare")
+        ctx.exit(1)
+
+    try:
+        backend = get_backend()
+    except Exception as e:
+        console.print(f"#FF6B6B]Error:[/] {e}")
+        ctx.exit(1)
+
+    # Load runs for all versions
+    console.print(f"\n[dim]Loading runs for {len(versions)} versions...[/]\n")
+    version_runs = {}
+
+    for ver in versions:
+        runs = backend.get_runs(deployment_version=ver, limit=limit)
+        version_runs[ver] = runs
+        if not runs:
+            console.print(f"[#FFA94D]⚠[/] No runs found for {ver}")
+        else:
+            console.print(f"  ✓ {ver}: {len(runs)} runs")
+
+    # Filter to versions with data
+    version_runs = {v: r for v, r in version_runs.items() if r}
+
+    if len(version_runs) < 2:
+        console.print("\n#FF6B6B]Error:[/] Not enough versions with data")
+        ctx.exit(1)
+
+    if matrix:
+        console.print("\n[bold #8B5CF6]Version Comparison Matrix[/]\n")
+
+        versions_list = list(version_runs.keys())
+
+        # Compute all pairwise comparisons and fingerprints
+        comparisons = {}
+        fingerprints = {}
+
+        for ver in versions_list:
+            fingerprints[ver] = _fingerprint_from_runs(version_runs[ver], ver)
+
+        for baseline_ver in versions_list:
+            for current_ver in versions_list:
+                if baseline_ver != current_ver:
+                    metrics = _compute_drift_and_metrics(
+                        version_runs[baseline_ver],
+                        version_runs[current_ver],
+                    )
+                    comparisons[(baseline_ver, current_ver)] = metrics
+
+        if Table:
+            # === 1. VERSION SUMMARY (compact, all key metrics) ===
+            console.print("[bold]Version Summary[/]\n")
+
+            summary_table = Table(show_header=True, header_style="bold #8B5CF6", border_style="dim")
+            summary_table.add_column("Ver", width=8)
+            summary_table.add_column("Runs", justify="right", width=6)
+            summary_table.add_column("P95 Lat", justify="right", width=10)
+            summary_table.add_column("Errors", justify="right", width=8)
+            summary_table.add_column("Drift", justify="center", width=8)
+            summary_table.add_column("Status", width=20)
+
+            for i, ver in enumerate(versions_list):
+                fp = fingerprints[ver]
+                if not fp:
+                    continue
+
+                # Format metrics
+                latency_color = "#4ADE80" if fp.p95_latency_ms < 1000 else "#FFA94D" if fp.p95_latency_ms < 2000 else "#FF6B6B"
+                error_color = "#4ADE80" if fp.error_rate < 0.05 else "#FFA94D" if fp.error_rate < 0.10 else "#FF6B6B"
+
+                metrics_str = f"[{latency_color}]{fp.p95_latency_ms:.0f}ms[/] latency  •  [{error_color}]{fp.error_rate:.1%}[/] errors"
+
+                # Compare to previous version
+                if i == 0:
+                    vs_prev = "[dim]Baseline[/]"
+                else:
+                    prev_ver = versions_list[i-1]
+                    metrics = comparisons.get((prev_ver, ver))
+                    if metrics:
+                        drift = metrics["drift_score"]
+                        lat_change = metrics["latency_change_pct"]
+
+                        if drift < 0.10:
+                            drift_indicator = "✓"
+                            drift_color = "#4ADE80"
+                            trend = "Stable"
+                        elif drift < 0.20:
+                            drift_indicator = "△"
+                            drift_color = "#FFA94D"
+                            trend = "Moderate drift"
+                        else:
+                            drift_indicator = "⚠"
+                            drift_color = "#FF6B6B"
+                            trend = "High drift"
+
+                        lat_arrow = "↗" if lat_change > 20 else "↘" if lat_change < -20 else "→"
+                        vs_prev = f"[{drift_color}]{drift_indicator} {drift:.2f}[/] drift  •  {lat_arrow} {trend}"
+                    else:
+                        vs_prev = "[dim]—[/]"
+
+                timeline_table.add_row(ver, metrics_str, vs_prev)
+
+            console.print(timeline_table)
+            console.print()
+
+            # === 2. BEST VERSION RECOMMENDATION ===
+            # Score each version on multiple criteria
+            scores = {}
+            for ver in versions_list:
+                fp = fingerprints[ver]
+                if not fp:
+                    continue
+
+                # Lower is better for all metrics
+                latency_score = fp.p95_latency_ms
+                error_score = fp.error_rate * 10000  # Scale to similar magnitude
+                cost_score = fp.avg_output_length  # Proxy for cost
+
+                # Normalize and combine (lower is better)
+                total_score = latency_score + error_score + cost_score
+                scores[ver] = {
+                    "total": total_score,
+                    "latency": latency_score,
+                    "errors": error_score,
+                    "cost": cost_score
+                }
+
+            if scores:
+                best_ver = min(scores, key=lambda v: scores[v]["total"])
+                worst_ver = max(scores, key=lambda v: scores[v]["total"])
+
+                best_fp = fingerprints[best_ver]
+                console.print(f"[bold #4ADE80]🏆 Recommended Version: {best_ver}[/]\n")
+
+                # Find what's good about it
+                reasons = []
+                baseline_ver = versions_list[0]
+                if best_ver != baseline_ver:
+                    baseline_fp = fingerprints[baseline_ver]
+                    lat_diff = ((best_fp.p95_latency_ms - baseline_fp.p95_latency_ms) / baseline_fp.p95_latency_ms) * 100
+                    err_diff = ((best_fp.error_rate - baseline_fp.error_rate) / max(baseline_fp.error_rate, 0.001)) * 100
+
+                    if lat_diff < -10:
+                        reasons.append(f"  • {abs(lat_diff):.0f}% faster than baseline")
+                    if err_diff < -10:
+                        reasons.append(f"  • {abs(err_diff):.0f}% fewer errors than baseline")
+                    if not reasons:
+                        reasons.append(f"  • Most stable and reliable version")
+                else:
+                    reasons.append("  • Baseline version with solid performance")
+
+                console.print("[bold]Why {0}?[/]".format(best_ver))
+                for reason in reasons[:3]:
+                    console.print(reason)
+                console.print()
+
+                if worst_ver != best_ver:
+                    worst_fp = fingerprints[worst_ver]
+                    console.print(f"[bold #FF6B6B]⚠ Avoid {worst_ver}:[/]")
+                    lat_diff = ((worst_fp.p95_latency_ms - best_fp.p95_latency_ms) / best_fp.p95_latency_ms) * 100
+                    err_diff = ((worst_fp.error_rate - best_fp.error_rate) / max(best_fp.error_rate, 0.001)) * 100
+
+                    if lat_diff > 20:
+                        console.print(f"  • {lat_diff:.0f}% slower than {best_ver}")
+                    if err_diff > 50:
+                        console.print(f"  • {err_diff:.0f}% more errors")
+                    console.print()
+
+            # === 3. Show drift score matrix ===
+            console.print("[bold]Drift Matrix[/] (pairwise version differences)\n")
+
+            drift_table = Table(show_header=True, header_style="bold #8B5CF6", border_style="dim")
+            drift_table.add_column("From ↓ To →", style="", width=12)
+
+            for ver in versions_list:
+                drift_table.add_column(ver, justify="center", width=12)
+
+            for baseline_ver in versions_list:
+                row = [baseline_ver]
+                for current_ver in versions_list:
+                    if baseline_ver == current_ver:
+                        row.append("[dim]—[/]")
+                    else:
+                        metrics = comparisons.get((baseline_ver, current_ver))
+                        if metrics:
+                            drift = metrics["drift_score"]
+                            # Color code by severity with symbols
+                            if drift < 0.10:
+                                row.append(f"[#4ADE80]✓ {drift:.2f}[/]")
+                            elif drift < 0.20:
+                                row.append(f"[#FFA94D]△ {drift:.2f}[/]")
+                            else:
+                                row.append(f"[#FF6B6B]⚠ {drift:.2f}[/]")
+                        else:
+                            row.append("[dim]N/A[/]")
+
+                drift_table.add_row(*row)
+
+            console.print(drift_table)
+            console.print()
+
+            # Show detailed pairwise comparisons
+            console.print("[bold]Key Metrics Comparison[/]\n")
+
+            detail_table = Table(show_header=True, header_style="bold #8B5CF6", border_style="dim")
+            detail_table.add_column("Comparison", style="", width=22)
+            detail_table.add_column("Drift", justify="center", width=10)
+            detail_table.add_column("Latency", justify="right", width=15)
+            detail_table.add_column("Errors", justify="right", width=12)
+            detail_table.add_column("Insight", style="dim", width=40)
+
+            # Show most interesting comparisons (sorted by drift score)
+            sorted_comparisons = sorted(
+                [(k, v) for k, v in comparisons.items() if v],
+                key=lambda x: x[1]["drift_score"],
+                reverse=True
+            )
+
+            for (baseline_ver, current_ver), metrics in sorted_comparisons[:6]:
+                drift = metrics["drift_score"]
+                latency_change = metrics["latency_change_pct"]
+                error_change = metrics["error_change"]
+
+                # Drift display
+                if drift < 0.10:
+                    drift_display = f"[#4ADE80]{drift:.2f}[/]"
+                    verdict = "Stable"
+                elif drift < 0.20:
+                    drift_display = f"[#FFA94D]{drift:.2f}[/]"
+                    verdict = "Moderate"
+                else:
+                    drift_display = f"[#FF6B6B]{drift:.2f}[/]"
+                    verdict = "High"
+
+                # Latency display
+                if abs(latency_change) < 10:
+                    latency_display = f"[dim]{latency_change:+.0f}%[/]"
+                    latency_insight = ""
+                elif latency_change > 0:
+                    latency_display = f"[#FF8787]{latency_change:+.0f}%[/]"
+                    latency_insight = "slower"
+                else:
+                    latency_display = f"[#4ADE80]{latency_change:+.0f}%[/]"
+                    latency_insight = "faster"
+
+                # Error display
+                if abs(error_change) < 0.01:
+                    error_display = f"[dim]{error_change:+.1%}[/]"
+                    error_insight = ""
+                elif error_change > 0:
+                    error_display = f"[#FF8787]{error_change:+.1%}[/]"
+                    error_insight = "more errors"
+                else:
+                    error_display = f"[#4ADE80]{error_change:+.1%}[/]"
+                    error_insight = "fewer errors"
+
+                # Generate insight
+                insights = []
+                if verdict == "High":
+                    insights.append("Major behavior change")
+                if latency_insight:
+                    insights.append(latency_insight)
+                if error_insight:
+                    insights.append(error_insight)
+
+                insight_text = ", ".join(insights) if insights else "Similar behavior"
+
+                detail_table.add_row(
+                    f"{baseline_ver} → {current_ver}",
+                    drift_display,
+                    latency_display,
+                    error_display,
+                    insight_text
+                )
+
+            console.print(detail_table)
+            console.print()
+
+            # === 4. BEHAVIORAL STABILITY HEATMAP ===
+            if len(versions_list) >= 2:
+                console.print("[bold]🔥 Behavioral Stability Across Versions[/]\n")
+
+                stability_table = Table(show_header=True, header_style="bold #8B5CF6", border_style="dim")
+                stability_table.add_column("Dimension", width=20)
+                for i in range(len(versions_list) - 1):
+                    stability_table.add_column(f"{versions_list[i]} → {versions_list[i+1]}", justify="center", width=18)
+                stability_table.add_column("Trend", justify="center", width=12)
+
+                # Analyze key dimensions across version transitions
+                dimensions = [
+                    ("Latency", "latency_change_pct"),
+                    ("Errors", "error_change"),
+                    ("Drift Score", "drift_score"),
+                ]
+
+                for dim_name, metric_key in dimensions:
+                    row = [dim_name]
+                    values = []
+
+                    for i in range(len(versions_list) - 1):
+                        metrics = comparisons.get((versions_list[i], versions_list[i+1]))
+                        if metrics and metric_key in metrics:
+                            val = metrics[metric_key]
+                            values.append(val)
+
+                            # Format based on dimension
+                            if metric_key == "drift_score":
+                                if val < 0.10:
+                                    row.append(f"[#4ADE80]✓ {val:.2f}[/]")
+                                elif val < 0.20:
+                                    row.append(f"[#FFA94D]△ {val:.2f}[/]")
+                                else:
+                                    row.append(f"[#FF6B6B]⚠ {val:.2f}[/]")
+                            elif metric_key == "latency_change_pct":
+                                if abs(val) < 10:
+                                    row.append(f"[#4ADE80]→ {val:+.0f}%[/]")
+                                elif val > 0:
+                                    row.append(f"[#FF6B6B]↗ {val:+.0f}%[/]")
+                                else:
+                                    row.append(f"[#4ADE80]↘ {val:+.0f}%[/]")
+                            elif metric_key == "error_change":
+                                if abs(val) < 0.01:
+                                    row.append(f"[#4ADE80]→ {val:+.1%}[/]")
+                                elif val > 0:
+                                    row.append(f"[#FF6B6B]↗ {val:+.1%}[/]")
+                                else:
+                                    row.append(f"[#4ADE80]↘ {val:+.1%}[/]")
+                        else:
+                            row.append("[dim]—[/]")
+
+                    # Overall trend
+                    if values:
+                        if metric_key == "drift_score":
+                            trend = "↗ Volatile" if max(values) > 0.20 else "→ Stable"
+                            trend_color = "#FF6B6B" if max(values) > 0.20 else "#4ADE80"
+                        elif metric_key in ["latency_change_pct", "error_change"]:
+                            avg_val = sum(values) / len(values)
+                            if metric_key == "latency_change_pct":
+                                if avg_val > 20:
+                                    trend = "↗ Degrading"
+                                    trend_color = "#FF6B6B"
+                                elif avg_val < -20:
+                                    trend = "↘ Improving"
+                                    trend_color = "#4ADE80"
+                                else:
+                                    trend = "→ Stable"
+                                    trend_color = "#4ADE80"
+                            else:  # error_change
+                                if avg_val > 0.02:
+                                    trend = "↗ Degrading"
+                                    trend_color = "#FF6B6B"
+                                elif avg_val < -0.02:
+                                    trend = "↘ Improving"
+                                    trend_color = "#4ADE80"
+                                else:
+                                    trend = "→ Stable"
+                                    trend_color = "#4ADE80"
+                        else:
+                            trend = "→ Mixed"
+                            trend_color = "#FFA94D"
+
+                        row.append(f"[{trend_color}]{trend}[/]")
+                    else:
+                        row.append("[dim]—[/]")
+
+                    stability_table.add_row(*row)
+
+                console.print(stability_table)
+                console.print()
+
+            # === 5. COST TRAJECTORY ===
+            console.print("[bold]💰 Performance & Cost Summary[/]\n")
+
+            perf_table = Table(show_header=True, header_style="bold #8B5CF6", border_style="dim")
+            perf_table.add_column("Version", width=12)
+            perf_table.add_column("Latency (P95)", justify="right", width=16)
+            perf_table.add_column("Error Rate", justify="right", width=14)
+            perf_table.add_column("Rank", justify="center", width=10)
+            perf_table.add_column("Runs", justify="right", width=8)
+
+            # Sort by total score (best first)
+            sorted_versions = sorted(scores.keys(), key=lambda v: scores[v]["total"]) if scores else versions_list
+
+            for rank, ver in enumerate(sorted_versions, 1):
+                fp = fingerprints.get(ver)
+                if not fp:
+                    continue
+
+                latency_color = "#4ADE80" if fp.p95_latency_ms < 1000 else "#FFA94D" if fp.p95_latency_ms < 2000 else "#FF6B6B"
+                error_color = "#4ADE80" if fp.error_rate < 0.05 else "#FFA94D" if fp.error_rate < 0.10 else "#FF6B6B"
+
+                # Rank emoji
+                if rank == 1:
+                    rank_display = "[#4ADE80]🥇 Best[/]"
+                elif rank == len(sorted_versions):
+                    rank_display = "[#FF6B6B]⚠ Worst[/]"
+                else:
+                    rank_display = f"[dim]#{rank}[/]"
+
+                perf_table.add_row(
+                    ver,
+                    f"[{latency_color}]{fp.p95_latency_ms:.0f}ms[/]",
+                    f"[{error_color}]{fp.error_rate:.1%}[/]",
+                    rank_display,
+                    str(len(version_runs[ver]))
+                )
+
+            console.print(perf_table)
+            console.print()
+
+            # === 6. KEY INSIGHTS & RECOMMENDATIONS ===
+            console.print("[bold]🔍 Strategic Insights[/]\n")
+
+            insights = []
+
+            # Insight 1: Best version
+            if scores:
+                best_ver = sorted_versions[0]
+                insights.append(f"[#4ADE80]✓[/] {best_ver} is the optimal version for production")
+
+            # Insight 2: Quality trend
+            if len(versions_list) >= 3:
+                # Check if quality is degrading
+                later_half_avg = sum(scores[v]["total"] for v in sorted_versions[len(sorted_versions)//2:]) / max(1, len(sorted_versions) - len(sorted_versions)//2)
+                earlier_half_avg = sum(scores[v]["total"] for v in sorted_versions[:len(sorted_versions)//2]) / max(1, len(sorted_versions)//2)
+
+                if later_half_avg > earlier_half_avg * 1.3:
+                    insights.append(f"[#FF6B6B]⚠[/] Quality degrading: Recent versions show performance regression")
+                elif later_half_avg < earlier_half_avg * 0.8:
+                    insights.append(f"[#4ADE80]↗[/] Quality improving: Recent versions show performance gains")
+
+            # Insight 3: Specific problem versions
+            if len(sorted_versions) > 1:
+                worst_ver = sorted_versions[-1]
+                best_ver = sorted_versions[0]
+                metrics = comparisons.get((best_ver, worst_ver))
+                if metrics:
+                    if metrics["latency_change_pct"] > 100:
+                        insights.append(f"[#FF6B6B]⚠[/] {worst_ver} is {metrics['latency_change_pct']:.0f}% slower than {best_ver}")
+
+            # Print insights
+            for insight in insights:
+                console.print(f"  {insight}")
+
+            if not insights:
+                console.print("  [dim]All versions show similar performance characteristics[/]")
+
+            console.print()
+
+            # Recommendations
+            console.print("[bold]✅ Recommended Actions[/]\n")
+
+            actions = []
+            if scores:
+                best_ver = sorted_versions[0]
+                worst_ver = sorted_versions[-1]
+
+                actions.append(f"Deploy {best_ver} to production (best overall performance)")
+
+                if len(sorted_versions) > 1 and worst_ver != best_ver:
+                    actions.append(f"Investigate regressions in {worst_ver}")
+                    actions.append(f"Run: [#8B5CF6]driftbase diff {best_ver} {worst_ver}[/] for detailed analysis")
+
+                actions.append(f"Set {best_ver} as baseline: [#8B5CF6]driftbase baseline set {best_ver}[/]")
+
+            for i, action in enumerate(actions, 1):
+                console.print(f"  {i}. {action}")
+
+            console.print()
+            console.print("[dim]💡 Tip: Use 'driftbase diagnose <v1> <v2>' for root cause analysis[/]\n")
+
+    else:
+        # Sequential comparison (v1→v2, v2→v3, etc.) with rich metrics
+        console.print("\n[bold #8B5CF6]📊 Sequential Version Comparison[/]\n")
+
+        versions_list = list(version_runs.keys())
+
+        if Table:
+            table = Table(show_header=True, header_style="bold #8B5CF6", border_style="dim")
+            table.add_column("From", style="", width=10)
+            table.add_column("→", style="dim", width=3)
+            table.add_column("To", style="", width=10)
+            table.add_column("Drift", justify="center", width=10)
+            table.add_column("Latency Δ", justify="right", width=12)
+            table.add_column("Error Δ", justify="right", width=10)
+            table.add_column("Verdict", justify="center", width=12)
+            table.add_column("Key Change", style="dim", width=30)
+
+            for i in range(len(versions_list) - 1):
+                baseline_ver = versions_list[i]
+                current_ver = versions_list[i + 1]
+
+                metrics = _compute_drift_and_metrics(
+                    version_runs[baseline_ver],
+                    version_runs[current_ver],
+                )
+
+                if metrics:
+                    drift = metrics["drift_score"]
+                    latency_change = metrics["latency_change_pct"]
+                    error_change = metrics["error_change"]
+
+                    # Determine verdict
+                    if drift < 0.10:
+                        verdict = "[#4ADE80]✓ Stable[/]"
+                        drift_display = f"[#4ADE80]{drift:.2f}[/]"
+                    elif drift < 0.20:
+                        verdict = "[#FFA94D]△ Moderate[/]"
+                        drift_display = f"[#FFA94D]{drift:.2f}[/]"
+                    else:
+                        verdict = "[#FF6B6B]⚠ High[/]"
+                        drift_display = f"[#FF6B6B]{drift:.2f}[/]"
+
+                    # Latency change
+                    if abs(latency_change) < 10:
+                        latency_display = f"[dim]{latency_change:+.0f}%[/]"
+                    elif latency_change > 0:
+                        latency_display = f"[#FF8787]{latency_change:+.0f}%[/]"
+                    else:
+                        latency_display = f"[#4ADE80]{latency_change:+.0f}%[/]"
+
+                    # Error change
+                    if abs(error_change) < 0.01:
+                        error_display = f"[dim]{error_change:+.1%}[/]"
+                    elif error_change > 0:
+                        error_display = f"[#FF8787]{error_change:+.1%}[/]"
+                    else:
+                        error_display = f"[#4ADE80]{error_change:+.1%}[/]"
+
+                    # Key change summary
+                    key_changes = []
+                    if abs(latency_change) > 20:
+                        key_changes.append("Latency" if latency_change > 0 else "Performance")
+                    if abs(error_change) > 0.05:
+                        key_changes.append("Reliability" if error_change > 0 else "Stability")
+                    if drift >= 0.50:
+                        key_changes.append("Major behavior shift")
+
+                    key_change_text = ", ".join(key_changes) if key_changes else "Minimal changes"
+
+                    table.add_row(
+                        baseline_ver,
+                        "→",
+                        current_ver,
+                        drift_display,
+                        latency_display,
+                        error_display,
+                        verdict,
+                        key_change_text
+                    )
+                else:
+                    table.add_row(
+                        baseline_ver,
+                        "→",
+                        current_ver,
+                        "[dim]N/A[/]",
+                        "[dim]—[/]",
+                        "[dim]—[/]",
+                        "[dim]—[/]",
+                        "[dim]Insufficient data[/]"
+                    )
+
+            console.print(table)
+        else:
+            # Plain text fallback
+            for i in range(len(versions_list) - 1):
+                baseline_ver = versions_list[i]
+                current_ver = versions_list[i + 1]
+
+                metrics = _compute_drift_and_metrics(
+                    version_runs[baseline_ver],
+                    version_runs[current_ver],
+                )
+
+                if metrics:
+                    drift = metrics["drift_score"]
+                    if drift < 0.10:
+                        verdict = "✓ Stable"
+                    elif drift < 0.20:
+                        verdict = "△ Moderate"
+                    else:
+                        verdict = "⚠ High"
+                    print(f"{baseline_ver} → {current_ver}: {drift:.2f} ({verdict})")
+                else:
+                    print(f"{baseline_ver} → {current_ver}: N/A")
+
+        console.print()
+        console.print("[dim]💡 Tip: Use --matrix to see all pairwise comparisons[/]\n")
+
+    ctx.exit(0)

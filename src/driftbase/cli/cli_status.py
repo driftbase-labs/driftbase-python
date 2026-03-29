@@ -75,7 +75,7 @@ def cmd_status(ctx: click.Context) -> None:
         backend = get_backend()
         settings = get_settings()
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to connect to backend: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to connect to backend: {e}")
         ctx.exit(1)
 
     # Get database stats
@@ -213,7 +213,7 @@ def cmd_status(ctx: click.Context) -> None:
             f"[bold]Database size:[/]         {disk_size_mb:.2f} MB ({total_runs:,} runs)"
         )
 
-        panel = Panel("\n".join(lines), border_style="cyan", padding=(1, 2))
+        panel = Panel("\n".join(lines), border_style="#8B5CF6", padding=(1, 2))
         console.print("\n")
         console.print(panel)
         console.print("\n")
@@ -221,11 +221,11 @@ def cmd_status(ctx: click.Context) -> None:
         # Suggestions
         if not baseline_version:
             console.print(
-                "💡 [dim]Tip: Set a baseline with[/] [cyan]driftbase baseline set <version>[/]"
+                "💡 [dim]Tip: Set a baseline with[/] #8B5CF6]driftbase baseline set <version>[/]"
             )
         if total_runs == 0:
             console.print(
-                "💡 [dim]Tip: No runs yet. Try[/] [cyan]driftbase demo[/] [dim]to generate sample data[/]"
+                "💡 [dim]Tip: No runs yet. Try[/] #8B5CF6]driftbase demo[/] [dim]to generate sample data[/]"
             )
 
     else:

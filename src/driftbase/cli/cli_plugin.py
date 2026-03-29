@@ -55,7 +55,7 @@ def plugin_list(ctx: click.Context):
     pm = get_plugin_manager()
 
     if not pm.plugins:
-        console.print("[yellow]No plugins installed[/]")
+        console.print("#FFA94D]No plugins installed[/]")
         console.print()
         console.print("Install plugins by placing Python files in:")
         console.print(f"  {_get_plugin_dir()}")
@@ -67,7 +67,7 @@ def plugin_list(ctx: click.Context):
 
     if Table:
         table = Table(show_header=True, header_style="bold")
-        table.add_column("Name", style="cyan")
+        table.add_column("Name", style="#8B5CF6")
         table.add_column("Version")
         table.add_column("Description", max_width=50)
         table.add_column("Author", style="dim")
@@ -122,7 +122,7 @@ def plugin_info(ctx: click.Context, plugin_name: str):
             break
 
     if not plugin:
-        console.print(f"[red]Plugin '{plugin_name}' not found[/]")
+        console.print(f"#FF6B6B]Plugin '{plugin_name}' not found[/]")
         console.print()
         console.print("Available plugins:")
         for p in pm.plugins:
@@ -167,7 +167,7 @@ def plugin_info(ctx: click.Context, plugin_name: str):
         panel = Panel(
             "\n".join(info_lines),
             title=f"[bold cyan]Plugin: {plugin.name}[/]",
-            border_style="cyan",
+            border_style="#8B5CF6",
         )
         console.print()
         console.print(panel)
@@ -208,7 +208,7 @@ def plugin_init(ctx: click.Context):
     example_file = plugin_dir / "example_plugin.py"
 
     if example_file.exists():
-        console.print(f"[yellow]Example plugin already exists:[/] {example_file}")
+        console.print(f"#FFA94D]Example plugin already exists:[/] {example_file}")
         if not click.confirm("Overwrite?", default=False):
             console.print("[dim]Cancelled[/]")
             ctx.exit(0)
@@ -254,10 +254,10 @@ class ExamplePlugin(Plugin):
 
     example_file.write_text(example_code)
 
-    console.print("[green]✓[/] Plugin system initialized")
+    console.print("#4ADE80]✓[/] Plugin system initialized")
     console.print()
-    console.print(f"Plugin directory: [cyan]{plugin_dir}[/]")
-    console.print(f"Example plugin:   [cyan]{example_file}[/]")
+    console.print(f"Plugin directory: #8B5CF6]{plugin_dir}[/]")
+    console.print(f"Example plugin:   #8B5CF6]{example_file}[/]")
     console.print()
     console.print("To create your own plugin:")
     console.print("  1. Create a .py file in the plugins directory")
@@ -296,19 +296,19 @@ def plugin_disable(ctx: click.Context, plugin_name: str):
     plugin_file = plugin_dir / f"{plugin_name}.py"
 
     if not plugin_file.exists():
-        console.print(f"[red]Plugin file not found:[/] {plugin_file}")
+        console.print(f"#FF6B6B]Plugin file not found:[/] {plugin_file}")
         ctx.exit(1)
 
     disabled_file = plugin_dir / f"{plugin_name}.py.disabled"
 
     try:
         plugin_file.rename(disabled_file)
-        console.print(f"[green]✓[/] Plugin disabled: [cyan]{plugin_name}[/]")
+        console.print(f"#4ADE80]✓[/] Plugin disabled: #8B5CF6]{plugin_name}[/]")
         console.print(f"  Renamed to: {disabled_file.name}")
         console.print()
         console.print(f"To re-enable: driftbase plugin enable {plugin_name}")
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to disable plugin: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to disable plugin: {e}")
         ctx.exit(1)
 
     ctx.exit(0)
@@ -334,19 +334,19 @@ def plugin_enable(ctx: click.Context, plugin_name: str):
     disabled_file = plugin_dir / f"{plugin_name}.py.disabled"
 
     if not disabled_file.exists():
-        console.print(f"[red]Disabled plugin not found:[/] {disabled_file}")
+        console.print(f"#FF6B6B]Disabled plugin not found:[/] {disabled_file}")
         ctx.exit(1)
 
     plugin_file = plugin_dir / f"{plugin_name}.py"
 
     try:
         disabled_file.rename(plugin_file)
-        console.print(f"[green]✓[/] Plugin enabled: [cyan]{plugin_name}[/]")
+        console.print(f"#4ADE80]✓[/] Plugin enabled: #8B5CF6]{plugin_name}[/]")
         console.print(f"  Renamed to: {plugin_file.name}")
         console.print()
         console.print("Plugin will be loaded on next command execution")
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to enable plugin: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to enable plugin: {e}")
         ctx.exit(1)
 
     ctx.exit(0)

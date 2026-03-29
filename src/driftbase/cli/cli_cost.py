@@ -141,7 +141,7 @@ def cmd_cost(
     try:
         backend = get_backend()
     except Exception as e:
-        console.print(f"[red]Error:[/] {e}")
+        console.print(f"#FF6B6B]Error:[/] {e}")
         ctx.exit(1)
 
     # Fetch runs
@@ -152,7 +152,7 @@ def cmd_cost(
     )
 
     if not runs:
-        console.print("[yellow]No runs found[/]")
+        console.print("#FFA94D]No runs found[/]")
         ctx.exit(0)
 
     # Filter by time if needed
@@ -167,7 +167,7 @@ def cmd_cost(
         ]
 
     if not runs:
-        console.print(f"[yellow]No runs found in last {since}[/]")
+        console.print(f"#FFA94D]No runs found in last {since}[/]")
         ctx.exit(0)
 
     # Calculate costs
@@ -264,7 +264,7 @@ def cmd_cost(
         summary_panel = Panel(
             "\n".join(summary_lines),
             title="[bold cyan]Summary[/]",
-            border_style="cyan",
+            border_style="#8B5CF6",
         )
         console.print(summary_panel)
         console.print()
@@ -277,7 +277,7 @@ def cmd_cost(
     # Breakdown table
     if Table:
         table = Table(show_header=True, header_style="bold")
-        table.add_column(groupby.capitalize(), style="cyan")
+        table.add_column(groupby.capitalize(), style="#8B5CF6")
         table.add_column("Runs", justify="right")
         table.add_column("Cost (USD)", justify="right")
         table.add_column("% of Total", justify="right")
@@ -342,7 +342,7 @@ def cmd_cost(
     if budget:
         if not since_hours:
             console.print(
-                "[yellow]⚠[/] Budget tracking requires --since flag to calculate burn rate"
+                "#FFA94D]⚠[/] Budget tracking requires --since flag to calculate burn rate"
             )
             console.print("  Example: driftbase cost --budget 100 --since 7d")
         else:

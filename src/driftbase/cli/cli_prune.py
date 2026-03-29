@@ -72,7 +72,7 @@ def cmd_prune(
     # Validate: at least one criteria
     if keep_last is None and older_than is None:
         console.print(
-            "[red]Error:[/] Must specify at least one criteria: --keep-last or --older-than"
+            "#FF6B6B]Error:[/] Must specify at least one criteria: --keep-last or --older-than"
         )
         ctx.exit(1)
 
@@ -81,7 +81,7 @@ def cmd_prune(
     if older_than:
         older_than_days = _parse_duration(older_than)
         if older_than_days is None:
-            console.print(f"[red]Error:[/] Invalid duration format: {older_than}")
+            console.print(f"#FF6B6B]Error:[/] Invalid duration format: {older_than}")
             console.print("  Expected format: 30d (days) or 24h (hours)")
             ctx.exit(1)
 
@@ -89,7 +89,7 @@ def cmd_prune(
     try:
         backend = get_backend()
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to connect to database: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to connect to database: {e}")
         ctx.exit(1)
 
     # Determine what will be deleted
@@ -109,7 +109,7 @@ def cmd_prune(
                     filter_desc += f" environment={environment}"
 
                 console.print(
-                    f"[yellow]Would delete {to_delete:,} runs[/]{filter_desc}"
+                    f"#FFA94D]Would delete {to_delete:,} runs[/]{filter_desc}"
                 )
                 console.print(f"  Total runs: {total_count:,}")
                 console.print(f"  Keep last: {keep_last:,}")
@@ -124,10 +124,10 @@ def cmd_prune(
             if environment:
                 filter_desc += f" environment={environment}"
 
-            console.print(f"[yellow]Will delete runs{filter_desc}[/]")
+            console.print(f"#FFA94D]Will delete runs{filter_desc}[/]")
 
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to query runs: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to query runs: {e}")
         ctx.exit(1)
 
     # Dry-run: stop here
@@ -138,7 +138,7 @@ def cmd_prune(
     # Confirmation prompt (if not --yes)
     if not yes:
         console.print(
-            "\n[yellow]This will permanently delete runs from the database.[/]"
+            "\n#FFA94D]This will permanently delete runs from the database.[/]"
         )
         confirm = click.confirm("Do you want to continue?", default=False)
         if not confirm:
@@ -154,10 +154,10 @@ def cmd_prune(
             keep_last_n=keep_last,
         )
 
-        console.print(f"[green]✓[/] Deleted {deleted_count:,} runs")
+        console.print(f"#4ADE80]✓[/] Deleted {deleted_count:,} runs")
 
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to delete runs: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to delete runs: {e}")
         ctx.exit(1)
 
     ctx.exit(0)

@@ -60,13 +60,13 @@ def cmd_explore(ctx: click.Context, version: str | None):
         backend = get_backend()
         versions = backend.get_versions()
     except Exception as e:
-        console.print(f"[red]Error:[/] {e}")
+        console.print(f"#FF6B6B]Error:[/] {e}")
         ctx.exit(1)
 
     if not versions:
-        console.print("[yellow]No versions found in database[/]")
+        console.print("#FFA94D]No versions found in database[/]")
         console.print("\nTry:")
-        console.print("  [cyan]driftbase demo[/] to generate sample data")
+        console.print("  #8B5CF6]driftbase demo[/] to generate sample data")
         ctx.exit(0)
 
     # Select initial version
@@ -99,7 +99,7 @@ def cmd_explore(ctx: click.Context, version: str | None):
                     ]
                 ),
                 title="[bold cyan]Versions[/]",
-                border_style="cyan",
+                border_style="#8B5CF6",
             )
 
             # Runs table
@@ -124,13 +124,13 @@ def cmd_explore(ctx: click.Context, version: str | None):
                 runs_panel = Panel(
                     table,
                     title=f"[bold cyan]Runs ({current_version})[/]",
-                    border_style="cyan",
+                    border_style="#8B5CF6",
                 )
             else:
                 runs_panel = Panel(
                     "[dim]No runs found[/]",
                     title=f"[bold cyan]Runs ({current_version})[/]",
-                    border_style="cyan",
+                    border_style="#8B5CF6",
                 )
 
             # Help panel
@@ -173,7 +173,7 @@ def cmd_explore(ctx: click.Context, version: str | None):
                 detail_panel = Panel(
                     details,
                     title="[bold cyan]Run Details[/]",
-                    border_style="cyan",
+                    border_style="#8B5CF6",
                 )
 
                 help_panel = Panel(
@@ -189,7 +189,7 @@ def cmd_explore(ctx: click.Context, version: str | None):
 
                 return layout
             else:
-                return Panel("[red]No run selected[/]")
+                return Panel("#FF6B6B]No run selected[/]")
 
     # Simple interactive loop (without full TUI framework)
     console.print("\n[bold cyan]🔍 Driftbase Explorer[/]\n")
@@ -205,9 +205,9 @@ def cmd_explore(ctx: click.Context, version: str | None):
     # Show instructions for full interactive mode
     console.print("\n[dim]📝 Note:[/] Full interactive navigation coming soon!")
     console.print("[dim]For now, use these commands to explore:[/]\n")
-    console.print("  [cyan]driftbase runs -v <version>[/]     # List runs")
-    console.print("  [cyan]driftbase inspect <run_id>[/]      # View details")
-    console.print("  [cyan]driftbase chart -v <version>[/]    # Visualize metrics")
+    console.print("  #8B5CF6]driftbase runs -v <version>[/]     # List runs")
+    console.print("  #8B5CF6]driftbase inspect <run_id>[/]      # View details")
+    console.print("  #8B5CF6]driftbase chart -v <version>[/]    # Visualize metrics")
     console.print()
 
     ctx.exit(0)

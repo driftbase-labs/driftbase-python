@@ -91,14 +91,14 @@ def cmd_tail(
             )
         except Exception as e:
             if console:
-                console.print(f"[red]Error:[/] {e}")
+                console.print(f"#FF6B6B]Error:[/] {e}")
             else:
                 print(f"Error: {e}")
             ctx.exit(1)
 
         if not runs:
             if console:
-                console.print("[yellow]No runs found[/]")
+                console.print("#FFA94D]No runs found[/]")
             else:
                 print("No runs found")
             ctx.exit(0)
@@ -107,7 +107,7 @@ def cmd_tail(
         if Table:
             table = Table(show_header=True, header_style="bold")
             table.add_column("TIME", style="dim")
-            table.add_column("VER", style="cyan")
+            table.add_column("VER", style="#8B5CF6")
             table.add_column("OUTCOME")
             table.add_column("LAT", justify="right")
 
@@ -205,7 +205,7 @@ def cmd_tail(
 
                     if console:
                         console.print(
-                            f"[dim]{time_str}[/] [cyan]{ver}[/] [{style}]{symbol} {outcome}[/] {latency_display}"
+                            f"[dim]{time_str}[/] #8B5CF6]{ver}[/] [{style}]{symbol} {outcome}[/] {latency_display}"
                         )
                     else:
                         print(f"{time_str} {ver} {symbol} {outcome} {latency_display}")

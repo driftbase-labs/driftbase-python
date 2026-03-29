@@ -55,23 +55,25 @@ def baseline_set(ctx: click.Context, version: str, scope: str):
 
         if version not in version_names:
             console.print(
-                f"[yellow]Warning:[/] Version '{version}' not found in database."
+                f"#FFA94D]Warning:[/] Version '{version}' not found in database."
             )
             console.print(
                 f"Available versions: {', '.join(version_names) if version_names else 'none'}"
             )
             # Don't fail - allow setting baseline for future versions
     except Exception as e:
-        console.print(f"[yellow]Warning:[/] Could not validate version: {e}")
+        console.print(f"#FFA94D]Warning:[/] Could not validate version: {e}")
 
     # Save to config
     try:
         config_path = save_config("DRIFTBASE_BASELINE_VERSION", version, scope=scope)
         scope_label = "global" if scope == "global" else "local"
-        console.print(f"[green]✓[/] Baseline set to [cyan]{version}[/] ({scope_label})")
+        console.print(
+            f"#4ADE80]✓[/] Baseline set to #8B5CF6]{version}[/] ({scope_label})"
+        )
         console.print(f"   Config saved to: {config_path}")
     except Exception as e:
-        console.print(f"[red]Error:[/] Failed to save baseline: {e}")
+        console.print(f"#FF6B6B]Error:[/] Failed to save baseline: {e}")
         ctx.exit(1)
 
 
@@ -91,10 +93,10 @@ def baseline_get(ctx: click.Context):
 
     if baseline:
         source = get_config_source("DRIFTBASE_BASELINE_VERSION")
-        console.print(f"Current baseline: [cyan]{baseline}[/] (from {source})")
+        console.print(f"Current baseline: #8B5CF6]{baseline}[/] (from {source})")
         ctx.exit(0)
     else:
-        console.print("[yellow]No baseline version set.[/]")
+        console.print("#FFA94D]No baseline version set.[/]")
         console.print("\nSet a baseline with:")
         console.print("  driftbase baseline set <version>")
         ctx.exit(1)
@@ -125,8 +127,8 @@ def baseline_clear(ctx: click.Context, scope: str):
 
     scope_label = "global" if scope == "global" else "local"
     if deleted:
-        console.print(f"[green]✓[/] Baseline cleared ({scope_label})")
+        console.print(f"#4ADE80]✓[/] Baseline cleared ({scope_label})")
     else:
-        console.print(f"[yellow]No baseline found in {scope_label} config[/]")
+        console.print(f"#FFA94D]No baseline found in {scope_label} config[/]")
 
     ctx.exit(0)
