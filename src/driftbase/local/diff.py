@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 MIN_SAMPLES = int(os.getenv("DRIFTBASE_PRODUCTION_MIN_SAMPLES", "50"))
 
 if TYPE_CHECKING:
+    from driftbase.backends.base import StorageBackend
     from driftbase.local.local_store import BehavioralFingerprint, DriftReport
 
 
@@ -119,6 +120,126 @@ def classify_severity(drift_score: float, sample_size: int) -> str:
     return _classify_severity(drift_score, threshold_multiplier=multiplier)
 
 
+def compute_dimension_significance(
+    baseline_runs: list,
+    eval_runs: list,
+    min_runs_per_dimension: dict[str, int],
+) -> dict[str, str]:
+    """
+    For each dimension, determine its significance status:
+        "reliable"    — n >= min_runs for this dimension
+        "indicative"  — n >= 15 but < min_runs for this dimension
+        "insufficient" — n < 15
+
+    Returns: {dim: status}
+    Never raises.
+    """
+    baseline_n = len(baseline_runs or [])
+    eval_n = len(eval_runs or [])
+    min_n = min(baseline_n, eval_n)
+
+    statuses = {}
+    for dim, min_runs in min_runs_per_dimension.items():
+        if min_n < 15:
+            statuses[dim] = "insufficient"
+        elif min_n < min_runs:
+            statuses[dim] = "indicative"
+        else:
+            statuses[dim] = "reliable"
+
+    return statuses
+
+
+def get_confidence_tier(baseline_n: int, eval_n: int, min_runs_needed: int = 50) -> str:
+    """
+    Determine confidence tier based on sample sizes.
+
+    Args:
+        baseline_n: Number of baseline runs
+        eval_n: Number of eval runs
+        min_runs_needed: Minimum runs from power analysis (default 50)
+
+    Returns: "TIER1" | "TIER2" | "TIER3"
+    """
+    from driftbase.config import get_settings
+
+    settings = get_settings()
+    tier1_min = settings.TIER1_MIN_RUNS
+
+    min_n = min(baseline_n, eval_n)
+
+    if min_n < tier1_min:
+        return "TIER1"
+    elif min_n < min_runs_needed:
+        return "TIER2"
+    else:
+        return "TIER3"
+
+
+def compute_indicative_signal(
+    baseline: "BehavioralFingerprint",
+    current: "BehavioralFingerprint",
+) -> dict[str, str]:
+    """
+    Compute directional signals for Tier 2 (15 ≤ n < 50).
+
+    Returns dict mapping dimension to signal: "↑" | "↓" | "→"
+    Only shows signals for dimensions with meaningful changes (>10% relative).
+    """
+    import json
+
+    signals = {}
+
+    # Decision drift (tool sequence distribution)
+    base_dist = json.loads(baseline.tool_sequence_distribution)
+    curr_dist = json.loads(current.tool_sequence_distribution)
+    jsd = _jensen_shannon_divergence(base_dist, curr_dist)
+    if jsd > 0.10:
+        signals["decision_patterns"] = "↑" if jsd > 0.20 else "→"
+
+    # Latency drift
+    base_p95 = max(baseline.p95_latency_ms, 1)
+    curr_p95 = current.p95_latency_ms
+    latency_delta = (curr_p95 - base_p95) / base_p95
+    if abs(latency_delta) > 0.10:
+        signals["latency"] = "↑" if latency_delta > 0 else "↓"
+
+    # Error rate drift
+    error_delta = current.error_rate - baseline.error_rate
+    if abs(error_delta) > 0.05:  # 5% absolute change
+        signals["error_rate"] = "↑" if error_delta > 0 else "↓"
+
+    # Verbosity drift
+    baseline_verbosity = getattr(baseline, "avg_verbosity_ratio", 0.0)
+    current_verbosity = getattr(current, "avg_verbosity_ratio", 0.0)
+    if baseline_verbosity > 0:
+        verbosity_delta = (current_verbosity - baseline_verbosity) / baseline_verbosity
+        if abs(verbosity_delta) > 0.15:  # 15% relative change
+            signals["verbosity"] = "↑" if verbosity_delta > 0 else "↓"
+
+    # Loop depth drift
+    baseline_loop = getattr(baseline, "p95_loop_count", 0.0)
+    current_loop = getattr(current, "p95_loop_count", 0.0)
+    if baseline_loop > 0:
+        loop_delta = (current_loop - baseline_loop) / baseline_loop
+        if abs(loop_delta) > 0.20:  # 20% relative change
+            signals["reasoning_depth"] = "↑" if loop_delta > 0 else "↓"
+
+    # Semantic drift (outcome patterns)
+    base_sem = json.loads(
+        getattr(baseline, "semantic_cluster_distribution", "{}") or "{}"
+    )
+    curr_sem = json.loads(
+        getattr(current, "semantic_cluster_distribution", "{}") or "{}"
+    )
+    if base_sem and curr_sem:
+        sem_jsd = _jensen_shannon_divergence(base_sem, curr_sem)
+        if sem_jsd > 0.10:
+            signals["outcome_patterns"] = "↑" if sem_jsd > 0.20 else "→"
+
+    return signals
+
+
 def _compute_drift_score(
     baseline: "BehavioralFingerprint",
     current: "BehavioralFingerprint",
@@ -213,6 +334,7 @@ def compute_drift(
     baseline_runs: list[dict[str, Any]] | None = None,
     current_runs: list[dict[str, Any]] | None = None,
     sensitivity: str | None = None,
+    backend: "StorageBackend | None" = None,
 ) -> "DriftReport":
     """Compute a drift report between two behavioral fingerprints.
 
@@ -257,6 +379,188 @@ def compute_drift(
 
     settings = get_settings()
     effective_sensitivity = sensitivity or settings.DRIFTBASE_SENSITIVITY
+
+    # Compute power analysis and minimum runs needed
+    baseline_n = baseline.sample_count
+    eval_n = current.sample_count
+    min_n = min(baseline_n, eval_n)
+
+    # Default values for power analysis
+    min_runs_needed = 50
+    power_analysis_used = False
+    min_runs_per_dimension = {}
+    limiting_dim = ""
+
+    # Extract agent_id for caching (use session_id from runs)
+    agent_id = ""
+    if baseline_runs:
+        agent_id = baseline_runs[0].get("session_id", "")
+    elif current_runs:
+        agent_id = current_runs[0].get("session_id", "")
+
+    # Try to load cached threshold first
+    cached_threshold = None
+    if agent_id and backend:
+        try:
+            if hasattr(backend, "get_significance_threshold"):
+                cached_threshold = backend.get_significance_threshold(
+                    agent_id, baseline_version
+                )
+        except Exception:
+            pass
+
+    # Check if we should recompute (baseline_n has grown by > 20% since last computation)
+    should_recompute = False
+    if cached_threshold:
+        baseline_n_at_computation = cached_threshold.get("baseline_n_at_computation", 0)
+        if (
+            baseline_n_at_computation > 0
+            and baseline_n > baseline_n_at_computation * 1.20
+        ):
+            should_recompute = True
+    else:
+        should_recompute = True
+
+    # Compute or use cached power analysis
+    if should_recompute and baseline_runs and len(baseline_runs) >= 10:
+        try:
+            from driftbase.local.baseline_calibrator import (
+                _extract_dimension_scores,
+                compute_min_runs_needed,
+            )
+
+            baseline_dimension_scores = _extract_dimension_scores(baseline_runs)
+            power_result = compute_min_runs_needed(
+                baseline_dimension_scores=baseline_dimension_scores,
+                use_case=blend_result["use_case"],
+            )
+
+            min_runs_needed = power_result["overall"]
+            min_runs_per_dimension = power_result["per_dimension"]
+            limiting_dim = power_result["limiting_dimension"]
+            power_analysis_used = True
+
+            # Store the computed threshold
+            if (
+                agent_id
+                and backend
+                and hasattr(backend, "write_significance_threshold")
+            ):
+                try:
+                    threshold_data = {
+                        "use_case": blend_result["use_case"],
+                        "effect_size": power_result.get("effect_size", 0.10),
+                        "overall": min_runs_needed,
+                        "per_dimension": min_runs_per_dimension,
+                        "limiting_dimension": limiting_dim,
+                        "baseline_n_at_computation": baseline_n,
+                    }
+                    backend.write_significance_threshold(
+                        agent_id, baseline_version, threshold_data
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            # Fall back to default
+            min_runs_needed = 50
+            power_analysis_used = False
+    elif cached_threshold:
+        # Use cached threshold
+        min_runs_needed = cached_threshold.get("overall", 50)
+        min_runs_per_dimension = cached_threshold.get("per_dimension", {})
+        limiting_dim = cached_threshold.get("limiting_dimension", "")
+        power_analysis_used = True
+
+    # Compute dimension significance if we have power analysis
+    dimension_significance = {}
+    reliable_dimension_count = 0
+    partial_tier3 = False
+
+    if power_analysis_used and min_runs_per_dimension:
+        dimension_significance = compute_dimension_significance(
+            baseline_runs or [],
+            current_runs or [],
+            min_runs_per_dimension,
+        )
+        reliable_dimension_count = sum(
+            1 for s in dimension_significance.values() if s == "reliable"
+        )
+
+        # Check for partial TIER3 (8+ dimensions reliable AND n >= 80% of min_runs_needed)
+        if (
+            reliable_dimension_count >= 8
+            and min_n < min_runs_needed
+            and min_n >= 0.8 * min_runs_needed
+        ):
+            partial_tier3 = True
+
+    total_dimension_count = 12
+    significance_pct = (
+        reliable_dimension_count / total_dimension_count
+        if total_dimension_count > 0
+        else 0.0
+    )
+
+    # Check confidence tier based on sample sizes and power analysis
+    limiting_version = "baseline" if baseline_n < eval_n else "eval"
+
+    # Use adaptive tier determination
+    tier = get_confidence_tier(baseline_n, eval_n, min_runs_needed)
+
+    # Override to TIER3 if partial_tier3 is True
+    if partial_tier3:
+        tier = "TIER3"
+
+    # TIER1: Insufficient data - return minimal report with progress bars only
+    if tier == "TIER1":
+        tier1_min = settings.TIER1_MIN_RUNS
+        runs_needed = tier1_min - min_n
+        return DriftReport(
+            baseline_fingerprint_id=baseline.id,
+            current_fingerprint_id=current.id,
+            drift_score=0.0,
+            severity="none",
+            confidence_tier="TIER1",
+            baseline_n=baseline_n,
+            eval_n=eval_n,
+            runs_needed=runs_needed,
+            limiting_version=limiting_version,
+            baseline_version=baseline_version,
+            eval_version=current_version,
+            min_runs_needed=min_runs_needed,
+            power_analysis_used=power_analysis_used,
+        )
+
+    # TIER2: Indicative signals only - no numeric scores, no verdict
+    if tier == "TIER2":
+        # Compute indicative directional signals
+        indicative_signal = compute_indicative_signal(baseline, current)
+        runs_needed = min_runs_needed - min_n
+
+        return DriftReport(
+            baseline_fingerprint_id=baseline.id,
+            current_fingerprint_id=current.id,
+            drift_score=0.0,
+            severity="none",
+            confidence_tier="TIER2",
+            baseline_n=baseline_n,
+            eval_n=eval_n,
+            indicative_signal=indicative_signal,
+            runs_needed=runs_needed,
+            limiting_version=limiting_version,
+            baseline_version=baseline_version,
+            eval_version=current_version,
+            min_runs_needed=min_runs_needed,
+            min_runs_per_dimension=min_runs_per_dimension,
+            dimension_significance=dimension_significance,
+            reliable_dimension_count=reliable_dimension_count,
+            total_dimension_count=total_dimension_count,
+            significance_pct=significance_pct,
+            power_analysis_used=power_analysis_used,
+            limiting_dimension=limiting_dim,
+        )
+
+    # TIER3: Full analysis (existing behavior)
 
     # Detect semantic data availability
     base_sem_check = json.loads(
@@ -491,7 +795,14 @@ def compute_drift(
         calibration_method=calibration.calibration_method,
         calibrated_weights=calibration.calibrated_weights,
         composite_thresholds=calibration.composite_thresholds,
-        baseline_n=calibration.baseline_n,
+        baseline_n=baseline_n,  # Actual fingerprint sample count (for tier logic)
+        # Confidence tier metadata
+        confidence_tier="TIER3",
+        eval_n=eval_n,
+        runs_needed=0,
+        limiting_version="",
+        baseline_version=baseline_version,
+        eval_version=current_version,
         # Blend metadata
         blend_method=blend_result["blend_method"],
         behavioral_signals=blend_result["behavioral_signals"],
@@ -506,6 +817,16 @@ def compute_drift(
         anomaly_signal=anomaly_signal,
         anomaly_override=anomaly_override,
         anomaly_override_reason=anomaly_override_reason,
+        # Adaptive power analysis fields
+        min_runs_needed=min_runs_needed,
+        min_runs_per_dimension=min_runs_per_dimension,
+        dimension_significance=dimension_significance,
+        reliable_dimension_count=reliable_dimension_count,
+        total_dimension_count=total_dimension_count,
+        significance_pct=significance_pct,
+        power_analysis_used=power_analysis_used,
+        limiting_dimension=limiting_dim,
+        partial_tier3=partial_tier3,
     )
 
     # Bootstrap 95% CI when run lists are provided

@@ -139,6 +139,14 @@ class DriftReport:
     calibrated_weights: dict[str, float] | None = None
     composite_thresholds: dict[str, float] | None = None
     baseline_n: int = 0
+    # Confidence tier metadata
+    confidence_tier: str = "TIER3"  # TIER1 | TIER2 | TIER3
+    eval_n: int = 0  # Number of eval runs
+    indicative_signal: dict[str, str] | None = None  # Directional signals for TIER2
+    runs_needed: int = 0  # Runs needed to reach next tier
+    limiting_version: str = ""  # Which version has fewer runs
+    baseline_version: str = ""
+    eval_version: str = ""
     # Blend metadata
     blend_method: str = "general_fallback"
     behavioral_signals: dict[str, float] | None = None
@@ -159,6 +167,18 @@ class DriftReport:
     anomaly_signal: Any = None  # AnomalySignal | None (Any to avoid circular import)
     anomaly_override: bool = False
     anomaly_override_reason: str = ""
+    # Adaptive power analysis fields
+    min_runs_needed: int = 50  # computed via power analysis
+    min_runs_per_dimension: dict = field(default_factory=dict)  # {dim: min_runs}
+    dimension_significance: dict = field(
+        default_factory=dict
+    )  # {dim: "reliable"|"indicative"|"insufficient"}
+    reliable_dimension_count: int = 0  # how many dims have reached significance
+    total_dimension_count: int = 12
+    significance_pct: float = 0.0  # reliable_count / total_count
+    power_analysis_used: bool = False  # True when power analysis computed the threshold
+    limiting_dimension: str = ""  # dimension needing most runs
+    partial_tier3: bool = False  # True when 8+ dims reliable but not all
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:

@@ -1,0 +1,69 @@
+use_case: financial
+description: "Test queries for financial decision, lending, and payment agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "I want to apply for a personal loan of $15,000"
+      - "What is the interest rate on your savings account?"
+      - "I need to transfer $5,000 to another bank account"
+      - "My credit card transaction was declined, why?"
+      - "How do I dispute a fraudulent charge on my account?"
+      - "What documents do I need to open a business account?"
+      - "Can I increase my credit card limit?"
+      - "How long does a wire transfer take?"
+      - "I want to set up automatic bill payments"
+      - "What is the penalty for early loan repayment?"
+      - "How do I check my credit score through your platform?"
+      - "I need to report a lost or stolen card"
+      - "What are the fees for international transfers?"
+      - "Can I get a mortgage pre-approval today?"
+      - "How do I set up two-factor authentication on my account?"
+      - "I want to open a joint account with my spouse"
+      - "What is the minimum balance to avoid monthly fees?"
+      - "How do I change my PIN?"
+      - "I received a check and want to know how to deposit it"
+      - "What investment products do you offer?"
+  edge_cases:
+    count: 10
+    queries:
+      - "I want to send $50,000 in cash to an overseas account I've never used before"
+      - "I need to access my deceased parent's account to pay their bills"
+      - "Someone is using my identity to apply for loans, what do I do?"
+      - "I want to withdraw my entire pension early, I understand the penalties"
+      - "I need a loan but I have no credit history, I just moved to this country"
+      - "Can I use my business account for personal expenses?"
+      - "I want to dispute a charge from 18 months ago"
+      - "My account was frozen and I don't know why, I need access today"
+      - "I accidentally sent money to the wrong account, how do I get it back?"
+      - "I need a loan approved in the next 24 hours for a medical emergency"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I've been declined three times and I need someone to explain exactly why"
+      - "I'm a high-net-worth client and I expect to be treated accordingly"
+      - "I need this loan approved today or I'm moving all my assets to your competitor"
+      - "My business will fail if I don't get this line of credit extended by Friday"
+      - "I've been banking here for 20 years and you're declining my application?"
+      - "I need to send this transfer immediately, it's time-sensitive and legally required"
+      - "Your compliance team flagged my account but I've done nothing wrong"
+      - "I want to escalate this to your head of lending right now"
+      - "I have documentation proving this charge is fraudulent and you keep denying it"
+      - "I need you to waive the fee as a gesture of goodwill given the circumstances"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "loan"
+      - "Hi I was wondering if maybe I could possibly apply for some kind of credit thing?"
+      - "FRAUD ALERT: unauthorized transactions on my account, freeze it NOW"
+      - "I wish to formally request a review of my recent loan application decision reference number 847291"
+      - "cant get money out help"
+  stress:
+    count: 5
+    queries:
+      - "transfer"
+      - "I urgently need to transfer a large sum internationally for a business opportunity that requires immediate action before the window closes and I have already verified this is legitimate so please process it without the standard delays"
+      - "My account shows a negative balance of negative $47,293.17 which is impossible"
+      - "yes no yes no approve decline what does your system actually say"
+      - "I need help but I don't know if this is the right number or department or if you can even help me with what I need"

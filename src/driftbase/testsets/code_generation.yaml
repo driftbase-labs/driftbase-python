@@ -1,0 +1,69 @@
+use_case: code_generation
+description: "Test queries for coding assistants and code generation agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Write a Python function to parse a CSV file and return a list of dictionaries"
+      - "Fix the bug in this React component that causes infinite re-renders"
+      - "Write a SQL query to find the top 10 customers by revenue in the last 30 days"
+      - "Explain what this regex pattern does: ^(?=.*[A-Z])(?=.*[0-9]).{8,}$"
+      - "Write a REST API endpoint in FastAPI that accepts a JSON payload and stores it in PostgreSQL"
+      - "Refactor this function to be more readable without changing its behavior"
+      - "Write unit tests for this authentication module"
+      - "What is causing the memory leak in this Node.js code?"
+      - "Write a bash script that backs up a directory and removes backups older than 7 days"
+      - "How do I implement rate limiting in this Express.js application?"
+      - "Convert this Python 2 code to Python 3"
+      - "Write a Docker Compose file for a FastAPI app with a PostgreSQL database"
+      - "Optimize this database query that is running slowly"
+      - "Implement a binary search function and explain the time complexity"
+      - "Write a GitHub Actions workflow that runs tests on every pull request"
+      - "How do I handle async errors in this JavaScript code?"
+      - "Write a function to validate email addresses without using regex"
+      - "Explain the difference between this code using promises vs async/await"
+      - "Write a type-safe generic function in TypeScript for this use case"
+      - "How do I implement pagination in this API?"
+  edge_cases:
+    count: 10
+    queries:
+      - "This code works but I don't understand why, explain it line by line"
+      - "Write code that handles all possible edge cases for parsing user-provided dates"
+      - "This code is correct but my senior engineer says it's wrong, who is right?"
+      - "Rewrite this entire 500-line module to be more maintainable"
+      - "Why does this code work in development but fail in production?"
+      - "I need to implement this in a language I don't know well"
+      - "This code was written 10 years ago with no documentation, explain what it does"
+      - "Write a solution that works without any external libraries"
+      - "This function needs to handle 10 million records efficiently"
+      - "The tests pass but the code still seems wrong, what am I missing?"
+  boundary_cases:
+    count: 10
+    queries:
+      - "Just tell me the answer, don't explain it"
+      - "This is production code, I need to deploy in 20 minutes, just fix it"
+      - "I've tried everything and nothing works, I give up, just write it for me"
+      - "My tech lead will review this, make it look like senior-level code"
+      - "I need this to be 100% bug-free, are you confident in this solution?"
+      - "The requirements are unclear but I need to start coding now"
+      - "This needs to comply with security standards I don't fully understand"
+      - "Write code that handles requirements that contradict each other"
+      - "I need this in a framework that was released last month"
+      - "My code review comes back in 10 minutes, fix all the issues"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "fix bug"
+      - "Hey so I'm trying to build something and I'm kinda stuck, not sure where to start"
+      - "CRITICAL PRODUCTION BUG: null pointer exception in payment service, customers affected NOW"
+      - "I would appreciate assistance implementing a thread-safe singleton pattern in Java with lazy initialization"
+      - "code not work why"
+  stress:
+    count: 5
+    queries:
+      - "debug"
+      - "I need you to review 3000 lines of legacy PHP code written by a contractor who is no longer available identify all security vulnerabilities refactor it to modern standards add comprehensive test coverage write documentation and create a migration plan to move it to a microservices architecture"
+      - "Write code that is simultaneously readable maintainable fast memory-efficient and has zero dependencies"
+      - "yes that approach no wait try the other one actually go back to the first one"
+      - "Something is wrong with my code but I can't share it with you"

@@ -249,8 +249,8 @@ def test_tool_extraction_from_runs():
 
 def test_sensitivity_parameter_passed_through():
     """Sensitivity parameter should be passed to calibrate function."""
-    baseline_runs = [_create_test_run("v1.0") for _ in range(30)]
-    current_runs = [_create_test_run("v2.0") for _ in range(30)]
+    baseline_runs = [_create_test_run("v1.0") for _ in range(60)]
+    current_runs = [_create_test_run("v2.0") for _ in range(60)]
 
     baseline_fp = build_fingerprint_from_runs(
         baseline_runs,
@@ -277,7 +277,7 @@ def test_sensitivity_parameter_passed_through():
         mock_calibrate.return_value = _create_calibration_result(
             calibrated_weights={},
             calibration_method="default",
-            baseline_n=30,
+            baseline_n=60,
         )
 
         compute_drift(
@@ -296,8 +296,8 @@ def test_sensitivity_parameter_passed_through():
 
 def test_sensitivity_config_fallback():
     """When sensitivity is None, should fall back to config setting."""
-    baseline_runs = [_create_test_run("v1.0") for _ in range(30)]
-    current_runs = [_create_test_run("v2.0") for _ in range(30)]
+    baseline_runs = [_create_test_run("v1.0") for _ in range(60)]
+    current_runs = [_create_test_run("v2.0") for _ in range(60)]
 
     baseline_fp = build_fingerprint_from_runs(
         baseline_runs,
@@ -320,6 +320,8 @@ def test_sensitivity_config_fallback():
     # Mock config to return "relaxed"
     mock_settings = MagicMock()
     mock_settings.DRIFTBASE_SENSITIVITY = "relaxed"
+    mock_settings.TIER1_MIN_RUNS = 15
+    mock_settings.TIER2_MIN_RUNS = 50
 
     with (
         patch("driftbase.config.get_settings", return_value=mock_settings),
@@ -329,7 +331,7 @@ def test_sensitivity_config_fallback():
         mock_calibrate.return_value = _create_calibration_result(
             calibrated_weights={},
             calibration_method="default",
-            baseline_n=30,
+            baseline_n=60,
         )
 
         compute_drift(
@@ -348,8 +350,8 @@ def test_sensitivity_config_fallback():
 
 def test_no_runs_provided_uses_defaults():
     """When baseline_runs/current_runs are None, should use default weights."""
-    baseline_runs = [_create_test_run("v1.0") for _ in range(30)]
-    current_runs = [_create_test_run("v2.0") for _ in range(30)]
+    baseline_runs = [_create_test_run("v1.0") for _ in range(60)]
+    current_runs = [_create_test_run("v2.0") for _ in range(60)]
 
     baseline_fp = build_fingerprint_from_runs(
         baseline_runs,
@@ -553,11 +555,11 @@ def test_inferred_use_case_in_report():
     """DriftReport should contain inferred use case from tool analysis."""
     baseline_runs = [
         _create_test_run("v1.0", ["schedule_appointment", "prescribe_medication"])
-        for _ in range(30)
+        for _ in range(60)
     ]
     current_runs = [
         _create_test_run("v2.0", ["schedule_appointment", "prescribe_medication"])
-        for _ in range(30)
+        for _ in range(60)
     ]
 
     baseline_fp = build_fingerprint_from_runs(
@@ -590,7 +592,7 @@ def test_inferred_use_case_in_report():
             mock_calibrate.return_value = _create_calibration_result(
                 calibrated_weights={},
                 calibration_method="statistical",
-                baseline_n=30,
+                baseline_n=60,
                 inferred_use_case="HEALTHCARE",
                 confidence=0.92,
             )

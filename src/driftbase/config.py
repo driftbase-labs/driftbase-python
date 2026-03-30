@@ -386,6 +386,16 @@ class Settings:
         """Budget rolling window size (number of runs). Default: 10, min: 5."""
         return self._get_int("DRIFTBASE_BUDGET_WINDOW", 10, min_val=5)
 
+    @property
+    def TIER1_MIN_RUNS(self) -> int:
+        """Minimum runs required for Tier 2 (indicative signals). Below this: Tier 1 (progress bars only). Default: 15."""
+        return self._get_int("DRIFTBASE_TIER1_MIN_RUNS", 15, min_val=5)
+
+    @property
+    def TIER2_MIN_RUNS(self) -> int:
+        """Minimum runs required for Tier 3 (full analysis). Below this: Tier 2 (indicative signals). Default: 50."""
+        return self._get_int("DRIFTBASE_TIER2_MIN_RUNS", 50, min_val=15)
+
 
 _settings: Settings | None = None
 
@@ -416,6 +426,8 @@ KNOWN_CONFIG_KEYS = {
     "DRIFTBASE_GIT_TAGGING": bool,
     "DRIFTBASE_SENSITIVITY": str,
     "DRIFTBASE_BUDGET_WINDOW": int,
+    "DRIFTBASE_TIER1_MIN_RUNS": int,
+    "DRIFTBASE_TIER2_MIN_RUNS": int,
 }
 
 

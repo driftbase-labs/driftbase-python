@@ -99,7 +99,7 @@ class TestBootstrapE2E(unittest.TestCase):
         )
 
     def test_bootstrap_sample_size_warning_15_runs(self) -> None:
-        """With 15 runs per version: sample_size_warning is True."""
+        """With 15 runs per version: TIER2 (indicative signals only, no bootstrap)."""
         baseline_run_dicts = _make_run_dicts("v1", 15)
         current_run_dicts = _make_run_dicts("v2", 15)
         baseline_fp = fingerprint_from_runs(baseline_run_dicts, "v1", "production")
@@ -114,12 +114,18 @@ class TestBootstrapE2E(unittest.TestCase):
             current_runs=current_run_dicts,
         )
 
-        self.assertTrue(
-            report.sample_size_warning,
-            "With 15 runs per version, sample_size_warning should be True",
+        # With 15 runs, we're in TIER2 - indicative signals only, no numeric scores
+        self.assertEqual(
+            report.confidence_tier,
+            "TIER2",
+            "With 15 runs per version, should be TIER2",
         )
-        self.assertEqual(report.confidence_interval_pct, 95)
-        self.assertEqual(report.bootstrap_iterations, 500)
+        self.assertEqual(report.drift_score, 0.0, "TIER2 has no drift score")
+        self.assertIsNotNone(
+            report.indicative_signal, "TIER2 should have indicative signals"
+        )
+        # TIER2 does not compute bootstrap, so bootstrap_iterations = 0
+        self.assertEqual(report.bootstrap_iterations, 0)
 
 
 if __name__ == "__main__":

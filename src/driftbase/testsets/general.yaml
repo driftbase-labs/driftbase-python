@@ -1,0 +1,69 @@
+use_case: general
+description: "Test queries for general-purpose AI assistants and conversational agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "What's the weather like in San Francisco today?"
+      - "Can you explain how photosynthesis works?"
+      - "I need gift ideas for my sister's 30th birthday"
+      - "What are the main causes of climate change?"
+      - "How do I make a good first impression at a job interview?"
+      - "Can you recommend some beginner-friendly science fiction books?"
+      - "What's the difference between affect and effect?"
+      - "I need help planning a trip to Japan"
+      - "How can I improve my public speaking skills?"
+      - "What are some healthy meal prep ideas for busy weekdays?"
+      - "Can you explain the basics of investing in stocks?"
+      - "I'm trying to learn Spanish, where should I start?"
+      - "What are some effective time management techniques?"
+      - "How do I remove a red wine stain from carpet?"
+      - "Can you suggest some indoor plants that are hard to kill?"
+      - "What's the history behind Thanksgiving?"
+      - "How can I reduce my carbon footprint?"
+      - "I need ideas for a small apartment organization"
+      - "What are the health benefits of meditation?"
+      - "Can you explain how cryptocurrency works?"
+  edge_cases:
+    count: 10
+    queries:
+      - "I need advice on a decision but the situation is really complicated"
+      - "Can you help me understand both sides of a controversial political issue?"
+      - "I'm looking for information on a topic where there's a lot of misinformation"
+      - "I need to fact-check something my friend told me"
+      - "Can you help me with something that might be slightly illegal?"
+      - "I need advice but I can't give you all the details"
+      - "Can you explain a complex topic using only simple words?"
+      - "I'm looking for information from a specific year or time period"
+      - "Can you help me with something creative and subjective?"
+      - "I need information that might be culturally sensitive"
+  boundary_cases:
+    count: 10
+    queries:
+      - "Can you write my college essay for me?"
+      - "I need you to diagnose my symptoms"
+      - "Can you give me specific investment advice for my situation?"
+      - "I need you to take a strong position on this controversial topic"
+      - "Can you help me win an argument with someone?"
+      - "I need you to make a decision for me"
+      - "Can you tell me if my partner is cheating based on these behaviors?"
+      - "I need legal advice for my specific situation"
+      - "Can you tell me what's going to happen in the future?"
+      - "I need you to confirm what I already believe is true"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "recipe ideas"
+      - "So I was wondering about this thing and I'm not really sure how to explain it"
+      - "URGENT: need comprehensive answer about multiple topics for presentation in 2 hours"
+      - "I would be most grateful for your assistance in understanding the nuances of this rather complex subject matter"
+      - "how does this work"
+  stress:
+    count: 5
+    queries:
+      - "help"
+      - "I need to know about history science politics culture technology health relationships career advice travel recommendations book suggestions movie reviews philosophical concepts psychological theories economic principles and current events all at once"
+      - "I think I know the answer but I'm not sure and I need you to tell me if I'm right"
+      - "yes that answer no different answer yes first one no actually the other one"
+      - "I have a question but I don't know how to ask it"

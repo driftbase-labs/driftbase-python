@@ -1,0 +1,69 @@
+use_case: data_analysis
+description: "Test queries for data analysis, business intelligence, and analytics agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Analyze last quarter's sales data and identify trends"
+      - "What is the average customer lifetime value by segment?"
+      - "Show me the top 10 products by revenue this month"
+      - "Calculate the churn rate for our subscription service"
+      - "Create a cohort analysis of user retention over 6 months"
+      - "What is the correlation between marketing spend and conversions?"
+      - "Generate a revenue forecast for next quarter based on historical data"
+      - "Identify outliers in this dataset and explain possible causes"
+      - "Compare year-over-year growth across all product categories"
+      - "What is the customer acquisition cost by marketing channel?"
+      - "Analyze the distribution of order values and segment customers"
+      - "Calculate the conversion rate at each stage of the funnel"
+      - "Show me the monthly active users trend for the past year"
+      - "What is the impact of our recent price change on demand?"
+      - "Identify which features correlate with user engagement"
+      - "Calculate the statistical significance of this A/B test result"
+      - "What percentage of our revenue comes from repeat customers?"
+      - "Analyze customer feedback sentiment by product category"
+      - "Show me the geographic distribution of our customer base"
+      - "Calculate the return on ad spend for each campaign"
+  edge_cases:
+    count: 10
+    queries:
+      - "The data has missing values for 30% of records, what should I do?"
+      - "These two data sources show conflicting numbers for the same metric"
+      - "I need to analyze data that includes personally identifiable information"
+      - "The sample size is very small, can we still draw conclusions?"
+      - "This correlation is strong but I think it's spurious, how do I verify?"
+      - "The data format changed halfway through the time period"
+      - "I need to combine data from 5 different systems with different schemas"
+      - "The outliers are legitimate data points, not errors, how do I handle them?"
+      - "We have survivorship bias in this dataset, how do I account for it?"
+      - "The data is highly seasonal, making trend analysis difficult"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I need this analysis done in 20 minutes for an executive presentation"
+      - "The CEO disagrees with what the data shows, what do I do?"
+      - "I'm being asked to prove a conclusion that may not be supported by data"
+      - "This analysis could lead to layoffs if the results are negative"
+      - "I need to present uncertainty in a way that non-technical stakeholders understand"
+      - "The data suggests we should stop a project that leadership loves"
+      - "I found an error in last quarter's board presentation, what now?"
+      - "My analysis contradicts what the data science team concluded"
+      - "I'm asked to analyze data I don't have proper access permissions for"
+      - "The stakeholder wants certainty but the data is highly uncertain"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "sales trends"
+      - "So I have this dataset and I'm trying to figure out if there's like a pattern or something"
+      - "URGENT: need full customer segmentation analysis with profitability breakdown before 3pm meeting"
+      - "I would appreciate a comprehensive statistical analysis of the relationship between user demographics and product preferences"
+      - "numbers not make sense why"
+  stress:
+    count: 5
+    queries:
+      - "analyze"
+      - "I need a complete analysis of customer behavior including purchasing patterns demographics lifetime value churn prediction product affinity cross-sell opportunities seasonal trends and segment-specific recommendations with visualizations and an executive summary"
+      - "The data shows the opposite of what I expected and I don't know if it's real"
+      - "yes that metric no wait use this one actually both can you show both"
+      - "I have data but I don't know what question I'm trying to answer"

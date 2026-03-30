@@ -302,6 +302,119 @@ def _redistribute_weights(
         return weights.copy()
 
 
+def compute_min_runs_needed(
+    baseline_dimension_scores: dict[str, list[float]],
+    use_case: str = "GENERAL",
+    alpha: float = 0.05,
+    power: float = 0.80,
+) -> dict:
+    """
+    Compute minimum runs needed per dimension and overall using power analysis.
+
+    Uses the two-sample test sample size formula:
+        n = 2 * ((z_alpha/2 + z_beta) * sigma / delta) ** 2
+
+    Where:
+        sigma = per-dimension standard deviation from baseline
+        delta = effect_size (absolute shift in drift score units, 0.0-1.0)
+        alpha = false positive rate (0.05)
+        power = probability of detecting real drift (0.80)
+
+    Returns:
+        {
+            "overall": int,               # max across all dimensions (conservative)
+            "per_dimension": dict,        # {dim: min_runs}
+            "use_case": str,
+            "effect_size": float,
+            "alpha": float,
+            "power": float,
+            "limiting_dimension": str,    # dimension needing most runs
+        }
+
+    Falls back to {"overall": 50, ...} if insufficient data (< 10 runs).
+
+    Note: Per-dimension floor is 10, overall floor is 30. With typical drift score
+    standard deviations (0.05-0.30), differentiation between consistent/noisy agents
+    only appears when sigma > 0.15. Below this, most agents hit the 30 floor.
+
+    Never raises.
+    """
+    try:
+        from scipy.stats import norm as scipy_norm
+
+        from driftbase.local.use_case_inference import get_effect_size
+
+        effect_size = get_effect_size(use_case)
+
+        z_alpha = scipy_norm.ppf(1 - alpha / 2)  # 1.96 for alpha=0.05
+        z_beta = scipy_norm.ppf(power)  # 0.84 for power=0.80
+
+        # Sigma scaling note: Typical production agent drift score standard deviations
+        # range 0.05-0.30. Below sigma=0.12, the formula produces n < 30 which is
+        # clamped to the overall floor. Differentiation between consistent/noisy
+        # agents only appears for high-variance agents (sigma > 0.15).
+
+        per_dimension = {}
+        for dim, scores in baseline_dimension_scores.items():
+            if len(scores) < 10:
+                per_dimension[dim] = 50  # fallback
+                continue
+
+            sigma = float(np.std(scores))
+            if sigma < 0.001:
+                # Near-zero variance — very consistent dimension
+                # Needs fewer runs (small shifts are detectable against flat baseline)
+                per_dimension[dim] = 10
+                continue
+
+            # delta is absolute shift in drift score units (0.0-1.0), not relative to sigma
+            delta = effect_size
+
+            n = 2 * ((z_alpha + z_beta) * sigma / delta) ** 2
+            # Floor at 10 (minimum meaningful sample for per-dimension analysis)
+            # Cap at 200 (diminishing returns beyond this)
+            per_dimension[dim] = max(10, min(200, int(np.ceil(n))))
+
+        if not per_dimension:
+            return {
+                "overall": 50,
+                "per_dimension": {},
+                "use_case": use_case,
+                "effect_size": effect_size,
+                "alpha": alpha,
+                "power": power,
+                "limiting_dimension": "",
+            }
+
+        overall = max(per_dimension.values())
+        limiting = max(per_dimension, key=per_dimension.get)
+
+        # Enforce minimum overall of 30 to ensure meaningful statistical power
+        # even for very consistent agents
+        overall = max(30, overall)
+
+        return {
+            "overall": overall,
+            "per_dimension": per_dimension,
+            "use_case": use_case,
+            "effect_size": effect_size,
+            "alpha": alpha,
+            "power": power,
+            "limiting_dimension": limiting,
+        }
+
+    except Exception:
+        return {
+            "overall": 50,
+            "per_dimension": {},
+            "use_case": use_case,
+            "effect_size": 0.10,
+            "alpha": alpha,
+            "power": power,
+            "limiting_dimension": "",
+        }
+
+
 def _extract_dimension_scores(runs: list[dict[str, Any]]) -> dict[str, list[float]]:
     """
     Extract per-dimension drift scores from runs.

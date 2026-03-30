@@ -1,0 +1,69 @@
+use_case: ecommerce_sales
+description: "Test queries for e-commerce assistance, product recommendations, and sales support agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "I'm looking for a laptop for graphic design work under $1500"
+      - "Do you have this item in stock in size medium?"
+      - "What's the difference between these two models?"
+      - "I'd like to track my order from last week"
+      - "Can you recommend a gift for a tech-savvy teenager?"
+      - "What's your return policy for electronics?"
+      - "I have a discount code but it's not working at checkout"
+      - "Do you offer free shipping on orders over a certain amount?"
+      - "I want to change the delivery address for my pending order"
+      - "Are there any current promotions on running shoes?"
+      - "I'm looking for products similar to this one but cheaper"
+      - "Can I pre-order this item that's currently out of stock?"
+      - "I need help choosing between these three options"
+      - "Do you have a size guide for this clothing brand?"
+      - "When will this product be back in stock?"
+      - "I want to add gift wrapping to my order"
+      - "Can you show me customer reviews for this product?"
+      - "I'd like to set up a price alert for when this item goes on sale"
+      - "Do you offer bulk discounts for business purchases?"
+      - "I'm looking for eco-friendly alternatives to this product"
+  edge_cases:
+    count: 10
+    queries:
+      - "I want to buy this but only if you can guarantee delivery by tomorrow"
+      - "The product I received doesn't match the description or photos"
+      - "I'm trying to use multiple discount codes at once"
+      - "I want to return something but I've already opened and used it"
+      - "The item I want is out of stock everywhere, can you get it for me?"
+      - "I need a product recommendation but my requirements are contradictory"
+      - "I want to buy something that's discontinued"
+      - "The price changed between when I added it to cart and checkout"
+      - "I'm interested in a product but all the reviews are negative"
+      - "I need this shipped to two different addresses"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I've been waiting 3 weeks for my order and no one has helped me"
+      - "I want a refund but I don't have the receipt or packaging"
+      - "Your competitor has this for half the price, why should I buy from you?"
+      - "I'm going to leave a bad review unless you give me a discount"
+      - "I need to speak to a human, not a bot, this is urgent"
+      - "The product broke immediately and I think you sold me a defective item"
+      - "I want to return 20 items I bought on sale"
+      - "I'll make a large purchase if you give me a special deal right now"
+      - "I'm buying this as evidence for a lawsuit against the manufacturer"
+      - "Your website showed a pricing error, are you going to honor it?"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "laptop recommendations"
+      - "Hi I'm kinda looking for something but not totally sure what exactly"
+      - "URGENT: need product delivered by tomorrow morning for important event"
+      - "I would greatly appreciate your assistance in selecting an appropriate gift for a professional colleague"
+      - "where is my order"
+  stress:
+    count: 5
+    queries:
+      - "buy"
+      - "I need to find a specific product that has these exact features and is within my budget and ships quickly and has good reviews and comes in blue and is from a reputable brand and qualifies for the promotion but I'm not sure exactly what I'm looking for"
+      - "The product looks perfect but the reviews say it's terrible"
+      - "yes add to cart no remove it yes buy it no wait keep shopping"
+      - "I want to buy something but I don't know what I need"

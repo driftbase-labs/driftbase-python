@@ -466,6 +466,273 @@ def _dimension_status(score: float) -> str:
     return "STABLE"
 
 
+def render_tier1(
+    console: Console,
+    report: DriftReport,
+    baseline_label: str,
+    current_label: str,
+    baseline_n: int,
+    current_n: int,
+) -> int:
+    """
+    Render Tier 1 output: Progress bars only, no analysis.
+
+    Returns exit code 0 (never fail on insufficient data).
+    """
+    from rich.progress import BarColumn, Progress, TextColumn
+
+    console.print("─" * 76)
+    console.print(
+        f"  [bold]DRIFTBASE[/]  [default]{baseline_label}[/] → [default]{current_label}[/]"
+    )
+    console.print("─" * 76)
+    console.print()
+
+    runs_needed = getattr(report, "runs_needed", 0)
+    limiting_version = getattr(report, "limiting_version", "")
+    min_runs_needed = getattr(report, "min_runs_needed", 50)
+    power_analysis_used = getattr(report, "power_analysis_used", False)
+
+    from driftbase.config import get_settings
+
+    settings = get_settings()
+    tier1_min = settings.TIER1_MIN_RUNS
+
+    console.print("[bold]Data Collection in Progress[/]")
+    console.print()
+    console.print("[dim]Collecting behavioral data before analysis can begin.[/]")
+    console.print(
+        f"[dim]Need {tier1_min} runs on each version to begin indicative analysis.[/]"
+    )
+    if power_analysis_used:
+        console.print(
+            f"[dim]Need {min_runs_needed} runs on each version for a statistically reliable verdict.[/]"
+        )
+        console.print(
+            "[dim]  ↑ personalized based on your agent's behavioral profile[/]"
+        )
+    else:
+        console.print(
+            f"[dim]Need {min_runs_needed} runs on each version for a statistically reliable verdict.[/]"
+        )
+    console.print()
+
+    # Progress bars for both versions
+    with Progress(
+        TextColumn("[bold]{task.description}"),
+        BarColumn(bar_width=40),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("({task.completed}/{task.total} runs)"),
+        console=console,
+    ) as progress:
+        baseline_task = progress.add_task(
+            f"[cyan]{baseline_label:20s}[/]",
+            total=tier1_min,
+            completed=min(baseline_n, tier1_min),
+        )
+        current_task = progress.add_task(
+            f"[cyan]{current_label:20s}[/]",
+            total=tier1_min,
+            completed=min(current_n, tier1_min),
+        )
+
+    console.print()
+
+    # Show which version is limiting
+    if limiting_version == "baseline":
+        console.print(
+            f"[dim]Waiting for {runs_needed} more runs from [bold]{baseline_label}[/][/]"
+        )
+    elif limiting_version == "eval":
+        console.print(
+            f"[dim]Waiting for {runs_needed} more runs from [bold]{current_label}[/][/]"
+        )
+
+    console.print()
+    console.print("[dim]No verdict available — insufficient data[/]")
+    console.print("[dim]Run your agent more, then try driftbase diff again[/]")
+    console.print()
+
+    return 0  # Never fail on insufficient data
+
+
+def render_tier2(
+    console: Console,
+    report: DriftReport,
+    baseline_label: str,
+    current_label: str,
+    baseline_n: int,
+    current_n: int,
+) -> int:
+    """
+    Render Tier 2 output: Indicative directional signals only, no numeric scores or verdict.
+
+    Returns exit code 0 (never fail on insufficient data).
+    """
+    from rich.progress import BarColumn, Progress, TextColumn
+
+    console.print("─" * 76)
+    console.print(
+        f"  [bold]DRIFTBASE[/]  [default]{baseline_label}[/] → [default]{current_label}[/]  ·  [default]{baseline_n} vs {current_n} runs[/]"
+    )
+    console.print("─" * 76)
+    console.print()
+
+    runs_needed = getattr(report, "runs_needed", 0)
+    limiting_version = getattr(report, "limiting_version", "")
+    indicative_signal = getattr(report, "indicative_signal", {}) or {}
+    min_runs_needed = getattr(report, "min_runs_needed", 50)
+    dimension_significance = getattr(report, "dimension_significance", {})
+    reliable_dimension_count = getattr(report, "reliable_dimension_count", 0)
+    total_dimension_count = getattr(report, "total_dimension_count", 12)
+
+    from driftbase.config import get_settings
+
+    settings = get_settings()
+
+    console.print("[bold]Statistical confidence[/]")
+    console.print("─" * 76)
+    with Progress(
+        TextColumn("[bold]{task.description}"),
+        BarColumn(bar_width=40),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("({task.completed}/{task.total} runs)"),
+        console=console,
+    ) as progress:
+        baseline_task = progress.add_task(
+            f"{baseline_label:20s}",
+            total=min_runs_needed,
+            completed=min(baseline_n, min_runs_needed),
+        )
+        current_task = progress.add_task(
+            f"{current_label:20s}",
+            total=min_runs_needed,
+            completed=min(current_n, min_runs_needed),
+        )
+
+    console.print()
+
+    # Show dimension significance if available
+    if dimension_significance:
+        console.print(
+            f"[bold]Dimension significance[/]  ({reliable_dimension_count} of {total_dimension_count} reliable)"
+        )
+        console.print("─" * 76)
+
+        dim_table = Table(
+            show_header=True,
+            header_style="bold #8B5CF6",
+            border_style="dim",
+            box=None,
+            pad_edge=False,
+        )
+        dim_table.add_column("Dimension", style="", width=25)
+        dim_table.add_column("Status", justify="center", width=20)
+        dim_table.add_column("Details", style="dim", width=30)
+
+        # Get per-dimension min runs if available
+        min_runs_per_dim = getattr(report, "min_runs_per_dimension", {})
+
+        # Sort by status (reliable first, then indicative, then insufficient)
+        status_order = {"reliable": 0, "indicative": 1, "insufficient": 2}
+        sorted_dims = sorted(
+            dimension_significance.items(),
+            key=lambda x: (status_order.get(x[1], 3), x[0]),
+        )
+
+        for dim, status in sorted_dims:
+            # Format dimension name
+            dim_display = dim.replace("_drift", "").replace("_", " ")
+
+            # Status display with symbol
+            if status == "reliable":
+                status_display = "[#4ADE80]✓ reliable[/]"
+                detail = "statistically significant"
+            elif status == "indicative":
+                dim_min = min_runs_per_dim.get(dim, min_runs_needed)
+                runs_needed_dim = dim_min - min(baseline_n, current_n)
+                status_display = "[#FFA94D]↑ elevated[/]"
+                detail = f"indicative — {runs_needed_dim} more runs"
+            else:  # insufficient
+                status_display = "[bright_black]○ insufficient[/]"
+                detail = "not enough data yet"
+
+            dim_table.add_row(dim_display, status_display, detail)
+
+        console.print(dim_table)
+        console.print()
+
+    console.print("[bold]Indicative Behavioral Signals[/]")
+    console.print()
+    console.print(
+        f"[dim]Early directional signals based on {min(baseline_n, current_n)} runs.[/]"
+    )
+    console.print(
+        f"[dim]Full statistical analysis requires {min_runs_needed} runs per version.[/]"
+    )
+    console.print()
+
+    # Show directional signals if any
+    if indicative_signal:
+        signal_table = Table(
+            show_header=True,
+            header_style="bold #8B5CF6",
+            border_style="dim",
+            box=None,
+            pad_edge=False,
+        )
+        signal_table.add_column("Dimension", style="", width=30)
+        signal_table.add_column("Signal", justify="center", width=10)
+        signal_table.add_column("Interpretation", style="dim", width=35)
+
+        signal_meanings = {
+            "↑": "Increased",
+            "↓": "Decreased",
+            "→": "Changed (direction unclear)",
+        }
+
+        for dim, signal in sorted(indicative_signal.items()):
+            interpretation = signal_meanings.get(signal, "Changed")
+            # Color based on signal
+            if signal == "↑":
+                signal_display = f"[#FFA94D]{signal}[/]"
+            elif signal == "↓":
+                signal_display = f"[#4ADE80]{signal}[/]"
+            else:
+                signal_display = f"[bright_black]{signal}[/]"
+
+            signal_table.add_row(dim.replace("_", " "), signal_display, interpretation)
+
+        console.print(signal_table)
+        console.print()
+        console.print(
+            "[dim]Note: These are directional indicators only, not drift scores.[/]"
+        )
+    else:
+        console.print("[dim]No significant directional signals detected yet.[/]")
+
+    console.print()
+
+    # Show which version is limiting
+    if limiting_version == "baseline":
+        console.print(
+            f"[dim]Waiting for {runs_needed} more runs from [bold]{baseline_label}[/] for full analysis[/]"
+        )
+    elif limiting_version == "eval":
+        console.print(
+            f"[dim]Waiting for {runs_needed} more runs from [bold]{current_label}[/] for full analysis[/]"
+        )
+
+    console.print()
+    console.print(
+        "[dim]No verdict available — sample size below statistical threshold[/]"
+    )
+    console.print("[dim]Run your agent more to enable drift scoring and verdicts[/]")
+    console.print()
+
+    return 0  # Never fail on insufficient data
+
+
 def render_diff_report(
     console: Console,
     report: DriftReport,
@@ -569,6 +836,31 @@ def render_diff_report(
         console.print(
             f"[dim]  Tip: Label {10 - outcomes_count} more versions with 'driftbase deploy mark' to enable learned weights[/]"
         )
+
+    # Show partial TIER3 caveat if applicable
+    partial_tier3 = getattr(report, "partial_tier3", False)
+    dimension_significance = getattr(report, "dimension_significance", {})
+    if partial_tier3 and dimension_significance:
+        # Identify indicative dimensions
+        indicative_dims = [
+            dim.replace("_drift", "").replace("_", " ")
+            for dim, status in dimension_significance.items()
+            if status == "indicative"
+        ]
+        reliable_count = sum(
+            1 for s in dimension_significance.values() if s == "reliable"
+        )
+        total_count = len(dimension_significance)
+        if indicative_dims:
+            console.print(
+                f"[dim]  Note: {reliable_count} of {total_count} dimensions statistically reliable.[/]"
+            )
+            console.print(
+                f"[dim]        {', '.join(indicative_dims[:3])} still indicative.[/]"
+            )
+            console.print(
+                "[dim]        Scores for these dimensions may shift with more data.[/]"
+            )
 
     # Show top weighted dimensions and thresholds if calibrated
     if calibrated_weights and composite_thresholds:
@@ -1404,7 +1696,7 @@ def diff_local(
         return None, None, None, "Failed to build fingerprints"
 
     report = compute_drift(
-        baseline_fp, current_fp, baseline_run_dicts, current_run_dicts
+        baseline_fp, current_fp, baseline_run_dicts, current_run_dicts, backend=backend
     )
 
     # Root cause correlation
@@ -1591,6 +1883,30 @@ def run_diff(
     )
 
     if json_output:
+        confidence_tier = getattr(report, "confidence_tier", "TIER3")
+
+        # For TIER1 and TIER2, return minimal JSON
+        if confidence_tier in ("TIER1", "TIER2"):
+            out = {
+                "schema_version": "1.0",
+                "baseline_version": baseline_label,
+                "current_version": current_label,
+                "baseline_n": baseline_n,
+                "current_n": current_n,
+                "confidence_tier": confidence_tier,
+                "runs_needed": getattr(report, "runs_needed", 0),
+                "limiting_version": getattr(report, "limiting_version", ""),
+                "verdict": None,
+                "above_threshold": False,
+                "threshold": threshold,
+                "computed_ms": round(elapsed_ms, 1),
+            }
+            if confidence_tier == "TIER2":
+                out["indicative_signal"] = getattr(report, "indicative_signal", {})
+            console.print(json.dumps(out, indent=2))
+            return 0  # Never fail on insufficient data
+
+        # TIER3: Full analysis
         from driftbase.verdict import compute_verdict
 
         verdict_result = compute_verdict(
@@ -1608,12 +1924,15 @@ def run_diff(
             "current_version": current_label,
             "baseline_n": baseline_n,
             "current_n": current_n,
+            "confidence_tier": "TIER3",
             "drift_score": report.drift_score,
             "severity": report.severity,
-            "verdict": verdict_result.verdict.value,
-            "verdict_title": verdict_result.title,
-            "verdict_explanation": verdict_result.explanation,
-            "next_steps": verdict_result.next_steps,
+            "verdict": verdict_result.verdict.value if verdict_result else None,
+            "verdict_title": verdict_result.title if verdict_result else None,
+            "verdict_explanation": verdict_result.explanation
+            if verdict_result
+            else None,
+            "next_steps": verdict_result.next_steps if verdict_result else [],
             "above_threshold": report.drift_score >= threshold,
             "threshold": threshold,
             "decision_drift": report.decision_drift,
@@ -1655,8 +1974,21 @@ def run_diff(
         ):
             return 1
         else:
-            return verdict_result.exit_code
+            return verdict_result.exit_code if verdict_result else 0
 
+    # Route based on confidence tier
+    confidence_tier = getattr(report, "confidence_tier", "TIER3")
+
+    if confidence_tier == "TIER1":
+        return render_tier1(
+            console, report, baseline_label, current_label, baseline_n, current_n
+        )
+    elif confidence_tier == "TIER2":
+        return render_tier2(
+            console, report, baseline_label, current_label, baseline_n, current_n
+        )
+
+    # TIER3: Full analysis
     baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
     current_cost_10k = calculate_cost_per_10k(current_run_dicts)
     exit_code = render_diff_report(

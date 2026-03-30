@@ -1,0 +1,69 @@
+use_case: content_generation
+description: "Test queries for content creation, copywriting, and creative writing agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Write a blog post about sustainable fashion trends in 2024"
+      - "Create social media captions for our new product launch"
+      - "Draft an email newsletter announcing our upcoming webinar"
+      - "Write product descriptions for these 10 items"
+      - "Create an engaging LinkedIn post about our company culture"
+      - "Write a press release for our Series B funding announcement"
+      - "Generate creative headlines for this marketing campaign"
+      - "Write a script for a 60-second explainer video"
+      - "Create compelling ad copy for Google Ads"
+      - "Write an SEO-optimized article about remote work productivity"
+      - "Draft a case study highlighting our customer success story"
+      - "Create engaging captions for our Instagram carousel post"
+      - "Write a welcome email for new subscribers"
+      - "Generate meta descriptions for our website pages"
+      - "Write a white paper on AI trends in healthcare"
+      - "Create a compelling About Us page for our website"
+      - "Write subject lines for our email marketing campaign"
+      - "Draft talking points for our CEO's keynote speech"
+      - "Write FAQs for our new service offering"
+      - "Create a content calendar for the next month"
+  edge_cases:
+    count: 10
+    queries:
+      - "Write content that explains a complex technical topic to a general audience"
+      - "I need content in the style of a specific author or brand voice"
+      - "Create content that's engaging but also complies with strict regulatory requirements"
+      - "Write something that appeals to two very different target audiences"
+      - "I need the same content adapted for 5 different platforms"
+      - "Write content about a topic I disagree with but need to present neutrally"
+      - "Create content that's original but also follows a very specific template"
+      - "Write something that's professional but also has personality"
+      - "I need content that's detailed and comprehensive but also brief"
+      - "Create content for a product that doesn't exist yet based on rough ideas"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I need this published in 30 minutes and it has to be perfect"
+      - "Write content that will definitely go viral"
+      - "The last writer's content didn't meet expectations, make this better"
+      - "I need you to match the style of content I can't share with you"
+      - "Write something compelling about a product that honestly isn't very good"
+      - "I need content but I'll know what I want when I see it"
+      - "This needs to rank #1 on Google for a highly competitive keyword"
+      - "Write content that sells without sounding like it's selling"
+      - "I need this to appeal to everyone while offending no one"
+      - "The content needs to be completely original but also exactly like our competitor's"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "blog post ideas"
+      - "Hey could you maybe write something about our product, nothing too formal"
+      - "URGENT: need polished press release for media distribution by 5pm today"
+      - "I would be most appreciative if you could compose an eloquent piece regarding our corporate values and mission"
+      - "write stuff for website"
+  stress:
+    count: 5
+    queries:
+      - "content"
+      - "I need a complete content strategy including blog posts social media content email campaigns video scripts case studies white papers landing page copy ad copy SEO optimization content calendar influencer outreach messaging and brand guidelines"
+      - "Write something that is simultaneously informative entertaining professional casual detailed and concise"
+      - "yes that tone no different style yes formal no casual actually somewhere in between"
+      - "I need content but I don't know what kind or what it should say"

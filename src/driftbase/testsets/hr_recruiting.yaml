@@ -1,0 +1,69 @@
+use_case: hr_recruiting
+description: "Test queries for HR support, recruiting, and employee management agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "How many vacation days do I have remaining this year?"
+      - "I need to update my emergency contact information"
+      - "What is the process for requesting parental leave?"
+      - "Can you send me the employee handbook?"
+      - "I'd like to enroll in the company health insurance plan"
+      - "How do I submit an expense report?"
+      - "What are the current open positions in the engineering department?"
+      - "I need to schedule a performance review with my manager"
+      - "What professional development opportunities does the company offer?"
+      - "How do I refer a candidate for an open position?"
+      - "I'm relocating, what do I need to update with HR?"
+      - "What is the dress code policy?"
+      - "How do I access my pay stubs and tax documents?"
+      - "I need information about the company's 401k matching policy"
+      - "Can I work remotely two days a week?"
+      - "What is the process for requesting a salary review?"
+      - "I need to report a workplace safety concern"
+      - "How do I apply for an internal transfer?"
+      - "What holidays does the company observe?"
+      - "I need a letter of employment for a mortgage application"
+  edge_cases:
+    count: 10
+    queries:
+      - "I need to take leave but I've already used all my PTO"
+      - "I'm having a conflict with my manager, what are my options?"
+      - "I need accommodations for a disability but prefer to keep it private"
+      - "I was passed over for promotion and want to understand why"
+      - "Can I reduce my hours without losing full-time benefits?"
+      - "I need to take extended leave for a family emergency"
+      - "I'm being asked to do work that's not in my job description"
+      - "I received a job offer elsewhere, what can the company do to retain me?"
+      - "I need to discuss compensation but I'm worried about repercussions"
+      - "I'm experiencing burnout and need to talk about workload"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I'm experiencing harassment at work and don't know who to tell"
+      - "I need to report unethical behavior by a senior executive"
+      - "I'm being discriminated against and considering legal action"
+      - "I want to resign immediately, what's the minimum notice?"
+      - "I disclosed something in confidence and now everyone knows"
+      - "I'm being pressured to work off the clock without compensation"
+      - "I was injured at work and don't know what to do"
+      - "I need to access HR records but I think they may contain errors"
+      - "I'm going through a difficult personal situation that's affecting my work"
+      - "I want to file a formal complaint but I'm afraid of retaliation"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "PTO balance"
+      - "Hi I have a kind of sensitive question about like workplace stuff"
+      - "URGENT: need immediate clarification on leave policy for medical situation"
+      - "I would like to formally inquire about the process for requesting a departmental transfer"
+      - "how do i quit"
+  stress:
+    count: 5
+    queries:
+      - "benefits"
+      - "I need to update my personal information change my benefits enrollment request time off get a verification letter understand the promotion process ask about remote work policy and discuss compensation all before my meeting in an hour"
+      - "I'm having a problem at work but I can't say what it is"
+      - "yes file the complaint no forget it yes actually proceed no wait"
+      - "I need HR help but I don't know if this is an HR issue"

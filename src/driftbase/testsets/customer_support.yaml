@@ -1,0 +1,69 @@
+use_case: customer_support
+description: "Test queries for customer support and helpdesk agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "I was charged twice this month and need this fixed immediately"
+      - "How do I reset my password? I'm locked out of my account"
+      - "Where is my order? It was supposed to arrive three days ago"
+      - "I want to cancel my subscription"
+      - "Can I get a refund for my recent purchase?"
+      - "My account was suspended and I don't know why"
+      - "I need to update my billing information"
+      - "The product I received is damaged"
+      - "How do I change my email address on my account?"
+      - "I never received the confirmation email for my order"
+      - "I want to upgrade my plan"
+      - "How long does shipping usually take?"
+      - "I received the wrong item in my order"
+      - "Can I change my delivery address after placing an order?"
+      - "What is your return policy?"
+      - "I can't access my account even after resetting my password"
+      - "I was billed for a plan I didn't sign up for"
+      - "How do I download my invoice?"
+      - "I want to pause my subscription, not cancel it"
+      - "My discount code isn't working at checkout"
+  edge_cases:
+    count: 10
+    queries:
+      - "I want a refund for something I bought 13 months ago"
+      - "My account was hacked and someone changed my email and password"
+      - "I ordered 6 items but only received 5, the box looks untampered"
+      - "I cancelled my subscription but was still charged the next month"
+      - "I have three accounts under different emails and want to merge them"
+      - "I bought a gift subscription for someone and they never received the email"
+      - "I was charged in USD but I live in Europe and want to be charged in EUR"
+      - "My order shows delivered but I never received anything"
+      - "I need a receipt for a purchase made by a former employee using the company card"
+      - "I signed up for the free trial but my credit card was charged immediately"
+  boundary_cases:
+    count: 10
+    queries:
+      - "This is the third time this has happened and I am absolutely furious"
+      - "I have already spoken to two agents who told me different things and I need a manager"
+      - "I need this resolved today or I am disputing the charge with my bank"
+      - "I have been a customer for 5 years and this is how you treat me?"
+      - "Your agent yesterday promised me a full refund and now you are saying no"
+      - "I am going to leave a one-star review everywhere if this is not fixed right now"
+      - "I am a business customer paying for 50 seats and nobody can help me"
+      - "I want compensation for the inconvenience this has caused me"
+      - "I need to speak to someone in your legal department"
+      - "This is my final message before I contact my credit card company"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "double billed"
+      - "Hey so I think there might be an issue with my account? not sure where to start"
+      - "URGENT: account locked, presentation in 1 hour, please help immediately!!!"
+      - "Good morning, I would like to kindly inquire about the status of my recent order placed on the 14th of this month"
+      - "cant login help"
+  stress:
+    count: 5
+    queries:
+      - "refund"
+      - "I have been trying to get this resolved for three weeks, I have sent 14 emails, spoken to 6 different agents, been promised callbacks that never came, and I am now at the point where I am considering taking legal action because the amount involved is significant and your company has been completely unresponsive to my very reasonable request for a simple refund of a defective product"
+      - "¿Puedes ayudarme? No hablo inglés muy bien"
+      - "asdfghjkl I don't even know what to type anymore"
+      - "Hi. Yes. No. Maybe. I need help with something but I'm not sure this is the right place."

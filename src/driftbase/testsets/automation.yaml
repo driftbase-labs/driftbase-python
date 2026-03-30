@@ -1,0 +1,69 @@
+use_case: automation
+description: "Test queries for workflow automation, task automation, and process automation agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Send a welcome email to all new users who signed up today"
+      - "Create a weekly report of sales metrics and email it to the team"
+      - "Automatically assign support tickets based on category and priority"
+      - "Archive all documents older than 7 years to cold storage"
+      - "Send a reminder email 24 hours before each scheduled meeting"
+      - "Automatically generate invoices on the first day of each month"
+      - "Move completed tasks from the active board to the archive"
+      - "Send a survey to customers 7 days after their purchase"
+      - "Automatically update inventory when orders are fulfilled"
+      - "Create a backup of the database every night at 2 AM"
+      - "Send alerts when server CPU usage exceeds 80%"
+      - "Automatically categorize incoming emails based on content"
+      - "Schedule social media posts for the next week"
+      - "Generate and send monthly subscription renewal reminders"
+      - "Automatically sync customer data between CRM and email platform"
+      - "Create tasks in project management tool from form submissions"
+      - "Send congratulations messages to employees on their work anniversary"
+      - "Automatically update product prices based on competitor pricing"
+      - "Generate end-of-day reconciliation reports"
+      - "Automatically escalate unresolved tickets after 48 hours"
+  edge_cases:
+    count: 10
+    queries:
+      - "The automation sent duplicate emails to 500 customers"
+      - "I need to run a one-time bulk operation without setting up a permanent automation"
+      - "The automation needs to handle edge cases where data might be missing"
+      - "Two automations are conflicting and creating an infinite loop"
+      - "I need to temporarily pause an automation without deleting it"
+      - "The automation worked in testing but fails in production"
+      - "I need to automate something that requires human judgment calls"
+      - "The third-party API we're automating against has rate limits"
+      - "The automation needs to work across different time zones correctly"
+      - "I need to roll back changes made by an automation that ran incorrectly"
+  boundary_cases:
+    count: 10
+    queries:
+      - "The automation just sent confidential data to the wrong recipients"
+      - "I need to stop a running automation that's causing damage"
+      - "The automation is working but it's costing way more than expected"
+      - "My boss wants to automate something that probably shouldn't be automated"
+      - "I need to audit what an automation has been doing for compliance"
+      - "The automation failed and now data is out of sync across systems"
+      - "I set up an automation but now I don't remember what it does"
+      - "The automation is too slow and creating a backlog"
+      - "I need to explain to non-technical stakeholders why this can't be automated"
+      - "The automation worked for 6 months and suddenly stopped, no idea why"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "automate emails"
+      - "I want to set up something that just kind of runs in the background automatically"
+      - "URGENT: automation sent incorrect data to customers, need immediate fix and notification"
+      - "I would like to implement an automated workflow to streamline the invoice processing procedure"
+      - "make it automatic"
+  stress:
+    count: 5
+    queries:
+      - "workflow"
+      - "I need to automate the entire onboarding process including sending welcome emails creating accounts in all systems assigning tasks to managers scheduling training sessions generating documentation tracking completion and sending reminders with escalations and notifications to multiple stakeholders"
+      - "The automation is doing something but I'm not sure if it's doing the right thing"
+      - "yes send the email no cancel it yes proceed actually wait"
+      - "I need automation but I don't know exactly what steps should be automated"

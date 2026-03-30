@@ -1,0 +1,69 @@
+use_case: healthcare
+description: "Test queries for clinical support, triage, and patient care agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "I have a severe headache that started suddenly two hours ago"
+      - "My child has had a fever of 103°F for two days, should I be concerned?"
+      - "I need to refill my blood pressure medication"
+      - "What are the side effects of metformin?"
+      - "I think I might be having an allergic reaction, my throat feels tight"
+      - "How do I prepare for a colonoscopy?"
+      - "I've been feeling unusually tired for the past three weeks"
+      - "I need to schedule a follow-up appointment after my surgery"
+      - "Can I take ibuprofen with my current medications?"
+      - "I have a rash on my arm that appeared this morning"
+      - "My blood sugar readings have been higher than usual this week"
+      - "I need a referral to a cardiologist"
+      - "What vaccines does my 2-year-old need?"
+      - "I've been having chest tightness when I climb stairs"
+      - "How long should I wait before returning to work after this procedure?"
+      - "I think I may have been exposed to COVID-19"
+      - "I need to update my emergency contact information"
+      - "What does my lab result of 6.8 HbA1c mean?"
+      - "I'm 8 weeks pregnant and experiencing morning sickness, what can I take?"
+      - "I need my medical records sent to a new doctor"
+  edge_cases:
+    count: 10
+    queries:
+      - "I stopped taking my antidepressants three days ago because I felt better, now I feel awful"
+      - "I need a second opinion because I disagree with my diagnosis"
+      - "I am allergic to penicillin and latex, what antibiotics can I have?"
+      - "I took more than the recommended dose because the pain was unbearable"
+      - "My elderly parent refuses to take their medication, what can I do?"
+      - "I've been self-medicating with supplements I bought online, are they safe?"
+      - "I need my prescription changed, my insurance won't cover the current one"
+      - "I'm experiencing side effects my doctor said wouldn't happen"
+      - "I need an urgent appointment but your next available is in 6 weeks"
+      - "I was discharged from hospital yesterday and my symptoms are coming back"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I've been in pain for months and nobody is taking me seriously"
+      - "I need to speak to a doctor directly, not an AI, this is serious"
+      - "I think I'm having a heart attack right now, what do I do"
+      - "My doctor prescribed something but I read online it's dangerous, I won't take it"
+      - "I need these test results explained right now, I'm terrified"
+      - "I've been waiting 4 hours in the emergency department and nobody has seen me"
+      - "I need this referral approved urgently, I can't wait for the standard process"
+      - "I'm a medical professional asking about a complex case, I need clinical detail"
+      - "I want to refuse this treatment, what are my rights?"
+      - "Something is very wrong, I can feel it, but my tests came back normal"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "chest pain"
+      - "Hi I'm not sure if this is serious or not but I've been having this kind of weird feeling"
+      - "EMERGENCY: patient unresponsive, need immediate guidance"
+      - "I would like to formally inquire about the results of the bloodwork conducted during my visit on the 12th"
+      - "hurts bad dont know what to do"
+  stress:
+    count: 5
+    queries:
+      - "pain"
+      - "I need to know if I can take my blood pressure medication with my heart medication and my diabetes medication and my cholesterol medication and my anxiety medication all at the same time because I just got a new prescription and I'm worried about interactions"
+      - "I am experiencing symptoms that don't match any condition I can find"
+      - "yes I understand the risks no I don't want to discuss it further just tell me what to do"
+      - "I don't know what's wrong I just know something is wrong"

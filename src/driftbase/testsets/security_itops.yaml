@@ -1,0 +1,69 @@
+use_case: security_itops
+description: "Test queries for security operations, IT operations, and threat response agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Review the security logs for unusual login attempts"
+      - "A user reports receiving a phishing email, what should I do?"
+      - "Set up two-factor authentication for all administrative accounts"
+      - "Scan the application for known security vulnerabilities"
+      - "Investigate an alert for multiple failed SSH login attempts"
+      - "Grant temporary elevated privileges to a contractor"
+      - "Review and update the firewall rules for the production network"
+      - "A developer accidentally committed API keys to GitHub, what's the response?"
+      - "Set up automated security patching for our servers"
+      - "Investigate why our application was flagged by antivirus software"
+      - "Review access logs to determine who accessed a sensitive file"
+      - "Configure intrusion detection on the network perimeter"
+      - "A user's account appears to be compromised, what are the steps?"
+      - "Set up encryption at rest for our database"
+      - "Review the results of the penetration test and prioritize fixes"
+      - "Implement rate limiting to prevent brute force attacks"
+      - "Audit user permissions across all systems"
+      - "Set up a security incident response plan"
+      - "Investigate unusual outbound network traffic from a server"
+      - "Configure security headers for the web application"
+  edge_cases:
+    count: 10
+    queries:
+      - "We're seeing login attempts from IP addresses in countries we don't operate in"
+      - "A security researcher reported a vulnerability directly to the CEO"
+      - "Our SSL certificate was revoked by the certificate authority"
+      - "The security scanner is reporting hundreds of false positives"
+      - "We need to comply with a new regulation that conflicts with our current setup"
+      - "An employee left the company but still has access to critical systems"
+      - "We're required to preserve evidence for a legal investigation"
+      - "The security audit found issues that would take months to fix properly"
+      - "We need to grant emergency access but the access control system is down"
+      - "A zero-day vulnerability was announced for software we're running"
+  boundary_cases:
+    count: 10
+    queries:
+      - "We're actively being hacked right now, I can see it happening in real-time"
+      - "Customer data may have been exposed, do we need to report this?"
+      - "I found a security vulnerability but my manager says not to report it"
+      - "We have a suspected insider threat, what's the protocol?"
+      - "Ransomware has encrypted our backup servers, what are our options?"
+      - "I need to investigate a security incident but it involves the CTO's account"
+      - "We're legally required to hand over data but it would compromise security"
+      - "The security fix will break compatibility with 40% of our customers"
+      - "I need to disable an account but the person is currently in an important meeting"
+      - "We have conflicting security requirements from different compliance frameworks"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "suspicious login"
+      - "Someone is trying to get into something they shouldn't, not sure what to do"
+      - "SECURITY BREACH: unauthorized access detected on production database, immediate containment required"
+      - "I kindly request a comprehensive security audit of our infrastructure with particular attention to access controls and data encryption"
+      - "hack attempt help"
+  stress:
+    count: 5
+    queries:
+      - "breach"
+      - "I need an immediate security assessment including vulnerability scanning penetration testing access control review security policy audit incident response plan update compliance verification for SOC2 GDPR and HIPAA threat modeling and a comprehensive report with remediation recommendations prioritized by risk"
+      - "The logs show something happened but I can't tell if it's malicious or not"
+      - "yes block that IP no wait whitelist it actually I'm not sure"
+      - "Something suspicious is happening but I don't have enough information to know what"

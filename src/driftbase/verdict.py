@@ -142,7 +142,7 @@ def compute_verdict(
     current_n: int = 0,
     baseline_label: str = "",
     current_label: str = "",
-) -> VerdictResult:
+) -> VerdictResult | None:
     """
     Compute shipping verdict from drift report using dynamic thresholds.
 
@@ -158,8 +158,14 @@ def compute_verdict(
         current_label: Version label for current (for next steps command)
 
     Returns:
-        VerdictResult with verdict, explanation, and next steps
+        VerdictResult with verdict, explanation, and next steps.
+        Returns None for TIER1 and TIER2 (insufficient data for verdict).
     """
+    # No verdict for TIER1 and TIER2 - insufficient data
+    confidence_tier = getattr(report, "confidence_tier", "TIER3")
+    if confidence_tier in ("TIER1", "TIER2"):
+        return None
+
     score = report.drift_score
     highest_dim, highest_score = _get_highest_dimension(report)
 

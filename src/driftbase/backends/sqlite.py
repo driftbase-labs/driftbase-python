@@ -155,6 +155,23 @@ class LearnedWeightsCache(SQLModel, table=True):
     computed_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class SignificanceThreshold(SQLModel, table=True):
+    """Adaptive significance thresholds derived from power analysis."""
+
+    __tablename__ = "significance_thresholds"
+
+    id: int | None = Field(default=None, primary_key=True)
+    agent_id: str = Field(index=True)
+    version: str = Field(index=True)
+    use_case: str = "GENERAL"
+    effect_size: float = 0.10
+    min_runs_overall: int = 50
+    min_runs_per_dim: str = "{}"  # JSON
+    limiting_dim: str = ""
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+    baseline_n_at_computation: int = 0
+
+
 def _ensure_dir(path: str) -> None:
     """
     Ensure the parent directory of the database file exists.
@@ -328,6 +345,7 @@ class SQLiteBackend(StorageBackend):
         ChangeEvent.__table__.create(self._engine, checkfirst=True)
         DeployOutcome.__table__.create(self._engine, checkfirst=True)
         LearnedWeightsCache.__table__.create(self._engine, checkfirst=True)
+        SignificanceThreshold.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
         # Add UNIQUE constraints if not exists
@@ -343,6 +361,12 @@ class SQLiteBackend(StorageBackend):
                     text(
                         "CREATE UNIQUE INDEX IF NOT EXISTS idx_deploy_outcomes_unique "
                         "ON deploy_outcomes(agent_id, version)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_significance_thresholds_unique "
+                        "ON significance_thresholds(agent_id, version)"
                     )
                 )
                 conn.commit()
@@ -1257,4 +1281,95 @@ class SQLiteBackend(StorageBackend):
                 }
         except Exception as e:
             logger.debug(f"SQLite get_learned_weights failed: {e}")
+            return None
+
+    def write_significance_threshold(
+        self, agent_id: str, version: str, threshold_data: dict[str, Any]
+    ) -> None:
+        """Write significance threshold for agent_id + version. On conflict, overwrite if baseline_n has grown > 20%."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                existing = session.exec(
+                    select(SignificanceThreshold).where(
+                        SignificanceThreshold.agent_id == agent_id,
+                        SignificanceThreshold.version == version,
+                    )
+                ).first()
+
+                baseline_n_new = threshold_data.get("baseline_n_at_computation", 0)
+
+                # Check if we should recompute: baseline_n has grown by > 20%
+                should_overwrite = False
+                if existing:
+                    baseline_n_old = existing.baseline_n_at_computation
+                    if baseline_n_old > 0 and baseline_n_new > baseline_n_old * 1.20:
+                        should_overwrite = True
+                else:
+                    should_overwrite = True
+
+                if should_overwrite:
+                    if existing:
+                        existing.use_case = threshold_data.get("use_case", "GENERAL")
+                        existing.effect_size = threshold_data.get("effect_size", 0.10)
+                        existing.min_runs_overall = threshold_data.get("overall", 50)
+                        existing.min_runs_per_dim = json.dumps(
+                            threshold_data.get("per_dimension", {})
+                        )
+                        existing.limiting_dim = threshold_data.get(
+                            "limiting_dimension", ""
+                        )
+                        existing.computed_at = datetime.utcnow()
+                        existing.baseline_n_at_computation = baseline_n_new
+                    else:
+                        record = SignificanceThreshold(
+                            agent_id=agent_id,
+                            version=version,
+                            use_case=threshold_data.get("use_case", "GENERAL"),
+                            effect_size=threshold_data.get("effect_size", 0.10),
+                            min_runs_overall=threshold_data.get("overall", 50),
+                            min_runs_per_dim=json.dumps(
+                                threshold_data.get("per_dimension", {})
+                            ),
+                            limiting_dim=threshold_data.get("limiting_dimension", ""),
+                            baseline_n_at_computation=baseline_n_new,
+                        )
+                        session.add(record)
+
+                    session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_significance_threshold failed: {e}")
+
+    def get_significance_threshold(
+        self, agent_id: str, version: str
+    ) -> dict[str, Any] | None:
+        """Return significance threshold for agent_id + version, or None if not found."""
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                cached = session.exec(
+                    select(SignificanceThreshold).where(
+                        SignificanceThreshold.agent_id == agent_id,
+                        SignificanceThreshold.version == version,
+                    )
+                ).first()
+
+                if not cached:
+                    return None
+
+                return {
+                    "use_case": cached.use_case,
+                    "effect_size": cached.effect_size,
+                    "overall": cached.min_runs_overall,
+                    "per_dimension": json.loads(cached.min_runs_per_dim),
+                    "limiting_dimension": cached.limiting_dim,
+                    "baseline_n_at_computation": cached.baseline_n_at_computation,
+                    "computed_at": cached.computed_at.isoformat()
+                    if isinstance(cached.computed_at, datetime)
+                    else cached.computed_at,
+                }
+        except Exception as e:
+            logger.debug(f"SQLite get_significance_threshold failed: {e}")
             return None

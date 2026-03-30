@@ -1,5 +1,5 @@
 """
-CLI for driftbase: versions, diff, watch, inspect, push, demo.
+CLI for driftbase: versions, diff, inspect, demo.
 Uses click for parsing and rich for output.
 """
 
@@ -47,13 +47,12 @@ def _console_no_color(no_color_flag: bool) -> bool:
 )
 @click.pass_context
 def cli(ctx: click.Context, no_color: bool) -> None:
-    """Behavioral watchdog for AI agents — versions, diff, watch, inspect."""
+    """Pre-production analysis for AI agents — diff, diagnose, gate on budgets."""
     ctx.ensure_object(dict)
     ctx.obj["console"] = Console(no_color=_console_no_color(no_color))
 
 
 from driftbase.cli.cli_baseline import baseline_group
-from driftbase.cli.cli_bookmark import bookmark_group
 from driftbase.cli.cli_budget import cmd_budgets
 from driftbase.cli.cli_changes import cmd_changes
 from driftbase.cli.cli_chart import cmd_chart
@@ -64,45 +63,29 @@ from driftbase.cli.cli_deploy import cmd_deploy
 from driftbase.cli.cli_diagnose import cmd_diagnose
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
-from driftbase.cli.cli_explore import cmd_explore
 from driftbase.cli.cli_export import export_command, import_command
-from driftbase.cli.cli_git import git_group
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
-from driftbase.cli.cli_plugin import plugin_group
 from driftbase.cli.cli_prune import cmd_prune
-from driftbase.cli.cli_push import cmd_push
-from driftbase.cli.cli_status import cmd_status
-from driftbase.cli.cli_tail import cmd_tail
-from driftbase.cli.cli_upgrade import cmd_upgrade
+from driftbase.cli.cli_testset import cmd_testset
 
 cli.add_command(cmd_init)
 cli.add_command(cmd_diff)
 cli.add_command(cmd_inspect)
-cli.add_command(cmd_push)
 cli.add_command(cmd_demo)
 cli.add_command(cmd_diagnose)
 cli.add_command(export_command)
 cli.add_command(import_command)
-# Phase 1 commands (comprehensive improvements)
 cli.add_command(cmd_doctor)
-cli.add_command(cmd_upgrade)
 cli.add_command(baseline_group)
-cli.add_command(cmd_tail)
 cli.add_command(cmd_prune)
-cli.add_command(cmd_status)
-# Phase 2 commands (medium effort, high value)
 cli.add_command(cmd_chart)
 cli.add_command(cmd_compare)
-cli.add_command(bookmark_group)
-cli.add_command(cmd_explore)
 cli.add_command(cmd_budgets)
 cli.add_command(cmd_changes)
 cli.add_command(cmd_deploy)
-# Phase 3 commands (future / high effort, high value)
-cli.add_command(git_group)
 cli.add_command(cmd_cost)
-cli.add_command(plugin_group)
+cli.add_command(cmd_testset)
 
 # Command aliases are added at the end of the file after all commands are defined
 
@@ -301,47 +284,6 @@ def cmd_config(ctx: click.Context) -> None:
 
 
 cli.add_command(cmd_config)
-
-
-@cli.command("db-stats")
-@click.pass_context
-def cmd_db_stats(ctx: click.Context) -> None:
-    """Print semantic_cluster counts from the local SQLite DB (for debugging capture)."""
-    import sqlite3
-
-    console: Console = ctx.obj["console"]
-    backend_name = (os.getenv("DRIFTBASE_BACKEND") or "sqlite").strip().lower()
-    if backend_name != "sqlite":
-        console.print("db-stats is only supported for SQLite backend.", style="#FFA94D")
-        ctx.exit(1)
-    db_path = os.path.expanduser(os.getenv("DRIFTBASE_DB_PATH", "~/.driftbase/runs.db"))
-    if not os.path.isfile(db_path):
-        console.print(f"Database not found: [bold]{db_path}[/]", style="#FF6B6B")
-        ctx.exit(1)
-    try:
-        conn = sqlite3.connect(db_path)
-        cur = conn.execute(
-            "SELECT semantic_cluster, COUNT(*) FROM agent_runs_local GROUP BY semantic_cluster"
-        )
-        rows = cur.fetchall()
-        conn.close()
-    except sqlite3.OperationalError as e:
-        if "no such table" in str(e).lower():
-            console.print(
-                f"Table agent_runs_local not found in {db_path}", style="#FF6B6B"
-            )
-        else:
-            console.print(f"Query failed: {e}", style="#FF6B6B")
-        ctx.exit(1)
-    if not rows:
-        console.print("No rows in agent_runs_local (or empty table).")
-        return
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("semantic_cluster", style="#8B5CF6")
-    table.add_column("COUNT(*)", justify="right")
-    for cluster, count in rows:
-        table.add_row(str(cluster) if cluster else "NULL", str(count))
-    console.print(table)
 
 
 @cli.command("runs")
@@ -658,88 +600,8 @@ def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
     console.print(f"Deleted {n} runs for version {version}.")
 
 
-@cli.command("watch")
-@click.option(
-    "--against",
-    "-a",
-    required=True,
-    metavar="VERSION",
-    help="Baseline version to compare against.",
-)
-@click.option(
-    "--interval",
-    "-i",
-    type=float,
-    default=5.0,
-    help="Poll interval in seconds (default 5).",
-)
-@click.option(
-    "--min-runs",
-    type=int,
-    default=10,
-    help="Minimum runs before computing (default 10).",
-)
-@click.option(
-    "--last",
-    "-n",
-    type=int,
-    default=20,
-    help="Number of recent runs for current window (default 20).",
-)
-@click.option("--environment", "-e", default=None, help="Filter by environment.")
-@click.option(
-    "--threshold",
-    "-t",
-    type=float,
-    default=0.20,
-    help="Drift threshold (default 0.20).",
-)
-@click.option(
-    "--notify",
-    is_flag=True,
-    help="Send desktop notification when drift exceeds threshold.",
-)
-@click.pass_context
-def cmd_watch(
-    ctx: click.Context,
-    against: str,
-    interval: float,
-    min_runs: int,
-    last: int,
-    environment: str | None,
-    threshold: float,
-    notify: bool,
-) -> None:
-    """
-    Live drift monitor against a baseline version.
-
-    \b
-    Examples:
-      driftbase watch -a v2.0                    # Monitor v2.0
-      driftbase watch -a v2.0 -t 0.15            # Custom threshold
-      driftbase watch -a v2.0 -i 10 --min-runs 20  # Poll every 10s, 20 min runs
-      driftbase watch -a v2.0 --notify           # Send desktop notifications
-    """
-    from driftbase.cli.cli_diff import run_watch
-
-    console: Console = ctx.obj["console"]
-    use_color = not console.no_color
-    run_watch(
-        against,
-        interval_seconds=interval,
-        min_runs=min_runs,
-        last_n=last,
-        environment=environment,
-        threshold=threshold,
-        use_color=use_color,
-        console=console,
-        notify=notify,
-    )
-
-
 # Command aliases for familiar shortcuts (added after all commands are defined)
 cli.add_command(cmd_inspect, name="cat")  # driftbase cat <run_id> = driftbase inspect
-cli.add_command(cmd_tail, name="log")  # driftbase log = driftbase tail
 cli.add_command(cmd_prune, name="clean")  # driftbase clean = driftbase prune
 
 

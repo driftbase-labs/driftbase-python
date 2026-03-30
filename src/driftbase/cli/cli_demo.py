@@ -693,43 +693,9 @@ def show_cost_impact(
     help="Generate template YAML scenario at path",
 )
 @click.option(
-    "--shadow-from",
-    type=click.Path(exists=True),
-    help="Analyze agent code and generate scenarios (Shadow Mode)",
-)
-@click.option(
-    "--benchmark",
-    type=click.Choice(list(INDUSTRY_BENCHMARKS.keys())),
-    help="Generate data matching industry benchmark",
-)
-@click.option(
     "--interactive",
     is_flag=True,
     help="Interactive tutorial mode with step-by-step guidance",
-)
-@click.option(
-    "--annotate",
-    is_flag=True,
-    help="Show real-time explanations as data is generated",
-)
-@click.option(
-    "--export-fixtures",
-    "export_fixtures_flag",
-    is_flag=True,
-    help="Export test fixtures after generation",
-)
-@click.option(
-    "--format",
-    "fixture_format",
-    type=click.Choice(["pytest", "json"]),
-    default="pytest",
-    help="Fixture format (requires --export-fixtures)",
-)
-@click.option(
-    "--output",
-    "output_dir",
-    default="./tests/fixtures",
-    help="Output directory for fixtures (default: ./tests/fixtures)",
 )
 @click.option(
     "--cost-model",
@@ -756,13 +722,7 @@ def cmd_demo(
     template: str | None,
     scenario: str | None,
     init_scenario: str | None,
-    shadow_from: str | None,
-    benchmark: str | None,
     interactive: bool,
-    annotate: bool,
-    export_fixtures_flag: bool,
-    fixture_format: str,
-    output_dir: str,
     cost_model: str | None,
     volume: int,
     verbose: bool,
@@ -796,19 +756,8 @@ def cmd_demo(
       driftbase demo --scenario ./my_scenario.yaml      # Use custom scenario
 
     \b
-    Shadow Mode (Code Analysis):
-      driftbase demo --shadow-from ./my_agent.py        # Auto-generate from code
-
-    \b
-    Industry Benchmarks:
-      driftbase demo --benchmark rag-pipeline           # Match RAG benchmarks
-      driftbase demo --benchmark customer-support       # Match support bot benchmarks
-
-    \b
-    Learning & Testing:
+    Learning:
       driftbase demo --interactive       # Step-by-step tutorial
-      driftbase demo --annotate          # Show real-time explanations
-      driftbase demo --export-fixtures   # Generate pytest fixtures
 
     \b
     Cost Analysis:
@@ -836,12 +785,8 @@ def cmd_demo(
     is_narrative_mode = not verbose and all(
         [
             scenario is None,
-            shadow_from is None,
-            benchmark is None,
             regression_type is None,
             template is None,
-            not annotate,
-            not export_fixtures_flag,
             cost_model is None,
         ]
     )
@@ -872,86 +817,7 @@ def cmd_demo(
             console.print(f"#FF6B6B]Error loading scenario:[/] {e}")
             return
 
-    # Priority 2: Shadow mode (analyze agent code)
-    elif shadow_from:
-        from driftbase.cli.demo_scenario_loader import (
-            analyze_agent_code,
-            generate_scenarios_from_code_analysis,
-        )
-
-        console.print(
-            Panel(
-                f"[bold]🔍 Shadow Mode: Analyzing Agent Code[/]\n\n"
-                f"#8B5CF6]File:[/] {shadow_from}\n"
-                f"[dim]Extracting tool definitions and patterns...[/]",
-                title="Shadow Mode",
-                border_style="#8B5CF6",
-            )
-        )
-
-        try:
-            analysis = analyze_agent_code(shadow_from)
-            console.print(f"\n#4ADE80]✓ Detected {analysis['tool_count']} tools:[/]")
-            console.print(
-                f"  [dim]{', '.join(analysis['tools'][:10])}{'...' if len(analysis['tools']) > 10 else ''}[/]\n"
-            )
-
-            if analysis["frameworks"]:
-                console.print(
-                    f"#8B5CF6]Frameworks detected:[/] {', '.join(analysis['frameworks'])}\n"
-                )
-
-            baseline, regression = generate_scenarios_from_code_analysis(analysis)
-            console.print("#4ADE80]✓ Generated scenarios from code analysis[/]\n")
-        except Exception as e:
-            console.print(f"#FF6B6B]Error analyzing agent code:[/] {e}")
-            console.print(
-                "\n[dim]💡 Tip: Ensure tool functions follow naming conventions:[/]\n"
-                "  • Use @tool decorator (LangChain)\n"
-                "  • Name functions with prefixes: query_, search_, retrieve_, etc.\n"
-                "  • Or create tool classes ending in 'Tool'\n"
-            )
-            return
-
-    # Priority 3: Industry benchmark
-    elif benchmark:
-        bench_info = INDUSTRY_BENCHMARKS[benchmark]
-        console.print(
-            Panel(
-                f"[bold]{bench_info['name']}[/]\n\n"
-                f"{bench_info['description']}\n\n"
-                f"#FFA94D]Target Metrics:[/]\n"
-                f"  • P50 Latency: {bench_info['metrics']['p50_latency']}ms\n"
-                f"  • P95 Latency: {bench_info['metrics']['p95_latency']}ms\n"
-                f"  • Avg Tokens: {bench_info['metrics']['avg_prompt_tokens']} prompt, "
-                f"{bench_info['metrics']['avg_completion_tokens']} completion\n"
-                f"  • Tool Calls: {bench_info['metrics']['tool_call_count']} per run\n"
-                f"  • Error Rate: {bench_info['metrics']['error_rate']:.1%}",
-                title="🎯 Industry Benchmark",
-                border_style="#8B5CF6",
-            )
-        )
-
-        # Generate scenarios matching benchmark
-        metrics = bench_info["metrics"]
-        baseline, regression = get_baseline_regression_scenarios(None, None)
-
-        # Adjust baseline to match benchmark (simple scaling)
-        for scenario in baseline:
-            scenario["latency"] = (
-                int(metrics["p50_latency"] * 0.8),
-                int(metrics["p95_latency"] * 0.9),
-            )
-            scenario["p_tokens"] = (
-                int(metrics["avg_prompt_tokens"] * 0.9),
-                int(metrics["avg_prompt_tokens"] * 1.1),
-            )
-            scenario["c_tokens"] = (
-                int(metrics["avg_completion_tokens"] * 0.9),
-                int(metrics["avg_completion_tokens"] * 1.1),
-            )
-
-    # Priority 4: Predefined regression type or framework template
+    # Priority 2: Predefined regression type or framework template
     else:
         baseline, regression = get_baseline_regression_scenarios(
             regression_type, template
@@ -989,28 +855,17 @@ def cmd_demo(
             )
 
     # Generate baseline
-    console.print(
-        f"  {'#8B5CF6]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v1.0[/] [dim](Baseline)[/]"
-    )
-    generate_synthetic_runs("v1.0", runs, baseline, annotate=annotate, console=console)
+    console.print(f"  ✓ Generating {runs} runs for [bold]v1.0[/] [dim](Baseline)[/]")
+    generate_synthetic_runs("v1.0", runs, baseline, annotate=False, console=console)
 
     # Generate regression
-    console.print(
-        f"  {'#8B5CF6]→[/]' if annotate else '✓'} Generating {runs} runs for [bold]v2.0[/] [dim](Regression)[/]"
-    )
-    generate_synthetic_runs(
-        "v2.0", runs, regression, annotate=annotate, console=console
-    )
+    console.print(f"  ✓ Generating {runs} runs for [bold]v2.0[/] [dim](Regression)[/]")
+    generate_synthetic_runs("v2.0", runs, regression, annotate=False, console=console)
 
     # Allow background SQLite thread to flush
     time.sleep(1.0)
 
     console.print("\n[bold green]✓ Success![/] Local database populated.\n")
-
-    # Export fixtures if requested
-    if export_fixtures_flag:
-        export_fixtures(console, fixture_format, output_dir)
-        console.print()
 
     # Show cost impact if requested
     if cost_model:

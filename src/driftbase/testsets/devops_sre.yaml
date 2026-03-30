@@ -1,0 +1,69 @@
+use_case: devops_sre
+description: "Test queries for DevOps automation, SRE, and infrastructure management agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Deploy the latest version of the application to production"
+      - "Roll back the deployment to the previous stable version"
+      - "Scale up the web service to handle increased traffic"
+      - "Check the status of all services in the Kubernetes cluster"
+      - "Restart the database replica that is showing high latency"
+      - "Update the SSL certificate that expires in 7 days"
+      - "Configure automated backups for the production database"
+      - "Set up monitoring alerts for API response time over 500ms"
+      - "Investigate why the CI/CD pipeline failed on the last commit"
+      - "Provision a new staging environment for the QA team"
+      - "Rotate the API keys for the third-party integration"
+      - "Debug why the load balancer is not distributing traffic evenly"
+      - "Set up log aggregation for the microservices"
+      - "Configure auto-scaling rules based on CPU and memory usage"
+      - "Migrate the database to a larger instance type"
+      - "Set up a disaster recovery runbook for the payment service"
+      - "Implement rate limiting on the public API"
+      - "Configure blue-green deployment for zero-downtime releases"
+      - "Set up VPN access for a new team member"
+      - "Investigate high memory usage on the application server"
+  edge_cases:
+    count: 10
+    queries:
+      - "The deployment succeeded but health checks are failing"
+      - "We're hitting API rate limits on our cloud provider"
+      - "The database backup is failing due to insufficient storage"
+      - "Container orchestration is stuck in a crash loop"
+      - "The monitoring system itself is down, how do I diagnose issues?"
+      - "We need to perform maintenance without any downtime window"
+      - "The infrastructure cost has doubled this month unexpectedly"
+      - "Different microservices are running incompatible dependency versions"
+      - "The network partition is causing split-brain in the database cluster"
+      - "We're running out of IP addresses in our VPC"
+  boundary_cases:
+    count: 10
+    queries:
+      - "Production is down and customers are unable to complete transactions RIGHT NOW"
+      - "I need to debug a production issue but I don't have access to the logs"
+      - "We're under a DDoS attack, what's the immediate response?"
+      - "The CEO wants to know why the site was down and when it will be fixed"
+      - "I made a configuration change and now nothing works, how do I revert?"
+      - "We need to meet a compliance audit deadline tomorrow and infrastructure isn't ready"
+      - "The on-call engineer is unreachable and we have a critical alert"
+      - "We need to cut infrastructure costs by 40% without impacting performance"
+      - "A security vulnerability was just announced for our core dependency"
+      - "The deployment window closes in 15 minutes and we have merge conflicts"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "pods down"
+      - "Hey the deployment thing isn't working, getting some kind of error"
+      - "CRITICAL: production database at 95% capacity, customer impact imminent"
+      - "I would like to request a comprehensive review of our current infrastructure architecture with recommendations for optimization"
+      - "site slow why"
+  stress:
+    count: 5
+    queries:
+      - "deploy"
+      - "I need you to set up a complete CI/CD pipeline with automated testing deployment to multiple environments including staging and production with rollback capabilities implement infrastructure as code migrate our entire application to Kubernetes set up comprehensive monitoring and alerting configure disaster recovery and document everything"
+      - "The deployment is half-complete and stuck, some pods are old version some are new"
+      - "yes deploy no wait cancel yes proceed no rollback"
+      - "Something is wrong with production but I don't know what the error means"

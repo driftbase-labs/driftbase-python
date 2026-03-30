@@ -1,0 +1,69 @@
+use_case: research_rag
+description: "Test queries for research assistants and RAG-based knowledge agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "What are the main findings of the latest climate change report?"
+      - "Summarize the research on intermittent fasting and metabolic health"
+      - "What does the literature say about the effectiveness of CBT for anxiety?"
+      - "Find recent studies on large language model hallucination rates"
+      - "What are the key arguments for and against universal basic income?"
+      - "Summarize the current state of fusion energy research"
+      - "What does research say about the optimal sleep duration for adults?"
+      - "Find evidence on the effectiveness of remote work on productivity"
+      - "What are the main theories explaining the 2008 financial crisis?"
+      - "Summarize the research on microplastics and human health"
+      - "What does the evidence say about the effectiveness of antidepressants?"
+      - "Find recent research on CRISPR gene editing applications"
+      - "What are the leading explanations for declining insect populations?"
+      - "Summarize the research on social media and adolescent mental health"
+      - "What does the literature say about the reproducibility crisis in psychology?"
+      - "Find evidence on the relationship between exercise and cognitive decline"
+      - "What are the main critiques of modern monetary theory?"
+      - "Summarize the research on urban heat islands and mitigation strategies"
+      - "What does research say about the effectiveness of mindfulness meditation?"
+      - "Find recent studies on antibiotic resistance mechanisms"
+  edge_cases:
+    count: 10
+    queries:
+      - "Find research that contradicts the mainstream view on dietary fat and heart disease"
+      - "What does the literature say about a topic where experts strongly disagree?"
+      - "Find the most cited paper on this topic and explain why it is controversial"
+      - "Summarize research from before 2010 on this topic specifically"
+      - "What does the grey literature say about this topic that peer-reviewed journals don't?"
+      - "Find studies with opposing conclusions on the same intervention"
+      - "What research exists on this topic in languages other than English?"
+      - "Find the weakest evidence base for a commonly accepted health claim"
+      - "Summarize a systematic review that found no significant effect"
+      - "Find research that has been retracted and explain why"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I need a definitive answer, not a summary of conflicting evidence"
+      - "Tell me which study I should trust more and why"
+      - "I need this for a published article, how confident are you in these citations?"
+      - "The research you found contradicts what my professor told me, who is right?"
+      - "I need you to take a position on this contested scientific question"
+      - "Find only research that supports my hypothesis, I'll handle the rest"
+      - "This paper's methodology seems flawed, can you verify my concern?"
+      - "I need a literature review by tomorrow for my PhD committee"
+      - "The sources you're pulling from seem biased, can you use better ones?"
+      - "I need primary sources only, no secondary summaries"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "LLM hallucination"
+      - "I'm doing research on something kind of niche, not sure if you'll have anything"
+      - "ASAP: need comprehensive literature review on mRNA vaccine safety, presenting to board"
+      - "I would be most grateful if you could provide a thorough synthesis of the extant literature pertaining to the neurobiological underpinnings of decision-making under conditions of uncertainty"
+      - "what does science say"
+  stress:
+    count: 5
+    queries:
+      - "research"
+      - "I need a complete systematic review of all randomized controlled trials published in the last 10 years on the use of glucagon-like peptide-1 receptor agonists for weight management in non-diabetic adults including subgroup analyses by age gender BMI baseline and duration of treatment with forest plots and heterogeneity assessment"
+      - "Find research on something that doesn't exist yet"
+      - "yes cite that one no not that one yes the other one"
+      - "I don't know what I'm looking for but I'll know it when I see it"

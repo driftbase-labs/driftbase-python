@@ -1003,6 +1003,31 @@ UNIFORM_AGENT_BEHAVIORAL_RULES = {
     ],
 }
 
+# Minimum detectable effect size per use case.
+# Smaller = need more runs to detect smaller shifts reliably.
+# Reflects the stakes of each use case — high stakes = detect smaller changes.
+USE_CASE_EFFECT_SIZES = {
+    "FINANCIAL": 0.05,  # detect 5% shifts — autonomous decisions, high stakes
+    "HEALTHCARE": 0.05,  # patient safety — any shift matters
+    "LEGAL": 0.07,  # contract/compliance — small shifts have consequences
+    "SECURITY_ITOPS": 0.07,  # security decisions — small changes in block/allow matter
+    "CUSTOMER_SUPPORT": 0.10,  # standard — meaningful shifts worth detecting
+    "HR_RECRUITING": 0.10,  # fairness-sensitive — moderate detection threshold
+    "DEVOPS_SRE": 0.10,  # operational — standard threshold
+    "CODE_GENERATION": 0.10,
+    "DATA_ANALYSIS": 0.10,
+    "AUTOMATION": 0.12,  # tolerant — some variance is normal
+    "ECOMMERCE_SALES": 0.12,
+    "RESEARCH_RAG": 0.15,  # tolerant — output variety is expected
+    "CONTENT_GENERATION": 0.15,  # most tolerant — large shifts before concern
+    "GENERAL": 0.10,  # default
+}
+
+
+def get_effect_size(use_case: str) -> float:
+    """Get the minimum detectable effect size for a given use case."""
+    return USE_CASE_EFFECT_SIZES.get(use_case, 0.10)
+
 
 def _are_compatible(use_case_a: str, use_case_b: str) -> bool:
     """

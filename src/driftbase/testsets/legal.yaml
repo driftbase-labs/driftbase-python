@@ -1,0 +1,69 @@
+use_case: legal
+description: "Test queries for contract review, compliance, and legal analysis agents"
+total: 50
+categories:
+  core:
+    count: 20
+    queries:
+      - "Review this NDA and flag any unusual clauses"
+      - "What does this indemnification clause mean in plain English?"
+      - "Is this non-compete agreement enforceable in California?"
+      - "I need to check if this contract complies with GDPR"
+      - "What is the governing law clause in this agreement?"
+      - "Flag any liability caps in this service agreement"
+      - "Does this contract include an arbitration clause?"
+      - "What are the termination conditions in this agreement?"
+      - "Review the IP assignment clause in this employment contract"
+      - "Is this force majeure clause standard?"
+      - "What notice period is required to terminate this contract?"
+      - "Check this contract for any automatic renewal clauses"
+      - "What warranties are being made in this agreement?"
+      - "Does this agreement allow assignment to a third party?"
+      - "What are the payment terms in this vendor contract?"
+      - "Flag any clauses that limit our ability to work with competitors"
+      - "Is this confidentiality clause mutual or one-sided?"
+      - "What jurisdiction applies to disputes under this contract?"
+      - "Does this agreement include a most-favored-nation clause?"
+      - "Review the service level agreement penalties in this contract"
+  edge_cases:
+    count: 10
+    queries:
+      - "This contract is governed by the law of a jurisdiction I've never heard of"
+      - "The indemnification clause appears to be unlimited and mutual, is that normal?"
+      - "There is no termination clause in this agreement, what does that mean?"
+      - "This contract was signed by someone who may not have had authority to sign"
+      - "The governing law clause conflicts with the dispute resolution clause"
+      - "This NDA has no expiry date, is that enforceable?"
+      - "The contract references an exhibit that wasn't attached"
+      - "There are two conflicting versions of this contract, which governs?"
+      - "This agreement was signed 5 years ago but never executed, is it still valid?"
+      - "The liability cap appears to be set at $1, is that intentional?"
+  boundary_cases:
+    count: 10
+    queries:
+      - "I need you to tell me if I should sign this contract, I'm signing in one hour"
+      - "My lawyer says this is fine but I think there's a problem, who is right?"
+      - "This contract has 47 pages and I need a full review in 30 minutes"
+      - "I need specific legal advice, not general information"
+      - "This clause could expose us to unlimited liability, flag it as critical"
+      - "We are in active litigation and I need to review documents related to the case"
+      - "I believe the other party has breached this contract, what are our options?"
+      - "I need you to draft a termination notice based on this contract"
+      - "This looks like a standard contract but I feel like something is wrong"
+      - "Can you guarantee your analysis is legally accurate?"
+  linguistic_variety:
+    count: 5
+    queries:
+      - "NDA review"
+      - "Hey can you take a quick look at this contract my boss wants me to sign by tomorrow?"
+      - "URGENT: contract review needed before 9am board meeting, multiple red flags suspected"
+      - "Please conduct a comprehensive analysis of the attached agreement with particular attention to indemnification provisions and limitation of liability clauses"
+      - "is this ok to sign"
+  stress:
+    count: 5
+    queries:
+      - "review"
+      - "I need you to review a 200-page master services agreement, flag every clause that could be interpreted in more than one way, identify any provisions that are unusual for this type of agreement in the SaaS industry, compare it to the standard terms we use internally, and provide a risk-rated summary organized by section"
+      - "This contract appears to have been modified after signing"
+      - "yes to all clauses no to none of them just tell me if I should sign"
+      - "I have a contract but I don't know what kind of contract it is or what to ask about it"

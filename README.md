@@ -10,17 +10,19 @@ Fingerprint your agent's behavior in production. Diff two versions. Get a statis
 
 ---
 
-## Why Driftbase?
+## What Driftbase does
 
-Most observability tools tell you your agent *ran*. They don't tell you it **behaved differently** than last week.
+Driftbase is a pre-production behavioral analysis tool for AI agents.
 
-When you deploy a new prompt, update your model version, or refactor tool calling logic, you need answers:
-- Did decision patterns change? (Are we routing more to humans?)
-- Did latency increase? (Are we burning tokens on retry loops?)
-- Did costs balloon? (What's the financial impact per 10k runs?)
-- What *caused* the change? (Model update? Prompt change? RAG snapshot?)
+Before you ship a new version of your agent, run:
 
-Driftbase gives you a single drift score, a financial delta in euros, a root-cause hypothesis, and a rollback target — in 2 seconds, from your terminal.
+```bash
+driftbase diff v1.0 v2.0
+```
+
+You get a statistically grounded drift score, financial impact, root-cause hypothesis, and a plain-English verdict (SHIP / MONITOR / REVIEW / BLOCK) — computed locally on your machine, no cloud required.
+
+The free SDK is for pre-deploy analysis. Production monitoring is Pro.
 
 ### Core Value Proposition
 
@@ -502,54 +504,49 @@ driftbase doctor   # Check configuration and database health
 
 ## CLI Reference
 
-### Core
+### Analysis
 
 | Command | Description |
 |---------|-------------|
-| `driftbase diff <v1> <v2>` | Compare two versions with full statistical analysis |
-| `driftbase demo` | Generate synthetic runs for testing |
-| `driftbase diagnose` | Debug drift with regression detection and recommendations |
-| `driftbase init` | Interactive setup guide |
-| `driftbase config` | Show current configuration |
-| `driftbase doctor` | Check configuration and database health |
-| `driftbase status` | Quick dashboard of key metrics |
+| `driftbase diff <v1> <v2>` | Compare two versions — the main event |
+| `driftbase diagnose` | Pattern recognition on a single version |
+| `driftbase compare <v1> <v2> <v3>` | Multi-version comparison |
 
-### Budgets
-
-| Command | Description |
-|---------|-------------|
-| `driftbase budgets show [agent] [version]` | View breaches (exit 1 if any exist) |
-| `driftbase budgets set <agent> <version> --config budget.yaml` | Set budget from YAML |
-| `driftbase budgets clear [agent] [version]` | Clear breach history |
-
-### Change Events
-
-| Command | Description |
-|---------|-------------|
-| `driftbase changes record <agent> <version>` | Record change events at deploy time |
-| `driftbase changes list <agent> [version]` | List recorded change events |
-
-### Data Management
+### Data
 
 | Command | Description |
 |---------|-------------|
 | `driftbase runs -v <version>` | List runs for a version |
 | `driftbase versions` | List all versions and run counts |
-| `driftbase inspect <run_id>` | Deep-dive into a specific run |
-| `driftbase tail` | Stream recent runs |
+| `driftbase inspect <run_id>` | Deep-dive a specific run |
 | `driftbase prune` | Delete runs by retention criteria |
 | `driftbase export` | Export runs to JSON |
 | `driftbase import <file>` | Import runs from JSON |
-| `driftbase push` | Sync to Pro dashboard |
+| `driftbase baseline` | Set/get/clear baseline version |
+
+### Pre-production gates
+
+| Command | Description |
+|---------|-------------|
+| `driftbase budgets` | Define acceptance criteria, view breaches |
+| `driftbase changes` | Record what changed at deploy time |
+| `driftbase deploy` | Label versions good/bad for weight learning |
 
 ### Visualization
 
 | Command | Description |
 |---------|-------------|
 | `driftbase chart -v <version>` | Terminal charts for run metrics |
-| `driftbase compare <v1> <v2> <v3>` | Multi-version comparison |
-| `driftbase explore` | Interactive terminal UI |
-| `driftbase cost` | Cost analysis and forecasting |
+| `driftbase cost` | Financial impact analysis |
+| `driftbase demo` | Generate synthetic runs for exploration |
+
+### Setup
+
+| Command | Description |
+|---------|-------------|
+| `driftbase init` | Interactive setup |
+| `driftbase config` | Show resolved configuration |
+| `driftbase doctor` | Check configuration and database health |
 
 ---
 
