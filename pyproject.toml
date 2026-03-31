@@ -7,7 +7,7 @@ name = "driftbase"
 dynamic = ["version"]
 description = "Behavioral drift monitoring for AI agents."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license-files = ["LICENSE"]
 authors = [
     { name = "Driftbase", email = "info@driftbase.io" }

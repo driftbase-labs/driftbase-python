@@ -1,5 +1,5 @@
 """
-Tests for the @track() decorator, including LangGraph callback injection.
+Tests for LangGraph tracer integration.
 """
 
 from __future__ import annotations
@@ -9,16 +9,15 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 from driftbase.backends.factory import clear_backend, get_backend
+from driftbase.integrations.langgraph import LangGraphTracer
 from driftbase.local.local_store import drain_local_store
-from driftbase.sdk.track import track
-from driftbase.sdk.watcher import DriftbaseCallbackHandler
 
 
 class TestTrackLangGraph(unittest.TestCase):
-    """Test that @track() injects a callback into LangGraph invoke so tool_sequence is captured."""
+    """Test that LangGraphTracer captures tool calls correctly."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -34,60 +33,43 @@ class TestTrackLangGraph(unittest.TestCase):
             del os.environ["DRIFTBASE_DB_PATH"]
         clear_backend()
 
-    def test_langgraph_invoke_captures_tool_sequence(self) -> None:
-        """With LangGraph auto-detected, decorated function gets tool calls recorded."""
-        import sys
-        from uuid import uuid4
+    def test_langgraph_tracer_captures_tool_sequence(self) -> None:
+        """LangGraphTracer correctly captures tool calls and writes run to backend."""
+        # Create tracer
+        tracer = LangGraphTracer(version="test_v1")
 
-        import driftbase.sdk.watcher as watcher_module
+        # Generate IDs for the callback chain
+        root_run_id = uuid4()
+        tool_run_id = uuid4()
 
-        mock_graph = MagicMock()
-        mock_graph.invoke.return_value = {"result": "ok"}
+        # Simulate callback chain: chain_start (root) -> tool_start -> tool_end -> chain_end
+        tracer.on_chain_start(
+            serialized={"name": "test_graph"},
+            inputs={"query": "test input"},
+            run_id=root_run_id,
+            parent_run_id=None,
+        )
 
-        # Create a mock handler that simulates DriftbaseCallbackHandler behavior
-        def create_mock_handler(run_ctx=None, **kwargs):
-            handler = MagicMock()
-            handler.run_ctx = run_ctx
-            handler.session_id = str(uuid4())
-            handler.deployment_version = "unknown"
-            handler.environment = "production"
-            handler.active_runs = {}
-            handler._run_to_root = {}
-            if run_ctx is not None:
-                # Inject tool call into context
-                run_ctx.tool_calls.append({"name": "mock_tool", "latency_ms": 42})
-            return handler
+        tracer.on_tool_start(
+            serialized={"name": "mock_tool"},
+            input_str="tool input",
+            run_id=tool_run_id,
+            parent_run_id=root_run_id,
+        )
 
-        # Mock both sys.modules and the handler creation
-        mock_langchain = MagicMock()
-        mock_langchain.callbacks.BaseCallbackHandler = object
+        tracer.on_tool_end(
+            output="tool output",
+            run_id=tool_run_id,
+            parent_run_id=root_run_id,
+        )
 
-        with (
-            patch.dict(
-                sys.modules,
-                {
-                    "langgraph": MagicMock(),
-                    "langchain_core": mock_langchain,
-                    "langchain_core.callbacks": mock_langchain.callbacks,
-                },
-            ),
-            patch.object(watcher_module, "_LANGCHAIN_AVAILABLE", True),
-            patch.object(
-                watcher_module,
-                "DriftbaseCallbackHandler",
-                side_effect=create_mock_handler,
-            ),
-        ):
-            # The 'langgraph' type hint string guarantees the auto-detector triggers perfectly
-            @track(version="test_langgraph")
-            def run_agent(
-                state: "langgraph",  # type: ignore[name-defined]  # noqa: F821, UP037
-                config=None,
-            ):
-                return mock_graph.invoke(state, config=config)
+        tracer.on_chain_end(
+            outputs={"messages": ["done"]},
+            run_id=root_run_id,
+            parent_run_id=None,
+        )
 
-            run_agent("dummy_state")
-
+        # Drain queue and verify run was written
         drain_local_store(timeout=2.0)
         backend = get_backend()
         last = backend.get_last_run()
