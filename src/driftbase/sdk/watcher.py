@@ -309,6 +309,11 @@ if _LANGCHAIN_AVAILABLE:
                 root = self._run_to_root.get(str(parent_run_id))
             if root is None and run_id is not None:
                 root = self._run_to_root.get(str(run_id))
+
+            # FIX: Add tool's run_id to _run_to_root mapping so on_tool_end can find it
+            if root is not None and run_id is not None:
+                self._run_to_root[str(run_id)] = root
+
             if root is None or root not in self.active_runs:
                 return
 
@@ -397,10 +402,19 @@ if _LANGCHAIN_AVAILABLE:
             srid = str(run_id)
             if srid not in self.active_runs:
                 return
+
+            # FIX: Only save if this is a ROOT run (not intermediate nodes)
+            # A root run is one where srid maps to itself in _run_to_root
+            if self._run_to_root.get(srid) != srid:
+                return
+
             if isinstance(outputs, dict) and "messages" in outputs:
                 self._save_run(srid, outputs)
                 self.active_runs.pop(srid, None)
-                self._run_to_root.pop(srid, None)
+                # Clean up all mappings pointing to this root
+                to_remove = [k for k, v in self._run_to_root.items() if v == srid]
+                for k in to_remove:
+                    self._run_to_root.pop(k, None)
 
         def _save_run(self, run_id_key: str, output: Any) -> None:
             """Persist the run to local SQLite."""

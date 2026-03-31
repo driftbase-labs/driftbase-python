@@ -1,0 +1,91 @@
+# Driftbase Drift Experiment
+
+## Based on LangChain's Official Customer Support Bot Tutorial
+
+This experiment replicates the architecture of [LangChain's Customer Support Bot tutorial](https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/)
+— the most widely-used LangGraph example — and uses [Driftbase](https://github.com/driftbase-labs/driftbase-python) to detect
+behavioral drift between two model versions.
+
+**The question:** If you swap the model in a LangGraph agent and change nothing else,
+does the agent's behavior change? By how much? Would anyone notice?
+
+## Architecture
+
+The tutorial's Part 1 agent (zero-shot, all 18 tools, no interrupts) is reproduced
+with mock tool backends so the experiment is fully self-contained — no Tavily key,
+no SQLite download, no external dependencies beyond Anthropic API.
+
+```
+agent.py              — LangGraph agent faithful to the tutorial's Part 1 architecture
+                        (State, Assistant class, 18 tools, ToolNode, conditional edges)
+scenarios.py          — 50 realistic customer support queries across all tool categories
+run_experiment.py     — Runs all scenarios for v1 and v2, instrumented with @track
+analyze.py            — Runs driftbase diff and prints the report
+```
+
+## Tools (matching the tutorial exactly)
+
+| Category | Tools |
+|---|---|
+| Policy | `lookup_policy` |
+| Flights | `fetch_user_flight_information`, `search_flights`, `update_ticket_to_new_flight`, `cancel_ticket` |
+| Hotels | `search_hotels`, `book_hotel`, `update_hotel`, `cancel_hotel` |
+| Car Rentals | `search_car_rentals`, `book_car_rental`, `update_car_rental`, `cancel_car_rental` |
+| Excursions | `search_trip_recommendations`, `book_excursion`, `update_excursion`, `cancel_excursion` |
+| Web Search | `tavily_search` (mock) |
+
+## How to run
+
+```bash
+# Install dependencies
+pip install driftbase langchain-core langgraph langchain-anthropic
+
+# Set API key
+export ANTHROPIC_API_KEY="your_key_here"
+
+# Run v1 (claude-sonnet-4 baseline)
+python run_experiment.py --version v1
+
+# Run v2 (claude-haiku-4.5 — same prompt, same tools, different model)
+python run_experiment.py --version v2
+
+# Compare
+python analyze.py
+
+# Quick test first (3 scenarios only)
+python run_experiment.py --version v1 --limit 3
+python run_experiment.py --version v2 --limit 3
+driftbase diff v1 v2
+```
+
+### Verify the fix works
+
+Run the unit test (no API key needed):
+```bash
+python test_tracer.py
+```
+
+This validates that the LangGraphTracer correctly:
+- Links tool run_ids to the root graph
+- Captures ALL tool calls (not just the setup node)
+- Only saves once per graph invocation
+- Cleans up all mappings
+
+## What changes between v1 and v2
+
+**Only the model.** Same system prompt, same tools, same scenarios, same tool
+implementations. This isolates model-driven behavioral drift — the type that
+happens silently when providers update model snapshots.
+
+## Expected drift signals
+
+- **Tool distribution shift** — different model may prefer different tools for the same query
+- **Decision outcome changes** — different routing, different tool choices
+- **Markov transition shifts** — different tool call ordering patterns
+- **Verbosity ratio** — smaller models tend to produce shorter responses
+- **Latency** — obvious but still relevant data point
+
+## Credit
+
+Agent architecture: [LangChain's Customer Support Bot Tutorial](https://langchain-ai.github.io/langgraph/tutorials/customer-support/customer-support/)
+Drift detection: [Driftbase](https://github.com/driftbase-labs/driftbase-python)

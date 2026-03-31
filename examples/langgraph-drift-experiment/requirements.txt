@@ -1,0 +1,5 @@
+driftbase[analyze]
+langgraph
+langchain-openai
+langchain-core
+langchain-community
