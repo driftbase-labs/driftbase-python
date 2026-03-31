@@ -97,6 +97,7 @@ if _LLAMAINDEX_AVAILABLE:
             self,
             version: str,
             agent_id: str | None = None,
+            _external_ctx: Any | None = None,
         ):
             import os
 
@@ -116,6 +117,9 @@ if _LLAMAINDEX_AVAILABLE:
 
             # Track active events (for matching start/end)
             self._active_events: dict[str, dict[str, Any]] = {}
+
+            # External context for @track integration (not yet implemented)
+            self._external_ctx = _external_ctx
 
             # LM metadata
             self.total_prompt_tokens = 0
@@ -396,6 +400,13 @@ if _LLAMAINDEX_AVAILABLE:
 
             Called when the trace ends (operation completes).
             """
+            # Stub: context sharing not yet implemented for LlamaIndex
+            if self._external_ctx is not None:
+                logger.info(
+                    "LlamaIndex context sharing not yet implemented - using standalone mode"
+                )
+                # Fall through to normal save for now
+
             try:
                 completed_at = datetime.utcnow()
                 latency_ms = int(

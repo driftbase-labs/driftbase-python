@@ -16,7 +16,8 @@
       "Bash(PYTHONPATH=src python:*)",
       "Bash(PYTHONPATH=src pytest:*)",
       "Bash(ls:*)",
-      "Bash(PYTHONPATH=/Users/work_air/projects/driftbase-python/src python:*)"
+      "Bash(PYTHONPATH=/Users/work_air/projects/driftbase-python/src python:*)",
+      "Bash(git push:*)"
     ]
   }
 }

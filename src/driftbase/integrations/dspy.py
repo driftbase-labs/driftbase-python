@@ -99,6 +99,7 @@ if _DSPY_AVAILABLE:
             version: str,
             agent_id: str | None = None,
             track_optimizer: bool = False,
+            _external_ctx: Any | None = None,
         ):
             import os
 
@@ -124,6 +125,9 @@ if _DSPY_AVAILABLE:
             self.total_prompt_tokens = 0
             self.total_completion_tokens = 0
             self.model_names: list[str] = []
+
+            # External context for @track integration (not yet implemented)
+            self._external_ctx = _external_ctx
 
             if track_optimizer:
                 logger.warning(
@@ -400,6 +404,13 @@ if _DSPY_AVAILABLE:
 
             Called when the root module exits (program completes).
             """
+            # Stub: context sharing not yet implemented for DSPy
+            if self._external_ctx is not None:
+                logger.info(
+                    "DSPy context sharing not yet implemented - using standalone mode"
+                )
+                # Fall through to normal save for now
+
             try:
                 completed_at = datetime.utcnow()
                 latency_ms = int(

@@ -71,6 +71,7 @@ if _LANGCHAIN_AVAILABLE:
         Args:
             version: Deployment version identifier (e.g., 'v1.0', 'baseline')
             agent_id: Optional agent identifier (defaults to auto-generated session ID)
+            _external_ctx: Internal parameter for @track integration (prevents double-saving)
 
         Example:
             >>> from driftbase.integrations import LangGraphTracer
@@ -82,6 +83,7 @@ if _LANGCHAIN_AVAILABLE:
             self,
             version: str,
             agent_id: str | None = None,
+            _external_ctx: Any | None = None,
         ):
             super().__init__()
             import os
@@ -97,16 +99,20 @@ if _LANGCHAIN_AVAILABLE:
             # Track token usage per run
             self.token_usage: dict[str, dict] = {}
 
+            # External context for @track integration (prevents double-saving)
+            self._external_ctx = _external_ctx
+
             logger.info(
                 f"LangGraphTracer initialized: version={self.deployment_version}, "
-                f"agent_id={self.session_id}, env={self.environment}"
+                f"agent_id={self.session_id}, env={self.environment}, "
+                f"external_ctx={'yes' if _external_ctx else 'no'}"
             )
 
         def on_chain_start(self, serialized: dict, inputs: dict, **kwargs: Any) -> None:
             """Called when a graph node starts."""
             run_id = kwargs.get("run_id")
             parent_run_id = kwargs.get("parent_run_id")
-            name = serialized.get("name", "unknown")
+            name = (serialized or {}).get("name", "unknown")
 
             if run_id is None:
                 return
@@ -160,8 +166,9 @@ if _LANGCHAIN_AVAILABLE:
 
             # Extract tool name
             tool_name = None
-            if "name" in serialized and serialized["name"]:
-                tool_name = serialized["name"]
+            serialized_dict = serialized or {}
+            if "name" in serialized_dict and serialized_dict["name"]:
+                tool_name = serialized_dict["name"]
             if not tool_name and "name" in kwargs and kwargs["name"]:
                 tool_name = kwargs["name"]
             if not tool_name:
@@ -271,49 +278,45 @@ if _LANGCHAIN_AVAILABLE:
 
             srid = str(run_id)
             has_messages = isinstance(outputs, dict) and "messages" in outputs
-            in_active = srid in self.active_runs
-            root_mapping = self._run_to_root.get(srid)
-            is_root = root_mapping == srid
-            has_no_parent = parent_run_id is None
 
-            logger.debug(
-                f"[TRACER] chain_end: run_id={srid[:8]}, "
-                f"in_active={in_active}, root_mapping={root_mapping[:8] if root_mapping else None}, "
-                f"is_root={is_root}, has_no_parent={has_no_parent}, has_messages={has_messages}"
-            )
+            # Find the root run via _run_to_root mapping
+            root = self._run_to_root.get(srid)
 
-            if srid not in self.active_runs:
+            # Check if we have an active root run for this callback
+            if root is None or root not in self.active_runs:
                 logger.debug(
-                    f"[TRACER] chain_end: run_id={srid[:8]} not in active_runs, skipping"
+                    f"[TRACER] chain_end: run_id={srid[:8]}, root not found or not active, skipping"
                 )
                 return
 
-            # Root detection: a run is root if either:
-            # 1. It maps to itself in _run_to_root (primary check)
-            # 2. It has no parent_run_id AND is in active_runs (fallback for edge cases)
-            is_root_run = (self._run_to_root.get(srid) == srid) or (
-                parent_run_id is None and srid in self.active_runs
+            # Determine if this callback is for the root-level execution
+            # (parent_run_id is None means this is the outermost graph invocation)
+            is_root_call = parent_run_id is None
+
+            logger.debug(
+                f"[TRACER] chain_end: run_id={srid[:8]}, root={root[:8]}, "
+                f"is_root_call={is_root_call}, has_messages={has_messages}"
             )
 
-            if not is_root_run:
+            if not is_root_call:
                 logger.debug(
-                    f"[TRACER] chain_end: run_id={srid[:8]} is not root, skipping save"
+                    f"[TRACER] chain_end: run_id={srid[:8]} is child callback, skipping save"
                 )
                 return
 
             # Only save when we have messages (which indicates graph completion)
             if isinstance(outputs, dict) and "messages" in outputs:
-                logger.info(f"[TRACER] *** SAVING RUN: run_id={srid[:8]} ***")
-                self._save_run(srid, outputs)
-                self.active_runs.pop(srid, None)
+                logger.info(f"[TRACER] *** SAVING RUN: root={root[:8]} ***")
+                self._save_run(root, outputs)
+                self.active_runs.pop(root, None)
                 # Clean up all mappings pointing to this root
-                to_remove = [k for k, v in self._run_to_root.items() if v == srid]
+                to_remove = [k for k, v in self._run_to_root.items() if v == root]
                 for k in to_remove:
                     self._run_to_root.pop(k, None)
                 logger.debug(f"[TRACER] Cleaned up {len(to_remove)} mappings")
             else:
                 logger.debug(
-                    f"[TRACER] chain_end: run_id={srid[:8]} has no messages, skipping save"
+                    f"[TRACER] chain_end: root={root[:8]} has no messages, skipping save"
                 )
 
         def _save_run(self, run_id_key: str, output: Any) -> None:
@@ -328,6 +331,49 @@ if _LANGCHAIN_AVAILABLE:
             output_length = len(str(output))
             output_structure_hash = _compute_structure_hash(output)
 
+            # If running under @track, transfer data to external context instead of saving
+            if self._external_ctx is not None:
+                try:
+                    # Transfer tool calls
+                    for tool_name in state["tool_sequence"]:
+                        self._external_ctx.tool_calls.append({"name": tool_name})
+                        self._external_ctx.tool_call_sequence.append(tool_name)
+
+                    # Transfer token usage
+                    if self._external_ctx.token_usage is None:
+                        self._external_ctx.token_usage = {"prompt": 0, "completion": 0}
+                    self._external_ctx.token_usage["prompt"] += state.get(
+                        "prompt_tokens", 0
+                    )
+                    self._external_ctx.token_usage["completion"] += state.get(
+                        "completion_tokens", 0
+                    )
+
+                    # Transfer error count
+                    self._external_ctx.error_count += state["error_count"]
+
+                    # Set time_to_first_tool_ms if not already set
+                    if (
+                        self._external_ctx.time_to_first_tool_ms == 0
+                        and state["tool_sequence"]
+                    ):
+                        self._external_ctx.time_to_first_tool_ms = latency_ms
+
+                    # Transfer latency
+                    self._external_ctx.latency_ms += latency_ms
+
+                    logger.debug(
+                        f"LangGraph data transferred to external context: "
+                        f"tools={len(state['tool_sequence'])}, "
+                        f"latency={latency_ms}ms, errors={state['error_count']}"
+                    )
+                except Exception as e:
+                    _log_track_error(
+                        "langgraph_tracer", f"Failed to transfer to context: {e!r}"
+                    )
+                return  # Don't save - @track will handle it
+
+            # Normal standalone save
             payload = {
                 "session_id": self.session_id,
                 "deployment_version": self.deployment_version,

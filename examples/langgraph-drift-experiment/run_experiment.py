@@ -10,54 +10,43 @@ Usage:
 
 import argparse
 import json
-import logging
-import os
 import time
-from collections import Counter
 
 from agent import build_agent
 from scenarios import get_scenarios
 
-from driftbase.integrations import LangGraphTracer
-
-# Enable debug logging only if DRIFTBASE_DEBUG is set
-if os.getenv("DRIFTBASE_DEBUG"):
-    logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(message)s")
-    # Suppress overly verbose loggers
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("anthropic").setLevel(logging.WARNING)
+from driftbase import track
 
 # ---------------------------------------------------------------------------
-# Version config — Same-tier comparison (Sonnet vs Sonnet)
+# Version config — Same-tier comparison (Sonnet vs Haiku)
 # ---------------------------------------------------------------------------
 
 VERSION_CONFIG = {
     "v1": {"model": "claude-sonnet-4-20250514", "label": "Claude Sonnet 4"},
-    "v2": {
-        "model": "claude-haiku-4-5-20251001",
-        "label": "Claude Haiku 4.5",
-    },
+    "v2": {"model": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
 }
 
 
 # ---------------------------------------------------------------------------
-# Instrumented runner
+# Instrumented runner — @track auto-detects LangGraph
 # ---------------------------------------------------------------------------
 
 
 def make_tracked_runner(version: str, model_name: str):
-    """Create a LangGraphTracer-instrumented agent runner."""
+    """Create a @track-instrumented agent runner. LangGraph auto-detected."""
     agent = build_agent(model_name)
 
-    def run_agent(query: str) -> tuple[str, list[str]]:
-        """Run agent and return (response, tool_calls)."""
-        tracer = LangGraphTracer(version=version, agent_id="swiss-airlines-support")
-        result = agent.invoke(
-            {"messages": [("user", query)]},
-            config={"callbacks": [tracer]},
-        )
+    @track(version=version)
+    def run_agent(query: str) -> dict:
+        """Run agent and return the full result."""
+        result = agent.invoke({"messages": [("user", query)]})
+        return result
 
-        # Extract tool calls
+    def run_and_extract(query: str) -> tuple[str, list[str]]:
+        """Run the tracked agent and extract response + tool calls."""
+        result = run_agent(query)
+
+        # Extract tool calls from messages
         tool_calls = []
         for msg in result["messages"]:
             if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -78,7 +67,7 @@ def make_tracked_runner(version: str, model_name: str):
 
         return final_response, tool_calls
 
-    return run_agent
+    return run_and_extract
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +107,7 @@ def main():
     errors = []
     correct_count = 0
     total_count = 0
-    consistency_data = {}  # scenario_idx -> [tool_sequence1, tool_sequence2, ...]
+    consistency_data = {}
 
     for i, scenario in enumerate(scenarios, 1):
         query = scenario["query"]
@@ -174,7 +163,6 @@ def main():
                 print(f"           [{repeat_idx + 1}] ERROR: {e}")
                 total_count += 1
 
-        # Store for consistency analysis
         consistency_data[i] = scenario_tool_sequences
 
     # Calculate intra-version consistency

@@ -247,6 +247,7 @@ if _HAYSTACK_AVAILABLE:
             version: str,
             agent_id: str | None = None,
             record_full_text: bool = False,
+            _external_ctx: Any | None = None,
         ):
             import os
 
@@ -265,6 +266,9 @@ if _HAYSTACK_AVAILABLE:
 
             # Span management (for nested components)
             self._span_stack: list[DriftbaseSpan] = []
+
+            # External context for @track integration (not yet implemented)
+            self._external_ctx = _external_ctx
 
             if record_full_text:
                 logger.warning(
@@ -314,6 +318,13 @@ if _HAYSTACK_AVAILABLE:
 
             Called when the root span exits (pipeline completes).
             """
+            # Stub: context sharing not yet implemented for Haystack
+            if self._external_ctx is not None:
+                logger.info(
+                    "Haystack context sharing not yet implemented - using standalone mode"
+                )
+                # Fall through to normal save for now
+
             try:
                 completed_at = datetime.utcnow()
                 latency_ms = int(

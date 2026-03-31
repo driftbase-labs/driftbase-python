@@ -26,6 +26,10 @@ import requests
 
 from driftbase.config import get_settings
 from driftbase.local.local_store import _log_track_error, enqueue_run
+from driftbase.sdk.framework_patches import (
+    apply_framework_patches,
+    clear_framework_context,
+)
 
 # Track persisted budget configs to avoid repeated writes
 _budget_configs_persisted: set[tuple[str, str]] = set()
@@ -532,6 +536,7 @@ def track(
             env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
 
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
+            session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
 
             # Persist budget config on first run (before function execution, idempotent)
             if budget_config and budget_config.limits:
@@ -593,87 +598,95 @@ def track(
             except Exception:
                 ctx.raw_input = str(msg_data)
 
+            # Auto-detect and patch frameworks for automatic tracer injection
+            apply_framework_patches(ctx, version)
+
             try:
-                if framework == "langgraph":
-                    result = _capture_langgraph(func, args, kwargs, ctx)
-                elif framework == "langchain":
-                    result = _capture_langchain(func, args, kwargs, ctx)
-                elif framework == "openai":
-                    result = _capture_openai(func, args, kwargs, ctx)
-                else:
-                    # Generic capture for all other frameworks
-                    # Note: For LlamaIndex, use the explicit LlamaIndexTracer from driftbase.integrations
-                    result = _capture_generic(func, args, kwargs, ctx)
-                ctx.decision_outcome = _classify_decision_outcome(result, None)
-            except Exception as e:
-                ctx.decision_outcome = OUTCOME_ERROR
-                ctx.error_count = 1
-                ctx.error_type = type(e).__name__
-                ctx.completed_at = datetime.utcnow()
-                ctx.raw_output = _scrub_pii(str(e))
-                if ctx.latency_ms == 0:
-                    ctx.latency_ms = 1
                 try:
-                    payload = _build_payload(
-                        ctx, session_id or run_id, version, env, sensitivity
-                    )
-                    enqueue_run(payload)
-                except Exception as enq_err:
-                    _log_track_error(
-                        "track_decorator", f"run_id={run_id} enqueue error={enq_err!r}"
-                    )
-
-                _dispatch_to_cloud(ctx, api_key)
-                raise
-
-            try:
-                if result is not None:
-                    # Parse objects for clean text and tokens
-                    if (
-                        hasattr(result, "choices")
-                        and isinstance(result.choices, list)
-                        and len(result.choices) > 0
-                    ):
-                        ctx.raw_output = getattr(
-                            result.choices[0].message, "content", ""
-                        )
-                        ctx.framework = "openai"  # Auto-correct framework
-
-                        if hasattr(result, "usage") and result.usage:
-                            ctx.token_usage = {
-                                "prompt": getattr(result.usage, "prompt_tokens", 0),
-                                "completion": getattr(
-                                    result.usage, "completion_tokens", 0
-                                ),
-                            }
-                    # Fallbacks for standard strings and dicts
-                    elif isinstance(result, str):
-                        ctx.raw_output = result
-                    elif hasattr(result, "content"):
-                        ctx.raw_output = str(getattr(result, "content", ""))
+                    if framework == "langgraph":
+                        result = _capture_langgraph(func, args, kwargs, ctx)
+                    elif framework == "langchain":
+                        result = _capture_langchain(func, args, kwargs, ctx)
+                    elif framework == "openai":
+                        result = _capture_openai(func, args, kwargs, ctx)
                     else:
-                        try:
-                            ctx.raw_output = json.dumps(result, default=str)
-                        except Exception:
-                            ctx.raw_output = str(result)
+                        # Generic capture for all other frameworks
+                        # Note: For LlamaIndex, use the explicit LlamaIndexTracer from driftbase.integrations
+                        result = _capture_generic(func, args, kwargs, ctx)
+                    ctx.decision_outcome = _classify_decision_outcome(result, None)
+                except Exception as e:
+                    ctx.decision_outcome = OUTCOME_ERROR
+                    ctx.error_count = 1
+                    ctx.error_type = type(e).__name__
+                    ctx.completed_at = datetime.utcnow()
+                    ctx.raw_output = _scrub_pii(str(e))
+                    if ctx.latency_ms == 0:
+                        ctx.latency_ms = 1
+                    try:
+                        payload = _build_payload(
+                            ctx, session_id or run_id, version, env, sensitivity
+                        )
+                        enqueue_run(payload)
+                    except Exception as enq_err:
+                        _log_track_error(
+                            "track_decorator",
+                            f"run_id={run_id} enqueue error={enq_err!r}",
+                        )
 
-                    # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
-                    ctx.raw_output = _scrub_pii(ctx.raw_output)
-                    ctx.output_length = len(ctx.raw_output)
-                    ctx.output_structure_hash = _compute_structure_hash(result)
+                    _dispatch_to_cloud(ctx, api_key)
+                    raise
 
-                payload = _build_payload(ctx, session_id or run_id, version, env)
-                enqueue_run(payload)
-            except Exception as e:
-                _log_track_error("track_decorator", f"run_id={run_id} error={e!r}")
+                try:
+                    if result is not None:
+                        # Parse objects for clean text and tokens
+                        if (
+                            hasattr(result, "choices")
+                            and isinstance(result.choices, list)
+                            and len(result.choices) > 0
+                        ):
+                            ctx.raw_output = getattr(
+                                result.choices[0].message, "content", ""
+                            )
+                            ctx.framework = "openai"  # Auto-correct framework
 
-            return result
+                            if hasattr(result, "usage") and result.usage:
+                                ctx.token_usage = {
+                                    "prompt": getattr(result.usage, "prompt_tokens", 0),
+                                    "completion": getattr(
+                                        result.usage, "completion_tokens", 0
+                                    ),
+                                }
+                        # Fallbacks for standard strings and dicts
+                        elif isinstance(result, str):
+                            ctx.raw_output = result
+                        elif hasattr(result, "content"):
+                            ctx.raw_output = str(getattr(result, "content", ""))
+                        else:
+                            try:
+                                ctx.raw_output = json.dumps(result, default=str)
+                            except Exception:
+                                ctx.raw_output = str(result)
+
+                        # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
+                        ctx.raw_output = _scrub_pii(ctx.raw_output)
+                        ctx.output_length = len(ctx.raw_output)
+                        ctx.output_structure_hash = _compute_structure_hash(result)
+
+                    payload = _build_payload(ctx, session_id or run_id, version, env)
+                    enqueue_run(payload)
+                except Exception as e:
+                    _log_track_error("track_decorator", f"run_id={run_id} error={e!r}")
+
+                return result
+            finally:
+                clear_framework_context()
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
 
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
+            session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
 
             # Persist budget config on first run (before function execution, idempotent)
             if budget_config and budget_config.limits:
@@ -735,83 +748,90 @@ def track(
             except Exception:
                 ctx.raw_input = str(msg_data)
 
+            # Auto-detect and patch frameworks for automatic tracer injection
+            apply_framework_patches(ctx, version)
+
             try:
-                if framework == "langgraph":
-                    result = await _capture_langgraph_async(func, args, kwargs, ctx)
-                elif framework == "langchain":
-                    result = await _capture_langchain_async(func, args, kwargs, ctx)
-                elif framework == "openai":
-                    result = await _capture_openai_async(func, args, kwargs, ctx)
-                else:
-                    # Generic capture for all other frameworks
-                    # Note: For LlamaIndex, use the explicit LlamaIndexTracer from driftbase.integrations
-                    result = await _capture_generic_async(func, args, kwargs, ctx)
-                ctx.latency_ms = int((time.perf_counter() - start) * 1000)
-                ctx.completed_at = datetime.utcnow()
-                ctx.decision_outcome = _classify_decision_outcome(result, None)
-            except Exception as e:
-                ctx.latency_ms = int((time.perf_counter() - start) * 1000)
-                ctx.completed_at = datetime.utcnow()
-                ctx.decision_outcome = OUTCOME_ERROR
-                ctx.error_count = 1
-                ctx.error_type = type(e).__name__
-                ctx.raw_output = _scrub_pii(str(e))
                 try:
-                    payload = _build_payload(
-                        ctx, session_id or run_id, version, env, sensitivity
-                    )
+                    if framework == "langgraph":
+                        result = await _capture_langgraph_async(func, args, kwargs, ctx)
+                    elif framework == "langchain":
+                        result = await _capture_langchain_async(func, args, kwargs, ctx)
+                    elif framework == "openai":
+                        result = await _capture_openai_async(func, args, kwargs, ctx)
+                    else:
+                        # Generic capture for all other frameworks
+                        # Note: For LlamaIndex, use the explicit LlamaIndexTracer from driftbase.integrations
+                        result = await _capture_generic_async(func, args, kwargs, ctx)
+                    ctx.latency_ms = int((time.perf_counter() - start) * 1000)
+                    ctx.completed_at = datetime.utcnow()
+                    ctx.decision_outcome = _classify_decision_outcome(result, None)
+                except Exception as e:
+                    ctx.latency_ms = int((time.perf_counter() - start) * 1000)
+                    ctx.completed_at = datetime.utcnow()
+                    ctx.decision_outcome = OUTCOME_ERROR
+                    ctx.error_count = 1
+                    ctx.error_type = type(e).__name__
+                    ctx.raw_output = _scrub_pii(str(e))
+                    try:
+                        payload = _build_payload(
+                            ctx, session_id or run_id, version, env, sensitivity
+                        )
+                        enqueue_run(payload)
+                    except Exception as enq_err:
+                        _log_track_error(
+                            "track_decorator_async",
+                            f"run_id={run_id} enqueue error={enq_err!r}",
+                        )
+
+                    _dispatch_to_cloud(ctx, api_key)
+                    raise
+
+                try:
+                    if result is not None:
+                        if (
+                            hasattr(result, "choices")
+                            and isinstance(result.choices, list)
+                            and len(result.choices) > 0
+                        ):
+                            ctx.raw_output = getattr(
+                                result.choices[0].message, "content", ""
+                            )
+                            ctx.framework = "openai"
+
+                            if hasattr(result, "usage") and result.usage:
+                                ctx.token_usage = {
+                                    "prompt": getattr(result.usage, "prompt_tokens", 0),
+                                    "completion": getattr(
+                                        result.usage, "completion_tokens", 0
+                                    ),
+                                }
+                        elif isinstance(result, str):
+                            ctx.raw_output = result
+                        elif hasattr(result, "content"):
+                            ctx.raw_output = str(getattr(result, "content", ""))
+                        else:
+                            try:
+                                ctx.raw_output = json.dumps(result, default=str)
+                            except Exception:
+                                ctx.raw_output = str(result)
+
+                        # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
+                        ctx.raw_output = _scrub_pii(ctx.raw_output)
+                        ctx.output_length = len(ctx.raw_output)
+                        ctx.output_structure_hash = _compute_structure_hash(result)
+
+                    payload = _build_payload(ctx, session_id or run_id, version, env)
                     enqueue_run(payload)
-                except Exception as enq_err:
+                except Exception as e:
                     _log_track_error(
-                        "track_decorator_async",
-                        f"run_id={run_id} enqueue error={enq_err!r}",
+                        "track_decorator_async", f"run_id={run_id} error={e!r}"
                     )
 
                 _dispatch_to_cloud(ctx, api_key)
-                raise
-
-            try:
-                if result is not None:
-                    if (
-                        hasattr(result, "choices")
-                        and isinstance(result.choices, list)
-                        and len(result.choices) > 0
-                    ):
-                        ctx.raw_output = getattr(
-                            result.choices[0].message, "content", ""
-                        )
-                        ctx.framework = "openai"
-
-                        if hasattr(result, "usage") and result.usage:
-                            ctx.token_usage = {
-                                "prompt": getattr(result.usage, "prompt_tokens", 0),
-                                "completion": getattr(
-                                    result.usage, "completion_tokens", 0
-                                ),
-                            }
-                    elif isinstance(result, str):
-                        ctx.raw_output = result
-                    elif hasattr(result, "content"):
-                        ctx.raw_output = str(getattr(result, "content", ""))
-                    else:
-                        try:
-                            ctx.raw_output = json.dumps(result, default=str)
-                        except Exception:
-                            ctx.raw_output = str(result)
-
-                    # 2. SCRUB THE OUTPUT DATA BEFORE HASHING
-                    ctx.raw_output = _scrub_pii(ctx.raw_output)
-                    ctx.output_length = len(ctx.raw_output)
-                    ctx.output_structure_hash = _compute_structure_hash(result)
-
-                payload = _build_payload(ctx, session_id or run_id, version, env)
-                enqueue_run(payload)
-            except Exception as e:
-                _log_track_error(
-                    "track_decorator_async", f"run_id={run_id} error={e!r}"
-                )
-
-            _dispatch_to_cloud(ctx, api_key)
+                return result
+            finally:
+                clear_framework_context()
 
         if inspect.iscoroutinefunction(func):
             return async_wrapper

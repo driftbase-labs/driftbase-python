@@ -99,6 +99,7 @@ if _SMOLAGENTS_AVAILABLE:
             self,
             version: str,
             agent_id: str | None = None,
+            _external_ctx: Any | None = None,
         ):
             import os
 
@@ -116,6 +117,9 @@ if _SMOLAGENTS_AVAILABLE:
             self.error_count = 0
             self.task_input_hash = ""
             self.final_answer: Any = None
+
+            # External context for @track integration (not yet implemented)
+            self._external_ctx = _external_ctx
 
             logger.info(
                 f"SmolagentsTracer initialized: version={self.deployment_version}, "
@@ -217,6 +221,13 @@ if _SMOLAGENTS_AVAILABLE:
 
             Called when FinalAnswerStep is detected.
             """
+            # Stub: context sharing not yet implemented for smolagents
+            if self._external_ctx is not None:
+                logger.info(
+                    "smolagents context sharing not yet implemented - using standalone mode"
+                )
+                # Fall through to normal save for now
+
             try:
                 completed_at = datetime.utcnow()
                 latency_ms = int(
