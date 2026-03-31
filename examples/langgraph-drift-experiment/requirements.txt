@@ -1,5 +1,5 @@
-driftbase[analyze]
+driftbase
 langgraph
-langchain-openai
+langchain-anthropic
 langchain-core
 langchain-community

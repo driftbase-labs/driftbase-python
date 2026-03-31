@@ -15,12 +15,14 @@ The tutorial's Part 1 agent (zero-shot, all 18 tools, no interrupts) is reproduc
 with mock tool backends so the experiment is fully self-contained — no Tavily key,
 no SQLite download, no external dependencies beyond Anthropic API.
 
+All mock tools use **seeded randomness** based on input arguments, ensuring deterministic
+output for identical inputs. This isolates model behavior changes from data variance.
+
 ```
-agent.py              — LangGraph agent faithful to the tutorial's Part 1 architecture
-                        (State, Assistant class, 18 tools, ToolNode, conditional edges)
-scenarios.py          — 50 realistic customer support queries across all tool categories
-run_experiment.py     — Runs all scenarios for v1 and v2, instrumented with @track
-analyze.py            — Runs driftbase diff and prints the report
+agent.py              — LangGraph agent with 18 tools and seeded mock backends
+scenarios.py          — 100 realistic queries with ground truth expected_tools
+run_experiment.py     — Runs scenarios with correctness tracking and repeat support
+analyze.py            — Generates drift report via driftbase diff
 ```
 
 ## Tools (matching the tutorial exactly)
@@ -44,18 +46,23 @@ pip install driftbase langchain-core langgraph langchain-anthropic
 export ANTHROPIC_API_KEY="your_key_here"
 
 # Run v1 (claude-sonnet-4 baseline)
+# Default: 100 scenarios × 2 repeats = 200 runs
 python run_experiment.py --version v1
 
-# Run v2 (claude-haiku-4.5 — same prompt, same tools, different model)
+# Run v2 (claude-3.5-sonnet challenger)
 python run_experiment.py --version v2
 
 # Compare
 python analyze.py
 
-# Quick test first (3 scenarios only)
+# Quick test (3 scenarios × 2 repeats)
 python run_experiment.py --version v1 --limit 3
 python run_experiment.py --version v2 --limit 3
 driftbase diff v1 v2
+
+# Adjust repeat count
+python run_experiment.py --version v1 --repeat 3  # 100 × 3 = 300 runs
+python run_experiment.py --version v1 --limit 10 --repeat 1  # 10 × 1 = 10 runs
 ```
 
 ### Verify the fix works
@@ -74,16 +81,35 @@ This validates that the LangGraphTracer correctly:
 ## What changes between v1 and v2
 
 **Only the model.** Same system prompt, same tools, same scenarios, same tool
-implementations. This isolates model-driven behavioral drift — the type that
-happens silently when providers update model snapshots.
+implementations. This isolates model-driven behavioral drift.
+
+- **v1**: Claude Sonnet 4 (claude-sonnet-4-20250514)
+- **v2**: Claude Haiku 4.5 (claude-haiku-4-5-20251001)
+
+This comparison evaluates drift when switching from a flagship model to a faster,
+more cost-effective model — a common production optimization.
+
+## Experiment improvements
+
+This upgraded experiment includes:
+
+1. **Ground truth tracking**: Each scenario has `expected_tools` field for correctness measurement
+2. **Seeded randomness**: All mock tools use deterministic output based on input arguments
+3. **Repeat runs**: Default 2 repeats per scenario to measure intra-version consistency
+4. **Same-tier comparison**: Sonnet 4 vs Sonnet 3.5 (not different model tiers)
+5. **Statistical power**: 100 scenarios × 2 repeats = 200 runs per version
+6. **Correctness metrics**: Track whether actual tools include all expected tools
+7. **Consistency metrics**: Measure if same query → same tools across repeats
 
 ## Expected drift signals
 
 - **Tool distribution shift** — different model may prefer different tools for the same query
 - **Decision outcome changes** — different routing, different tool choices
 - **Markov transition shifts** — different tool call ordering patterns
-- **Verbosity ratio** — smaller models tend to produce shorter responses
-- **Latency** — obvious but still relevant data point
+- **Correctness drift** — regression in meeting ground truth expectations
+- **Consistency drift** — increased variance in tool selection for identical queries
+- **Verbosity ratio** — response length changes between versions
+- **Latency** — performance differences
 
 ## Credit
 

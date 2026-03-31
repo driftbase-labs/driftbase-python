@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(driftbase --help:*)",
+      "Bash(find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python /tmp/debug_budget.py:*)",
+      "Bash(python /tmp/test_budget_min_runs.py:*)",
+      "Bash(driftbase budgets show:*)",
+      "Bash(driftbase changes --help:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(driftbase changes record:*)",
+      "Bash(driftbase changes list:*)",
+      "Bash(python:*)",
+      "Bash(PYTHONPATH=src python:*)",
+      "Bash(PYTHONPATH=src pytest:*)",
+      "Bash(ls:*)",
+      "Bash(PYTHONPATH=/Users/work_air/projects/driftbase-python/src python:*)"
+    ]
+  }
+}

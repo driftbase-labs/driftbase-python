@@ -106,6 +106,8 @@ if _LANGCHAIN_AVAILABLE:
             """Called when a graph node starts."""
             run_id = kwargs.get("run_id")
             parent_run_id = kwargs.get("parent_run_id")
+            name = serialized.get("name", "unknown")
+
             if run_id is None:
                 return
 
@@ -126,11 +128,17 @@ if _LANGCHAIN_AVAILABLE:
                     "completion_tokens": 0,
                 }
                 self._run_to_root[srid] = srid
-                logger.debug(f"LangGraph graph started: run_id={srid}")
+                logger.debug(
+                    f"[TRACER] ROOT chain_start: name={name}, run_id={srid[:8]}"
+                )
             else:
                 # Child run - link to root
                 parent_srid = str(parent_run_id)
-                self._run_to_root[srid] = self._run_to_root.get(parent_srid, srid)
+                root = self._run_to_root.get(parent_srid, srid)
+                self._run_to_root[srid] = root
+                logger.debug(
+                    f"[TRACER] CHILD chain_start: name={name}, run_id={srid[:8]}, parent={parent_srid[:8]}, root={root[:8]}"
+                )
 
         def on_tool_start(
             self, serialized: dict, input_str: str, **kwargs: Any
@@ -150,11 +158,6 @@ if _LANGCHAIN_AVAILABLE:
             if root is not None and run_id is not None:
                 self._run_to_root[str(run_id)] = root
 
-            if root is None or root not in self.active_runs:
-                return
-
-            state = self.active_runs[root]
-
             # Extract tool name
             tool_name = None
             if "name" in serialized and serialized["name"]:
@@ -163,16 +166,24 @@ if _LANGCHAIN_AVAILABLE:
                 tool_name = kwargs["name"]
             if not tool_name:
                 tool_name = "unknown_tool"
-                logger.warning(
-                    f"Could not extract tool name from serialized={serialized}"
+
+            logger.debug(
+                f"[TRACER] tool_start: tool={tool_name}, run_id={str(run_id)[:8] if run_id else 'None'}, "
+                f"parent={str(parent_run_id)[:8] if parent_run_id else 'None'}, root={root[:8] if root else 'None'}"
+            )
+
+            if root is None or root not in self.active_runs:
+                logger.debug(
+                    "[TRACER] tool_start: root not found or not in active_runs, skipping"
                 )
+                return
+
+            state = self.active_runs[root]
 
             # Record start time for latency tracking
             state["tool_start_times"][tool_name] = time.perf_counter()
             if run_id is not None:
                 state["tool_run_id_to_name"][str(run_id)] = tool_name
-
-            logger.debug(f"LangGraph tool started: {tool_name}")
 
         def on_tool_end(self, output: str, **kwargs: Any) -> None:
             """Called when a tool completes successfully."""
@@ -185,7 +196,12 @@ if _LANGCHAIN_AVAILABLE:
                 root = self._run_to_root.get(str(parent_run_id))
             if root is None and run_id is not None:
                 root = self._run_to_root.get(str(run_id))
+
             if root is None or root not in self.active_runs:
+                logger.debug(
+                    f"[TRACER] tool_end: run_id={str(run_id)[:8] if run_id else 'None'}, "
+                    f"root not found or not in active_runs"
+                )
                 return
 
             state = self.active_runs[root]
@@ -193,7 +209,7 @@ if _LANGCHAIN_AVAILABLE:
                 str(run_id) if run_id is not None else "", "unknown_tool"
             )
             state["tool_sequence"].append(tool_name)
-            logger.debug(f"LangGraph tool completed: {tool_name}")
+            logger.debug(f"[TRACER] tool_end: tool={tool_name}, root={root[:8]}")
 
         def on_tool_error(self, error: Exception, **kwargs: Any) -> None:
             """Called when a tool encounters an error."""
@@ -247,26 +263,58 @@ if _LANGCHAIN_AVAILABLE:
         def on_chain_end(self, outputs: dict, **kwargs: Any) -> None:
             """Called when a graph completes - save the run if it's a root graph."""
             run_id = kwargs.get("run_id")
+            parent_run_id = kwargs.get("parent_run_id")
+
             if run_id is None:
+                logger.debug("[TRACER] chain_end: run_id is None, skipping")
                 return
 
             srid = str(run_id)
+            has_messages = isinstance(outputs, dict) and "messages" in outputs
+            in_active = srid in self.active_runs
+            root_mapping = self._run_to_root.get(srid)
+            is_root = root_mapping == srid
+            has_no_parent = parent_run_id is None
+
+            logger.debug(
+                f"[TRACER] chain_end: run_id={srid[:8]}, "
+                f"in_active={in_active}, root_mapping={root_mapping[:8] if root_mapping else None}, "
+                f"is_root={is_root}, has_no_parent={has_no_parent}, has_messages={has_messages}"
+            )
+
             if srid not in self.active_runs:
+                logger.debug(
+                    f"[TRACER] chain_end: run_id={srid[:8]} not in active_runs, skipping"
+                )
                 return
 
-            # FIX: Only save if this is a ROOT run (not intermediate nodes)
-            # A root run is one where srid maps to itself in _run_to_root
-            if self._run_to_root.get(srid) != srid:
+            # Root detection: a run is root if either:
+            # 1. It maps to itself in _run_to_root (primary check)
+            # 2. It has no parent_run_id AND is in active_runs (fallback for edge cases)
+            is_root_run = (self._run_to_root.get(srid) == srid) or (
+                parent_run_id is None and srid in self.active_runs
+            )
+
+            if not is_root_run:
+                logger.debug(
+                    f"[TRACER] chain_end: run_id={srid[:8]} is not root, skipping save"
+                )
                 return
 
             # Only save when we have messages (which indicates graph completion)
             if isinstance(outputs, dict) and "messages" in outputs:
+                logger.info(f"[TRACER] *** SAVING RUN: run_id={srid[:8]} ***")
                 self._save_run(srid, outputs)
                 self.active_runs.pop(srid, None)
                 # Clean up all mappings pointing to this root
                 to_remove = [k for k, v in self._run_to_root.items() if v == srid]
                 for k in to_remove:
                     self._run_to_root.pop(k, None)
+                logger.debug(f"[TRACER] Cleaned up {len(to_remove)} mappings")
+            else:
+                logger.debug(
+                    f"[TRACER] chain_end: run_id={srid[:8]} has no messages, skipping save"
+                )
 
         def _save_run(self, run_id_key: str, output: Any) -> None:
             """Persist the run to local SQLite via enqueue_run."""
@@ -295,6 +343,8 @@ if _LANGCHAIN_AVAILABLE:
                 "error_count": state["error_count"],
                 "retry_count": state["retry_count"],
                 "semantic_cluster": "resolved",
+                "prompt_tokens": state.get("prompt_tokens", 0),
+                "completion_tokens": state.get("completion_tokens", 0),
             }
 
             try:
