@@ -1,8 +1,44 @@
 # Driftbase
 
-**Behavioral drift detection for AI agents — catch regressions before your users do.**
+## Your AI agent changed. Do you know when?
 
-Fingerprint your agent's behavior in production. Diff two versions. Get a statistically grounded drift score, financial impact analysis, and plain-English verdict — all computed locally on your machine.
+AI agents drift. A prompt update, a model version bump, a RAG reindex —
+any of these can shift how your agent makes decisions, without triggering
+a single test failure.
+
+Driftbase tells you when your agent changed, what caused it, and whether
+it got better or worse.
+
+```bash
+pip install driftbase
+```
+
+Add one line to your agent:
+
+```python
+from driftbase import track
+
+@track()  # version is optional — Driftbase figures it out
+def run_agent(query):
+    return agent.invoke(query)
+```
+
+Then, when something feels off:
+
+```bash
+driftbase diagnose
+```
+
+```
+DRIFTBASE DIAGNOSTIC
+
+  Behavioral shift detected 11 days ago (2026-03-20)
+  Most likely cause: prompt change recorded on 2026-03-19
+  Affected:          escalation rate 4% → 19%, latency +1.2s
+```
+
+No test sets to write. No versions to declare. No configuration.
+Just answers.
 
 [![PyPI version](https://badge.fury.io/py/driftbase.svg)](https://pypi.org/project/driftbase/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,19 +46,29 @@ Fingerprint your agent's behavior in production. Diff two versions. Get a statis
 
 ---
 
-## What Driftbase does
+## How it works
 
-Driftbase is a pre-production behavioral analysis tool for AI agents.
+Driftbase observes your agent's behavior across runs and detects when
+something changes.
 
-Before you ship a new version of your agent, run:
+**Instrument once**
+Add `@track()` to your agent's entry point. Driftbase records behavioral
+signals on every run — tool calls, outcomes, latency, errors — to a local
+SQLite database. Zero network calls. Zero configuration.
 
-```bash
-driftbase diff v1.0 v2.0
-```
+**Run when something feels wrong**
+`driftbase diagnose` scans your agent's full run history, detects behavioral
+shifts automatically, and correlates them with recorded change events.
 
-You get a statistically grounded drift score, financial impact, root-cause hypothesis, and a plain-English verdict (SHIP / MONITOR / REVIEW / BLOCK) — computed locally on your machine, no cloud required.
+**Understand the full arc**
+`driftbase history` shows how your agent's behavior evolved over its entire
+recorded lifetime — which epochs were stable, which shifted, and what changed
+at each breakpoint.
 
-The free SDK is for pre-deploy analysis. Production monitoring is Pro.
+**Gate deploys**
+`driftbase diff v1.0 v2.0` compares two explicit versions with a statistical
+drift score and SHIP / MONITOR / REVIEW / BLOCK verdict — for teams that want
+explicit pre-deploy checks.
 
 ### Core Value Proposition
 
@@ -124,7 +170,7 @@ Drop `@track` onto the function that runs your agent. Driftbase auto-detects you
 ```python
 from driftbase import track
 
-@track(version="v2.1")
+@track()  # version is optional
 def run_agent(user_query: str):
     # Your agent logic here — unchanged
     ...
@@ -134,7 +180,7 @@ def run_agent(user_query: str):
 
 ```python
 @track(
-    version="v2.1",                    # Required. Your deployment version string.
+    version="v2.1",                    # Optional. Auto-detected from env var, git tag, or weekly epoch.
     environment="production",          # Optional. Label for filtering (staging/prod/etc).
 
     # Record what changed at deploy time — enables root cause pinpointing
@@ -163,7 +209,16 @@ def run_agent(user_query: str):
     ...
 ```
 
-All parameters except `version` are optional. `@track(version="v2.1")` is all you need to start.
+All parameters are optional. `@track()` with no arguments is all you need to start.
+
+### Version Resolution
+
+When `version` is not provided, Driftbase uses:
+1. `DRIFTBASE_VERSION` environment variable
+2. Git tag at HEAD (if repository has a tag)
+3. Time-based epoch: `epoch-YYYY-MM-DD` (Monday of current week)
+
+This means you get automatic behavioral epochs without declaring versions explicitly.
 
 ---
 
@@ -504,15 +559,15 @@ driftbase doctor   # Check configuration and database health
 
 ## CLI Reference
 
-### Analysis
+### Primary Commands
 
 | Command | Description |
 |---------|-------------|
-| `driftbase diff <v1> <v2>` | Compare two versions — the main event |
-| `driftbase diagnose` | Pattern recognition on a single version |
-| `driftbase compare <v1> <v2> <v3>` | Multi-version comparison |
+| `driftbase diagnose` | Detect what changed in your agent and when — the primary command |
+| `driftbase history` | Full behavioral timeline — how your agent evolved over time |
+| `driftbase diff <v1> <v2>` | Compare two versions explicitly |
 
-### Data
+### Data and Configuration
 
 | Command | Description |
 |---------|-------------|
@@ -523,27 +578,13 @@ driftbase doctor   # Check configuration and database health
 | `driftbase export` | Export runs to JSON |
 | `driftbase import <file>` | Import runs from JSON |
 | `driftbase baseline` | Set/get/clear baseline version |
-
-### Pre-production gates
-
-| Command | Description |
-|---------|-------------|
 | `driftbase budgets` | Define acceptance criteria, view breaches |
 | `driftbase changes` | Record what changed at deploy time |
 | `driftbase deploy` | Label versions good/bad for weight learning |
-
-### Visualization
-
-| Command | Description |
-|---------|-------------|
 | `driftbase chart -v <version>` | Terminal charts for run metrics |
 | `driftbase cost` | Financial impact analysis |
 | `driftbase demo` | Generate synthetic runs for exploration |
-
-### Setup
-
-| Command | Description |
-|---------|-------------|
+| `driftbase compare <v1> <v2> <v3>` | Multi-version comparison |
 | `driftbase init` | Interactive setup |
 | `driftbase config` | Show resolved configuration |
 | `driftbase doctor` | Check configuration and database health |

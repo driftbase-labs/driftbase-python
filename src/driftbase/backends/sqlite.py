@@ -172,6 +172,25 @@ class SignificanceThreshold(SQLModel, table=True):
     baseline_n_at_computation: int = 0
 
 
+class DetectedEpoch(SQLModel, table=True):
+    """Auto-detected behavioral epochs (cached with TTL)."""
+
+    __tablename__ = "detected_epochs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    agent_id: str = Field(index=True)
+    epoch_label: str
+    start_run_id: str | None = None
+    end_run_id: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    run_count: int = 0
+    stability: str = "UNKNOWN"  # HIGH | MODERATE | LOW | UNKNOWN
+    summary: str = ""
+    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    cache_expires_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 def _ensure_dir(path: str) -> None:
     """
     Ensure the parent directory of the database file exists.
@@ -346,6 +365,7 @@ class SQLiteBackend(StorageBackend):
         DeployOutcome.__table__.create(self._engine, checkfirst=True)
         LearnedWeightsCache.__table__.create(self._engine, checkfirst=True)
         SignificanceThreshold.__table__.create(self._engine, checkfirst=True)
+        DetectedEpoch.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
         # Add UNIQUE constraints if not exists
@@ -367,6 +387,12 @@ class SQLiteBackend(StorageBackend):
                     text(
                         "CREATE UNIQUE INDEX IF NOT EXISTS idx_significance_thresholds_unique "
                         "ON significance_thresholds(agent_id, version)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_detected_epochs_agent_time "
+                        "ON detected_epochs(agent_id, detected_at DESC)"
                     )
                 )
                 conn.commit()
@@ -1373,3 +1399,98 @@ class SQLiteBackend(StorageBackend):
         except Exception as e:
             logger.debug(f"SQLite get_significance_threshold failed: {e}")
             return None
+
+    def write_detected_epochs(
+        self, agent_id: str, epochs: list[dict[str, Any]], ttl_hours: int = 1
+    ) -> None:
+        """Write detected epochs to cache. Replaces existing cache for this agent."""
+        try:
+            from datetime import timedelta
+
+            with Session(self._engine) as session:
+                # Clear existing epochs for this agent
+                session.execute(
+                    text("DELETE FROM detected_epochs WHERE agent_id = :agent_id"),
+                    {"agent_id": agent_id},
+                )
+
+                # Insert new epochs
+                now = datetime.utcnow()
+                expires_at = now + timedelta(hours=ttl_hours)
+
+                for epoch in epochs:
+                    record = DetectedEpoch(
+                        agent_id=agent_id,
+                        epoch_label=epoch.get("label", ""),
+                        start_run_id=epoch.get("start_run_id"),
+                        end_run_id=epoch.get("end_run_id"),
+                        start_time=epoch.get("start_time"),
+                        end_time=epoch.get("end_time"),
+                        run_count=epoch.get("run_count", 0),
+                        stability=epoch.get("stability", "UNKNOWN"),
+                        summary=epoch.get("summary", ""),
+                        detected_at=now,
+                        cache_expires_at=expires_at,
+                    )
+                    session.add(record)
+
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_detected_epochs failed: {e}")
+
+    def get_detected_epochs(self, agent_id: str) -> list[dict[str, Any]] | None:
+        """
+        Return cached detected epochs for agent_id, or None if cache is expired/missing.
+        Checks TTL before returning.
+        """
+        try:
+            with Session(self._engine) as session:
+                epochs = session.exec(
+                    select(DetectedEpoch)
+                    .where(DetectedEpoch.agent_id == agent_id)
+                    .order_by(DetectedEpoch.start_time)
+                ).all()
+
+                if not epochs:
+                    return None
+
+                # Check if cache is expired (use first epoch's TTL)
+                now = datetime.utcnow()
+                if epochs[0].cache_expires_at < now:
+                    # Cache expired, delete and return None
+                    session.execute(
+                        text("DELETE FROM detected_epochs WHERE agent_id = :agent_id"),
+                        {"agent_id": agent_id},
+                    )
+                    session.commit()
+                    return None
+
+                return [
+                    {
+                        "id": e.id,
+                        "label": e.epoch_label,
+                        "start_run_id": e.start_run_id,
+                        "end_run_id": e.end_run_id,
+                        "start_time": e.start_time,
+                        "end_time": e.end_time,
+                        "run_count": e.run_count,
+                        "stability": e.stability,
+                        "summary": e.summary,
+                    }
+                    for e in epochs
+                ]
+        except Exception as e:
+            logger.debug(f"SQLite get_detected_epochs failed: {e}")
+            return None
+
+    def clear_detected_epochs(self, agent_id: str) -> None:
+        """Clear detected epoch cache for agent_id."""
+        try:
+            with Session(self._engine) as session:
+                session.execute(
+                    text("DELETE FROM detected_epochs WHERE agent_id = :agent_id"),
+                    {"agent_id": agent_id},
+                )
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite clear_detected_epochs failed: {e}")

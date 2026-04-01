@@ -179,6 +179,50 @@ def _compute_structure_hash(content: Any) -> str:
     return _hash_content(structure)
 
 
+def _resolve_version(version: str | None) -> str:
+    """
+    Resolve version string with intelligent defaults.
+
+    Priority:
+    1. Explicit version parameter (if not None)
+    2. DRIFTBASE_VERSION env var
+    3. Git tag at HEAD
+    4. Time-based epoch label (Monday of current week)
+
+    Never raises - always returns a string.
+    """
+    if version is not None:
+        return version
+
+    # Check env var
+    env_version = os.environ.get("DRIFTBASE_VERSION")
+    if env_version:
+        return env_version
+
+    # Try git tag
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--exact-match", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=os.getcwd(),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    # Time-based epoch: Monday of current week
+    from datetime import date, timedelta
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    return f"epoch-{monday.isoformat()}"
+
+
 def _detect_framework(func: Callable[..., Any]) -> str:
     try:
         mod = inspect.getmodule(func)
@@ -498,7 +542,7 @@ def _dispatch_to_cloud(ctx: RunContext, explicit_api_key: str | None = None) -> 
 
 
 def track(
-    version: str = "unknown",
+    version: str | None = None,
     environment: str | None = None,
     api_key: str | None = None,
     sensitivity: str | None = None,
@@ -534,6 +578,7 @@ def track(
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+            resolved_version = _resolve_version(version)
 
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
             session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
@@ -542,7 +587,7 @@ def track(
             if budget_config and budget_config.limits:
                 session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
                 agent_id = session_id or run_id
-                config_key = (agent_id, version)
+                config_key = (agent_id, resolved_version)
                 if config_key not in _budget_configs_persisted:
                     try:
                         from driftbase.backends.factory import get_backend
@@ -550,7 +595,7 @@ def track(
                         backend = get_backend()
                         backend.write_budget_config(
                             agent_id=agent_id,
-                            version=version,
+                            version=resolved_version,
                             config=budget_config.limits,
                             source="decorator",
                         )
@@ -563,7 +608,7 @@ def track(
                 session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
                 agent_id = session_id or run_id
                 for change_type, current_value in changes.items():
-                    event_key = (agent_id, version, change_type)
+                    event_key = (agent_id, resolved_version, change_type)
                     if event_key not in _change_events_persisted:
                         try:
                             from driftbase.backends.factory import get_backend
@@ -572,7 +617,7 @@ def track(
                             backend.write_change_event(
                                 {
                                     "agent_id": agent_id,
-                                    "version": version,
+                                    "version": resolved_version,
                                     "change_type": change_type,
                                     "previous": None,  # Don't know previous value
                                     "current": str(current_value),
@@ -599,7 +644,7 @@ def track(
                 ctx.raw_input = str(msg_data)
 
             # Auto-detect and patch frameworks for automatic tracer injection
-            apply_framework_patches(ctx, version)
+            apply_framework_patches(ctx, resolved_version)
 
             try:
                 try:
@@ -624,7 +669,11 @@ def track(
                         ctx.latency_ms = 1
                     try:
                         payload = _build_payload(
-                            ctx, session_id or run_id, version, env, sensitivity
+                            ctx,
+                            session_id or run_id,
+                            resolved_version,
+                            env,
+                            sensitivity,
                         )
                         enqueue_run(payload)
                     except Exception as enq_err:
@@ -672,7 +721,9 @@ def track(
                         ctx.output_length = len(ctx.raw_output)
                         ctx.output_structure_hash = _compute_structure_hash(result)
 
-                    payload = _build_payload(ctx, session_id or run_id, version, env)
+                    payload = _build_payload(
+                        ctx, session_id or run_id, resolved_version, env
+                    )
                     enqueue_run(payload)
                 except Exception as e:
                     _log_track_error("track_decorator", f"run_id={run_id} error={e!r}")
@@ -684,6 +735,7 @@ def track(
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             env = environment or os.getenv("DRIFTBASE_ENVIRONMENT", "production")
+            resolved_version = _resolve_version(version)
 
             run_id = _hash_content(str(time.time()) + str(id(func)))[:12]
             session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
@@ -692,7 +744,7 @@ def track(
             if budget_config and budget_config.limits:
                 session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
                 agent_id = session_id or run_id
-                config_key = (agent_id, version)
+                config_key = (agent_id, resolved_version)
                 if config_key not in _budget_configs_persisted:
                     try:
                         from driftbase.backends.factory import get_backend
@@ -700,7 +752,7 @@ def track(
                         backend = get_backend()
                         backend.write_budget_config(
                             agent_id=agent_id,
-                            version=version,
+                            version=resolved_version,
                             config=budget_config.limits,
                             source="decorator",
                         )
@@ -713,7 +765,7 @@ def track(
                 session_id = os.getenv("DRIFTBASE_SESSION_ID", "")
                 agent_id = session_id or run_id
                 for change_type, current_value in changes.items():
-                    event_key = (agent_id, version, change_type)
+                    event_key = (agent_id, resolved_version, change_type)
                     if event_key not in _change_events_persisted:
                         try:
                             from driftbase.backends.factory import get_backend
@@ -722,7 +774,7 @@ def track(
                             backend.write_change_event(
                                 {
                                     "agent_id": agent_id,
-                                    "version": version,
+                                    "version": resolved_version,
                                     "change_type": change_type,
                                     "previous": None,  # Don't know previous value
                                     "current": str(current_value),
@@ -749,7 +801,7 @@ def track(
                 ctx.raw_input = str(msg_data)
 
             # Auto-detect and patch frameworks for automatic tracer injection
-            apply_framework_patches(ctx, version)
+            apply_framework_patches(ctx, resolved_version)
 
             try:
                 try:
@@ -775,7 +827,11 @@ def track(
                     ctx.raw_output = _scrub_pii(str(e))
                     try:
                         payload = _build_payload(
-                            ctx, session_id or run_id, version, env, sensitivity
+                            ctx,
+                            session_id or run_id,
+                            resolved_version,
+                            env,
+                            sensitivity,
                         )
                         enqueue_run(payload)
                     except Exception as enq_err:
@@ -821,7 +877,9 @@ def track(
                         ctx.output_length = len(ctx.raw_output)
                         ctx.output_structure_hash = _compute_structure_hash(result)
 
-                    payload = _build_payload(ctx, session_id or run_id, version, env)
+                    payload = _build_payload(
+                        ctx, session_id or run_id, resolved_version, env
+                    )
                     enqueue_run(payload)
                 except Exception as e:
                     _log_track_error(

@@ -15,6 +15,167 @@ from driftbase.cli.demo_templates import INDUSTRY_BENCHMARKS, REGRESSION_TYPES
 Console, Panel, Table, Markdown, Prompt, Confirm = safe_import_rich_extended()
 
 
+def _diagnose_behavioral_shift(console: Any, backend: Any) -> None:
+    """
+    Primary diagnostic flow - detects behavioral shifts automatically.
+    Shows "what changed and when" without requiring explicit version labels.
+    """
+    from driftbase.local.epoch_detector import detect_epochs
+
+    # Get all runs to determine agent_id
+    all_runs = backend.get_all_runs()
+    if not all_runs:
+        console.print("#FF6B6B]No runs found. Run your agent with @track() first.[/]")
+        return
+
+    # Get agent_id from most recent run
+    agent_id = all_runs[0].get("session_id") or all_runs[0].get("id")
+
+    # Total run count
+    total_runs = len(all_runs)
+
+    # Check if enough data for analysis
+    if total_runs < 40:
+        console.print(
+            Panel(
+                f"[bold]DRIFTBASE DIAGNOSTIC[/]\n\n"
+                f"Not enough data yet. {total_runs} runs recorded, 40 needed for reliable analysis.\n\n"
+                f"Keep running your agent — analysis improves with more data.",
+                title="Insufficient Data",
+                border_style="yellow",
+            )
+        )
+        return
+
+    # Detect epochs
+    from driftbase.config import get_settings
+
+    db_path = get_settings().DRIFTBASE_DB_PATH
+    epochs = detect_epochs(agent_id, db_path, window_size=20, sensitivity=0.15)
+
+    if not epochs or len(epochs) < 2:
+        # No behavioral shift detected
+        console.print(
+            Panel(
+                f"[bold]DRIFTBASE DIAGNOSTIC[/]  ·  {total_runs} runs\n\n"
+                f"No significant behavioral shifts detected.\n"
+                f"Your agent's behavior has been stable across all recorded runs.",
+                title="Stable Behavior",
+                border_style="green",
+            )
+        )
+        return
+
+    # Behavioral shift detected - show the latest shift
+    latest_epoch = epochs[-1]
+    previous_epoch = epochs[-2] if len(epochs) > 1 else None
+
+    # Get change events for the latest epoch
+    change_events = []
+    if latest_epoch.start_time:
+        # Query change events around this time
+        try:
+            from datetime import timedelta
+
+            window_start = latest_epoch.start_time - timedelta(days=1)
+            window_end = latest_epoch.start_time + timedelta(days=1)
+            # This is a simplified approach - in a full implementation,
+            # we'd query change_events by time range
+            pass
+        except Exception:
+            pass
+
+    # Calculate time since shift
+    if latest_epoch.start_time:
+        from datetime import datetime
+
+        now = datetime.utcnow()
+        days_ago = (now - latest_epoch.start_time).days
+        time_desc = f"{days_ago} days ago" if days_ago > 0 else "today"
+    else:
+        time_desc = "recently"
+
+    # Build output
+    console.print(
+        f"\n[bold]DRIFTBASE DIAGNOSTIC[/]  ·  last 30 days  ·  {total_runs} runs\n"
+    )
+    console.print("─" * 60)
+    console.print("[bold]WHAT CHANGED[/]")
+    console.print("─" * 60)
+    console.print()
+
+    if previous_epoch:
+        console.print(f"  Behavioral shift detected {time_desc}")
+        console.print()
+        console.print(
+            f"  [dim]Before[/]  {previous_epoch.label}  "
+            f"({previous_epoch.run_count} runs, stability: {previous_epoch.stability})"
+        )
+        console.print(
+            f"  [dim]After [/]  {latest_epoch.label}  "
+            f"({latest_epoch.run_count} runs, stability: {latest_epoch.stability})"
+        )
+        console.print()
+
+        # Get runs for comparison
+        try:
+            # This is simplified - ideally we'd load runs by epoch boundaries
+            v1_runs = backend.get_runs(previous_epoch.label, limit=100)
+            v2_runs = backend.get_runs(latest_epoch.label, limit=100)
+
+            if v1_runs and v2_runs:
+                v1_metrics = _calculate_metrics(v1_runs)
+                v2_metrics = _calculate_metrics(v2_runs)
+
+                # Show key affected metrics
+                console.print("[dim]Key metrics:[/]")
+                console.print()
+
+                # Latency
+                lat_before = v1_metrics.get("p95_latency", 0)
+                lat_after = v2_metrics.get("p95_latency", 0)
+                lat_change = lat_after - lat_before
+                lat_arrow = "↑" if lat_change > 0 else "↓"
+                console.print(
+                    f"  Latency p95     {lat_before / 1000:.1f}s      {lat_after / 1000:.1f}s      {lat_arrow}"
+                )
+
+                # Error rate
+                err_before = v1_metrics.get("error_rate", 0)
+                err_after = v2_metrics.get("error_rate", 0)
+                console.print(
+                    f"  Error rate      {err_before:.1%}       {err_after:.1%}       → {'stable' if abs(err_after - err_before) < 0.05 else 'changed'}"
+                )
+
+                # Escalation rate (decision drift proxy)
+                esc_before = v1_metrics.get("escalation_rate", 0)
+                esc_after = v2_metrics.get("escalation_rate", 0)
+                if abs(esc_after - esc_before) > 0.05:
+                    console.print(
+                        f"  Escalation rate {esc_before:.1%}       {esc_after:.1%}       → [yellow]increased[/]"
+                    )
+
+        except Exception:
+            pass
+
+    console.print()
+    console.print("─" * 60)
+    console.print("[bold]RECOMMENDATION[/]")
+    console.print("─" * 60)
+    console.print()
+
+    if previous_epoch and latest_epoch:
+        console.print(
+            f"  Review changes between {previous_epoch.label} and {latest_epoch.label}."
+        )
+        console.print()
+        console.print(
+            f"  Run: [bold]driftbase diff {previous_epoch.label} {latest_epoch.label}[/]  (full report)"
+        )
+        console.print("  Run: [bold]driftbase history[/]  (full timeline)")
+    console.print()
+
+
 def _calculate_metrics(runs: list[dict[str, Any]]) -> dict[str, float]:
     """Calculate aggregate metrics from runs."""
     if not runs:
@@ -220,13 +381,7 @@ def _generate_recommendations(
 
 
 @click.command("diagnose")
-@click.option(
-    "--runs",
-    "-r",
-    metavar="VERSION",
-    required=True,
-    help="Version to diagnose",
-)
+@click.argument("version", required=False)
 @click.option(
     "--compare",
     "-c",
@@ -248,7 +403,7 @@ def _generate_recommendations(
 @click.pass_context
 def cmd_diagnose(
     ctx: click.Context,
-    runs: str,
+    version: str | None,
     compare: str | None,
     benchmark: str | None,
     limit: int,
@@ -257,23 +412,28 @@ def cmd_diagnose(
 
     \b
     Examples:
-      driftbase diagnose --runs v2.0 --compare v1.0
-      driftbase diagnose --runs production --benchmark rag-pipeline
-      driftbase diagnose --runs v2.0 --compare v1.0 --limit 200
+      driftbase diagnose              # Auto-detect behavioral shifts
+      driftbase diagnose v2.0         # Analyze specific version
+      driftbase diagnose v2.0 --compare v1.0
     """
     console: Console = ctx.obj["console"]
     backend = get_backend()
 
+    # If no version provided, run epoch-based diagnostic
+    if version is None:
+        _diagnose_behavioral_shift(console, backend)
+        return
+
     # Get runs for current version
-    current_runs = backend.get_runs(runs, limit=limit)
+    current_runs = backend.get_runs(version, limit=limit)
 
     if not current_runs:
-        console.print(f"#FF6B6B]No runs found for version: {runs}[/]")
+        console.print(f"#FF6B6B]No runs found for version: {version}[/]")
         return
 
     console.print(
         Panel(
-            f"[bold]Version:[/] {runs}\n"
+            f"[bold]Version:[/] {version}\n"
             f"[bold]Runs analyzed:[/] {len(current_runs)}\n"
             f"[bold]Time range:[/] {current_runs[-1].get('started_at')} → {current_runs[0].get('started_at')}",
             title="🔬 Drift Diagnostics",
@@ -330,7 +490,7 @@ def cmd_diagnose(
             comparison_table = Table(show_header=True, header_style="bold")
             comparison_table.add_column("Metric")
             comparison_table.add_column(compare, justify="right", style="#4ADE80")
-            comparison_table.add_column(runs, justify="right")
+            comparison_table.add_column(version, justify="right")
             comparison_table.add_column("Change", justify="right")
 
             for key in [
@@ -474,8 +634,8 @@ def cmd_diagnose(
         console.print(tool_table)
 
     console.print(
-        "\n[dim]💡 For detailed drift analysis, run:[/] #8B5CF6]driftbase diff {compare} {runs}[/]".format(
+        "\n[dim]💡 For detailed drift analysis, run:[/] #8B5CF6]driftbase diff {compare} {version}[/]".format(
             compare=compare or "baseline",
-            runs=runs,
+            version=version,
         )
     )

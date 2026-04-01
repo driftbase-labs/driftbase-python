@@ -402,7 +402,7 @@ def print_next_steps() -> None:
     click.echo()
     click.echo(_c("8B5CF6", "  from driftbase import track"))
     click.echo()
-    click.echo(_c("8B5CF6", '  @track(version="v1.0")'))
+    click.echo(_c("8B5CF6", "  @track()  # version is optional"))
     click.echo(_c("8B5CF6", "  def run_agent(input):"))
     click.echo(_c("8B5CF6", "      return my_llm_call(input)"))
     click.echo()

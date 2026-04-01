@@ -1,0 +1,189 @@
+"""History command for showing longitudinal behavioral timeline."""
+
+import json
+from datetime import datetime
+from typing import Any
+
+import click
+
+from driftbase.backends.factory import get_backend
+from driftbase.cli._deps import safe_import_rich_extended
+from driftbase.config import get_settings
+
+Console, Panel, Table, _, _, _ = safe_import_rich_extended()
+
+
+@click.command("history")
+@click.option(
+    "--days",
+    "-d",
+    type=int,
+    default=30,
+    help="Number of days to show (default: 30)",
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+@click.pass_context
+def cmd_history(ctx: click.Context, days: int, format: str) -> None:
+    """
+    Show the full behavioral timeline of your agent.
+
+    Displays how agent behavior evolved over time with automatically detected epochs,
+    stability analysis, and key changes at each transition.
+
+    \b
+    Examples:
+      driftbase history
+      driftbase history --days 60
+      driftbase history --format json
+    """
+    console: Console = ctx.obj["console"]
+    backend = get_backend()
+
+    # Get all runs
+    all_runs = backend.get_all_runs()
+    if not all_runs:
+        console.print("[#FF6B6B]No runs found. Run your agent with @track() first.[/]")
+        return
+
+    # Get agent_id from most recent run
+    agent_id = all_runs[0].get("session_id") or all_runs[0].get("id")
+    total_runs = len(all_runs)
+
+    # Check if enough data
+    if total_runs < 40:
+        console.print(
+            Panel(
+                f"Not enough data for history analysis.\n\n"
+                f"Runs recorded: {total_runs}\n"
+                f"Minimum needed: 40\n\n"
+                f"Keep running your agent to build up history.",
+                title="Insufficient Data",
+                border_style="yellow",
+            )
+        )
+        return
+
+    # Detect epochs
+    from driftbase.local.epoch_detector import detect_epochs
+
+    db_path = get_settings().DRIFTBASE_DB_PATH
+    epochs = detect_epochs(agent_id, db_path, window_size=20, sensitivity=0.15)
+
+    if not epochs:
+        console.print("[#FF6B6B]Failed to detect epochs. Check error logs.[/]")
+        return
+
+    # JSON output
+    if format == "json":
+        output = {
+            "agent_id": agent_id,
+            "total_runs": total_runs,
+            "total_epochs": len(epochs),
+            "epochs": [
+                {
+                    "label": e.label,
+                    "run_count": e.run_count,
+                    "stability": e.stability,
+                    "start_time": e.start_time.isoformat() if e.start_time else None,
+                    "end_time": e.end_time.isoformat() if e.end_time else None,
+                    "summary": e.summary,
+                }
+                for e in epochs
+            ],
+        }
+        console.print(json.dumps(output, indent=2))
+        return
+
+    # Text output
+    console.print()
+    console.print("[bold]DRIFTBASE HISTORY[/]  ·  Behavioral Timeline")
+    console.print("─" * 70)
+    console.print()
+
+    # Create timeline table
+    timeline_table = Table(show_header=True, header_style="bold", box=None)
+    timeline_table.add_column("Epoch", style="cyan", no_wrap=True)
+    timeline_table.add_column("Runs", justify="right")
+    timeline_table.add_column("Stability", justify="center")
+    timeline_table.add_column("Key changes")
+
+    for _i, epoch in enumerate(epochs):
+        # Format stability with indicator
+        if epoch.stability == "HIGH":
+            stability_str = "HIGH"
+            stability_color = "green"
+        elif epoch.stability == "MODERATE":
+            stability_str = "MODERATE"
+            stability_color = "yellow"
+        elif epoch.stability == "LOW":
+            stability_str = "LOW"
+            stability_color = "red"
+        else:
+            stability_str = "UNKNOWN"
+            stability_color = "dim"
+
+        # Format time range
+        if epoch.start_time and epoch.end_time:
+            time_range = f"{epoch.start_time.strftime('%b %d')} – {epoch.end_time.strftime('%b %d')}"
+        else:
+            time_range = "Unknown dates"
+
+        epoch_label = f"{epoch.label}\n[dim]{time_range}[/]"
+
+        # Key changes (placeholder - would query change_events table in full implementation)
+        changes_desc = epoch.summary
+
+        timeline_table.add_row(
+            epoch_label,
+            str(epoch.run_count),
+            f"[{stability_color}]{stability_str}[/]",
+            changes_desc,
+        )
+
+    console.print(timeline_table)
+
+    # Trend summary
+    console.print()
+    console.print("─" * 70)
+    console.print("[bold]TREND[/]")
+    console.print("─" * 70)
+    console.print()
+
+    # Count behavioral shifts
+    behavioral_shifts = len(epochs) - 1
+
+    # Determine current state based on latest epoch
+    latest_epoch = epochs[-1]
+    if latest_epoch.stability in ["HIGH", "MODERATE"]:
+        current_state = "STABLE"
+        current_color = "green"
+    elif latest_epoch.stability == "LOW":
+        current_state = "DEGRADED"
+        current_color = "red"
+    else:
+        current_state = "INSUFFICIENT_DATA"
+        current_color = "yellow"
+
+    # Find longest stable period
+    max_stable_runs = 0
+    longest_epoch_label = ""
+    for epoch in epochs:
+        if epoch.stability == "HIGH" and epoch.run_count > max_stable_runs:
+            max_stable_runs = epoch.run_count
+            longest_epoch_label = epoch.label
+
+    console.print(f"  Total runs recorded:    {total_runs}")
+    console.print(f"  Behavioral shifts:      {behavioral_shifts}")
+    console.print(f"  Current state:          [{current_color}]{current_state}[/]")
+    if longest_epoch_label:
+        console.print(
+            f"  Longest stable period:  {longest_epoch_label} ({max_stable_runs} runs)"
+        )
+
+    console.print()

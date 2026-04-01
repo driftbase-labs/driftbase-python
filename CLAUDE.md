@@ -7,9 +7,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # driftbase-python (OSS SDK)
 
 ## Product positioning
-Driftbase free SDK = pre-production analysis only.
-Instrument → collect runs → diff versions → gate on verdict + budgets → ship or don't.
-Monitoring (watch, push, real-time alerts) = Pro tier only.
+
+Driftbase = institutional memory for AI agent behavior.
+
+Core value: "Always know exactly when your agent changed and why."
+
+Primary user journey: something feels wrong → driftbase diagnose →
+immediate answer with root cause attribution.
+
+Secondary user journey: pre-deploy check → driftbase diff v1 v2 → verdict.
+
+Free SDK positioning:
+- diagnose: reach for it when something feels wrong (no prior setup needed)
+- history: the longitudinal arc of your agent's behavior
+- diff: explicit version comparison with statistical verdict
+- Monitoring, real-time alerting = Pro tier only
+
+Key insight: the longer a team uses Driftbase, the more valuable their
+history becomes. This is the moat. Build toward it.
 
 ## Role
 Senior Python backend engineer. Focus on correctness, signal quality, and

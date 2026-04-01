@@ -64,6 +64,7 @@ from driftbase.cli.cli_diagnose import cmd_diagnose
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
 from driftbase.cli.cli_export import export_command, import_command
+from driftbase.cli.cli_history import cmd_history
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
 from driftbase.cli.cli_prune import cmd_prune
@@ -74,6 +75,7 @@ cli.add_command(cmd_diff)
 cli.add_command(cmd_inspect)
 cli.add_command(cmd_demo)
 cli.add_command(cmd_diagnose)
+cli.add_command(cmd_history)
 cli.add_command(export_command)
 cli.add_command(import_command)
 cli.add_command(cmd_doctor)
