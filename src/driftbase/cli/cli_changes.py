@@ -19,7 +19,7 @@ Console, Panel, Table = safe_import_rich()
 @click.pass_context
 def cmd_changes(ctx: click.Context) -> None:
     """
-    Manage change events for root cause analysis.
+    Record what changed at deploy time.
 
     Record infrastructure and code changes to correlate with drift.
     """

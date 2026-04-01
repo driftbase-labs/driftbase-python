@@ -408,7 +408,7 @@ def cmd_diagnose(
     benchmark: str | None,
     limit: int,
 ) -> None:
-    """Debug and understand behavioral drift with actionable insights.
+    """Know when your agent changed and why.
 
     \b
     Examples:

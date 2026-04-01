@@ -727,7 +727,7 @@ def cmd_demo(
     volume: int,
     verbose: bool,
 ) -> None:
-    """Inject synthetic runs to instantly see the drift engine in action.
+    """Generate synthetic runs to explore Driftbase.
 
     \b
     Basic Usage:

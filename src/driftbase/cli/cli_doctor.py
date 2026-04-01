@@ -29,7 +29,7 @@ def _safe_import_rich():
 @click.pass_context
 def cmd_doctor(ctx: click.Context, fix: bool) -> None:
     """
-    Check Driftbase configuration and database health.
+    Check configuration and database health.
 
     Performs the following checks:
     - Configuration validity
@@ -186,6 +186,27 @@ def cmd_doctor(ctx: click.Context, fix: bool) -> None:
     else:
         checks_results.append(
             ("API connectivity", "⊘ SKIP", "No API key set (cloud features disabled)")
+        )
+
+    # Check 7: Connector status
+    try:
+        # LangSmith
+        langsmith_key = os.getenv("LANGSMITH_API_KEY")
+        if langsmith_key:
+            checks_results.append(("LangSmith", "✓ CONN", "API key configured"))
+        else:
+            checks_results.append(("LangSmith", "⊘ SKIP", "Not configured"))
+
+        # LangFuse
+        langfuse_public = os.getenv("LANGFUSE_PUBLIC_KEY")
+        langfuse_secret = os.getenv("LANGFUSE_SECRET_KEY")
+        if langfuse_public and langfuse_secret:
+            checks_results.append(("LangFuse", "✓ CONN", "API keys configured"))
+        else:
+            checks_results.append(("LangFuse", "⊘ SKIP", "Not configured"))
+    except Exception as e:
+        checks_results.append(
+            ("Connectors", "⚠ WARN", f"Could not check: {escape(str(e))}")
         )
 
     # Display results

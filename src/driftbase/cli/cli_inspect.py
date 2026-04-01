@@ -19,7 +19,7 @@ except ImportError:
 @click.argument("run_id")
 @click.pass_context
 def cmd_inspect(ctx: click.Context, run_id: str) -> None:
-    """Deep-dive into a specific agent run (tools, latency, cost, and raw text)."""
+    """Deep-dive into a specific run."""
     console: Console = ctx.obj["console"]
     backend = get_backend()
 

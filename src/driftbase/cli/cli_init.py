@@ -139,7 +139,7 @@ agent_function: {agent_function}
 @click.command(name="init")
 @click.pass_context
 def cmd_init(ctx: click.Context) -> None:
-    """Interactive setup guide for Driftbase — get started in 60 seconds."""
+    """Interactive setup — get started in 60 seconds."""
     console: Console = ctx.obj["console"]
     use_color = not console.no_color
 

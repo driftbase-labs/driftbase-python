@@ -31,7 +31,7 @@ Console, Panel, Table, _, _, _ = safe_import_rich_extended()
 @click.pass_context
 def cmd_history(ctx: click.Context, days: int, format: str) -> None:
     """
-    Show the full behavioral timeline of your agent.
+    Full behavioral timeline of your agent.
 
     Displays how agent behavior evolved over time with automatically detected epochs,
     stability analysis, and key changes at each transition.

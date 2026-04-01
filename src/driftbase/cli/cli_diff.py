@@ -220,7 +220,7 @@ def cmd_diff(
     show_stats: bool,
 ) -> None:
     """
-    Compare two versions or last N runs vs baseline.
+    Compare two versions explicitly.
 
     \b
     Examples:

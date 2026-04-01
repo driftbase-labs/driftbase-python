@@ -10,7 +10,7 @@ from rich.markup import escape
 
 @click.group(name="deploy")
 def cmd_deploy():
-    """Manage deploy outcome labels for weight learning."""
+    """Mark versions as good or bad."""
     pass
 
 

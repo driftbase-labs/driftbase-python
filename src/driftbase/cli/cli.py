@@ -38,7 +38,49 @@ def _console_no_color(no_color_flag: bool) -> bool:
         return False
 
 
-@click.group()
+COMMAND_GROUPS = {
+    "Primary": ["diagnose", "history", "diff"],
+    "Integrations": ["connect"],
+    "Data": ["runs", "versions", "inspect", "prune", "export", "import"],
+    "Deploy": ["budgets", "changes", "deploy"],
+    "Setup": ["init", "config", "doctor", "demo", "testset"],
+}
+
+
+class GroupedHelpGroup(click.Group):
+    """Custom Click Group that displays commands in labeled sections."""
+
+    def format_commands(self, ctx, formatter):
+        """Format commands into grouped sections."""
+        commands = {}
+        for name in self.list_commands(ctx):
+            cmd = self.get_command(ctx, name)
+            if cmd is None or cmd.hidden:
+                continue
+            help_text = cmd.get_short_help_str(limit=45)
+            commands[name] = help_text
+
+        for group_name, group_commands in COMMAND_GROUPS.items():
+            rows = []
+            for name in group_commands:
+                if name in commands:
+                    rows.append((name, commands[name]))
+            if rows:
+                with formatter.section(group_name):
+                    formatter.write_dl(rows)
+
+        grouped = {cmd for cmds in COMMAND_GROUPS.values() for cmd in cmds}
+        ungrouped = [
+            (name, help_text)
+            for name, help_text in commands.items()
+            if name not in grouped
+        ]
+        if ungrouped:
+            with formatter.section("Other"):
+                formatter.write_dl(ungrouped)
+
+
+@click.group(cls=GroupedHelpGroup)
 @click.version_option(version=_get_version(), prog_name="driftbase")
 @click.option(
     "--no-color",
@@ -47,17 +89,14 @@ def _console_no_color(no_color_flag: bool) -> bool:
 )
 @click.pass_context
 def cli(ctx: click.Context, no_color: bool) -> None:
-    """Pre-production analysis for AI agents — diff, diagnose, gate on budgets."""
+    """Your AI agent changed. Driftbase tells you when and why."""
     ctx.ensure_object(dict)
     ctx.obj["console"] = Console(no_color=_console_no_color(no_color))
 
 
-from driftbase.cli.cli_baseline import baseline_group
 from driftbase.cli.cli_budget import cmd_budgets
 from driftbase.cli.cli_changes import cmd_changes
-from driftbase.cli.cli_chart import cmd_chart
-from driftbase.cli.cli_compare import cmd_compare
-from driftbase.cli.cli_cost import cmd_cost
+from driftbase.cli.cli_connect import cmd_connect
 from driftbase.cli.cli_demo import cmd_demo
 from driftbase.cli.cli_deploy import cmd_deploy
 from driftbase.cli.cli_diagnose import cmd_diagnose
@@ -79,15 +118,12 @@ cli.add_command(cmd_history)
 cli.add_command(export_command)
 cli.add_command(import_command)
 cli.add_command(cmd_doctor)
-cli.add_command(baseline_group)
 cli.add_command(cmd_prune)
-cli.add_command(cmd_chart)
-cli.add_command(cmd_compare)
 cli.add_command(cmd_budgets)
 cli.add_command(cmd_changes)
 cli.add_command(cmd_deploy)
-cli.add_command(cmd_cost)
 cli.add_command(cmd_testset)
+cli.add_command(cmd_connect)
 
 # Command aliases are added at the end of the file after all commands are defined
 
@@ -273,7 +309,7 @@ def _get_config_rows() -> list[tuple[str, str, str, str]]:
 @cli.command("config")
 @click.pass_context
 def cmd_config(ctx: click.Context) -> None:
-    """Show current Driftbase configuration (env, config file, and defaults)."""
+    """Show resolved configuration."""
     console: Console = ctx.obj["console"]
     table = Table(show_header=True, header_style="bold")
     table.add_column("SETTING", style="#8B5CF6")
@@ -384,7 +420,7 @@ def cmd_runs(
     format: str,
 ) -> None:
     """
-    List runs for a deployment version from the local backend.
+    List recorded runs for a version.
 
     \b
     Examples:
@@ -552,7 +588,7 @@ def cmd_runs(
 @cli.command("versions")
 @click.pass_context
 def cmd_versions(ctx: click.Context) -> None:
-    """List deployment versions and run counts."""
+    """List all versions and run counts."""
     console: Console = ctx.obj["console"]
     try:
         backend = get_backend()
@@ -571,40 +607,51 @@ def cmd_versions(ctx: click.Context) -> None:
     console.print(table)
 
 
-@cli.command("reset")
-@click.option(
-    "--version",
-    "-v",
-    required=True,
-    metavar="VERSION",
-    help="Deployment version whose runs to delete.",
-)
-@click.option(
-    "--yes", "-y", is_flag=True, default=False, help="Skip confirmation prompt."
-)
-@click.pass_context
-def cmd_reset(ctx: click.Context, version: str, yes: bool) -> None:
-    """Delete all runs for a deployment version."""
-    console: Console = ctx.obj["console"]
-    if not yes and not click.confirm(
-        f"This will delete all runs for version {version}. Are you sure? [y/N]",
-        default=False,
-    ):
-        console.print("Aborted.")
-        ctx.exit(0)
-        return
-    try:
-        backend = get_backend()
-        n = backend.delete_runs(deployment_version=version)
-    except Exception as e:
-        console.print(f"Backend error: #FF6B6B]{e}[/]")
-        ctx.exit(1)
-    console.print(f"Deleted {n} runs for version {version}.")
-
-
 # Command aliases for familiar shortcuts (added after all commands are defined)
-cli.add_command(cmd_inspect, name="cat")  # driftbase cat <run_id> = driftbase inspect
-cli.add_command(cmd_prune, name="clean")  # driftbase clean = driftbase prune
+# These are hidden from --help but still work when typed
+
+
+@cli.command(name="cat", hidden=True)
+@click.argument("run_id", required=True)
+@click.pass_context
+def cmd_cat_alias(ctx: click.Context, run_id: str) -> None:
+    """Alias for inspect."""
+    ctx.invoke(cmd_inspect, run_id=run_id)
+
+
+@cli.command(name="clean", hidden=True)
+@click.option("--version", "-v", help="Prune specific version only.")
+@click.option("--environment", "-e", help="Prune specific environment only.")
+@click.option("--keep-last", type=int, metavar="N", help="Keep only the last N runs.")
+@click.option(
+    "--older-than",
+    metavar="DURATION",
+    help="Delete runs older than duration (e.g., 30d, 7d).",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be deleted without deleting."
+)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+@click.pass_context
+def cmd_clean_alias(
+    ctx: click.Context,
+    version: str | None,
+    environment: str | None,
+    keep_last: int | None,
+    older_than: str | None,
+    dry_run: bool,
+    yes: bool,
+) -> None:
+    """Alias for prune."""
+    ctx.invoke(
+        cmd_prune,
+        version=version,
+        environment=environment,
+        keep_last=keep_last,
+        older_than=older_than,
+        dry_run=dry_run,
+        yes=yes,
+    )
 
 
 def main() -> int:

@@ -44,7 +44,7 @@ def _load_testset(use_case: str) -> dict | None:
 
 @click.group("testset")
 def cmd_testset() -> None:
-    """Manage and generate test query sets for different agent use cases."""
+    """Generate test queries for your agent type."""
     pass
 
 

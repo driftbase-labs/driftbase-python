@@ -57,7 +57,7 @@ def cmd_prune(
     yes: bool,
 ):
     """
-    Delete runs based on retention criteria.
+    Delete runs by retention criteria.
 
     You must specify at least one deletion criteria: --keep-last or --older-than.
 

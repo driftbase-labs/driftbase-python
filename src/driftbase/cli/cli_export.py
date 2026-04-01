@@ -73,7 +73,7 @@ def export_command(
     ctx: click.Context, output: Optional[str], version: Optional[str]
 ) -> None:
     """
-    Export all runs from local SQLite database to JSON.
+    Export runs to JSON.
 
     By default, writes JSON to stdout so you can pipe to a file:
         driftbase export > runs.json
@@ -150,7 +150,7 @@ def import_command(
     replace: bool,
 ) -> None:
     """
-    Import runs from JSON file into local SQLite database.
+    Import runs from JSON.
 
     Import runs from exported file:
         driftbase import runs.json

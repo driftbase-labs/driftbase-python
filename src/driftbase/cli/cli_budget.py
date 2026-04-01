@@ -19,7 +19,7 @@ Console, Panel, Table = safe_import_rich()
 @click.pass_context
 def cmd_budgets(ctx: click.Context) -> None:
     """
-    Manage behavioral budgets.
+    Define acceptance criteria for CI gating.
 
     Budget commands for viewing breaches, setting limits, and clearing history.
     """
