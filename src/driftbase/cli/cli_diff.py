@@ -770,6 +770,76 @@ def render_diff_report(
     console.print("─" * 76)
     console.print()
 
+    # ROOT CAUSE SECTION (show only for HIGH or MEDIUM confidence)
+    try:
+        root_cause = getattr(report, "root_cause", None)
+        if (
+            root_cause
+            and root_cause.has_changes
+            and root_cause.winner_confidence in ("HIGH", "MEDIUM")
+        ):
+            console.print("[bold]WHY IT CHANGED[/]")
+            console.print("─" * 76)
+
+            root_table = Table(
+                show_header=False,
+                border_style="dim",
+                width=100,
+                box=None,
+                padding=(0, 2, 0, 0),
+            )
+            root_table.add_column("Label", style="dim", width=20)
+            root_table.add_column("Value", width=75)
+
+            # Most likely cause
+            change_display = root_cause.winner.replace("_", " ")
+            root_table.add_row("Most likely", f"[bold]{change_display}[/]")
+
+            # Confidence
+            confidence_color = (
+                "#4ADE80" if root_cause.winner_confidence == "HIGH" else "#FFA94D"
+            )
+            root_table.add_row(
+                "Confidence", f"[{confidence_color}]{root_cause.winner_confidence}[/]"
+            )
+
+            # Evidence
+            evidence_parts = []
+            if root_cause.winner_previous and root_cause.winner_current:
+                evidence_parts.append(
+                    f"{root_cause.winner_previous} → {root_cause.winner_current}"
+                )
+            elif root_cause.winner_current:
+                evidence_parts.append(f"changed to {root_cause.winner_current}")
+
+            if root_cause.affected_dimensions:
+                dims_friendly = [
+                    d.replace("_drift", "").replace("_", " ")
+                    for d in root_cause.affected_dimensions
+                ]
+                evidence_parts.append(f"affects: {', '.join(dims_friendly)}")
+
+            if evidence_parts:
+                root_table.add_row("Evidence", "\n".join(evidence_parts))
+
+            # Suggested action
+            if root_cause.suggested_action:
+                root_table.add_row("Action", root_cause.suggested_action)
+
+            # Ruled out (show if exists)
+            if root_cause.ruled_out:
+                ruled_out_str = ", ".join(
+                    [r.replace("_", " ") for r in root_cause.ruled_out]
+                )
+                root_table.add_row("Ruled out", f"[dim]{ruled_out_str} (unchanged)[/]")
+
+            console.print(root_table)
+            console.print()
+            console.print("─" * 76)
+            console.print()
+    except Exception as e:
+        logger.debug(f"Failed to display root cause section: {e}")
+
     # Calibration transparency (always shown)
     use_case = getattr(report, "inferred_use_case", "GENERAL")
     use_case_confidence = getattr(report, "use_case_confidence", 0.0)
@@ -1397,74 +1467,6 @@ def render_diff_report(
             console.print()
     except Exception as e:
         logger.debug(f"Failed to display budget section: {e}")
-
-    # Root Cause section
-    try:
-        root_cause = getattr(report, "root_cause", None)
-        if root_cause and root_cause.has_changes:
-            # Only show if winner has HIGH or MEDIUM confidence
-            if root_cause.winner_confidence in ("HIGH", "MEDIUM"):
-                from rich.text import Text
-
-                root_table = Table(
-                    title="Root Cause",
-                    show_header=False,
-                    border_style="dim",
-                    width=100,
-                    box=None,
-                )
-                root_table.add_column("Label", style="dim", width=20)
-                root_table.add_column("Value", width=75)
-
-                # Most likely cause
-                change_display = root_cause.winner.replace("_", " ")
-                if root_cause.winner_previous and root_cause.winner_current:
-                    change_detail = (
-                        f"{root_cause.winner_previous} → {root_cause.winner_current}"
-                    )
-                else:
-                    change_detail = root_cause.winner_current or "changed"
-
-                confidence_color = (
-                    "#4ADE80" if root_cause.winner_confidence == "HIGH" else "#FFA94D"
-                )
-                root_table.add_row(
-                    "Most likely cause",
-                    f"[bold]{change_display}[/]  (confidence: [{confidence_color}]{root_cause.winner_confidence}[/])\n"
-                    f"[dim]{change_detail}[/]",
-                )
-
-                # Affected dimensions
-                if root_cause.affected_dimensions:
-                    affected_str = "  ".join(
-                        [f"{d} ✓" for d in root_cause.affected_dimensions]
-                    )
-                    root_table.add_row("Affected dims", affected_str)
-
-                # Ruled out
-                if root_cause.ruled_out:
-                    ruled_out_str = "  ".join(
-                        [f"{r} (unchanged)" for r in root_cause.ruled_out]
-                    )
-                    root_table.add_row("Ruled out", f"[dim]{ruled_out_str}[/]")
-
-                # Suggested action
-                if root_cause.suggested_action:
-                    root_table.add_row("Suggested action", root_cause.suggested_action)
-
-                console.print(root_table)
-                console.print()
-            elif root_cause.winner_confidence in ("LOW", "UNLIKELY"):
-                # Low confidence - show brief message
-                console.print(
-                    "[dim]Root cause inconclusive — multiple changes recorded but weak correlation with drifted dimensions.[/]"
-                )
-                if root_cause.all_scores:
-                    recorded_changes = ", ".join(root_cause.all_scores.keys())
-                    console.print(f"[dim]Recorded changes: {recorded_changes}[/]")
-                console.print()
-    except Exception as e:
-        logger.debug(f"Failed to display root cause section: {e}")
 
     # Rollback section
     try:
