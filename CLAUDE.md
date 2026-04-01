@@ -12,15 +12,21 @@ Driftbase = institutional memory for AI agent behavior.
 
 Core value: "Always know exactly when your agent changed and why."
 
-Primary user journey: something feels wrong → driftbase diagnose →
-immediate answer with root cause attribution.
+Primary user journey:
+  Add @track() → run agent normally → when something feels wrong →
+  driftbase diagnose → immediate answer with root cause attribution.
 
-Secondary user journey: pre-deploy check → driftbase diff v1 v2 → verdict.
+Secondary user journey:
+  driftbase history → full behavioral arc over time.
+
+Tertiary user journey:
+  Pre-deploy check → driftbase diff v1 v2 → verdict + CI gate.
 
 Free SDK positioning:
-- diagnose: reach for it when something feels wrong (no prior setup needed)
-- history: the longitudinal arc of your agent's behavior
-- diff: explicit version comparison with statistical verdict
+- @track() — zero config, version is optional, automatic weekly epochs
+- diagnose — reach for it when something feels wrong (no prior setup needed)
+- history — longitudinal arc of agent behavior over its recorded lifetime
+- diff — explicit version comparison with statistical verdict
 - Monitoring, real-time alerting = Pro tier only
 
 Key insight: the longer a team uses Driftbase, the more valuable their
@@ -48,53 +54,52 @@ These rules apply to every task, every session. No exceptions.
 
 ### File creation
 - Do NOT create markdown files to document changes, summarize work, or explain implementations.
-- Allowed markdown files: `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CLAUDE.md`, and files inside `docs/`.
-- Do NOT create one-off scripts, debug scripts, or helper files outside of `scripts/` or `tests/`.
-- Do NOT create `.py` files prefixed with `test_`, `debug_`, `check_`, `verify_`, `tmp_`, or `scratch_` unless they are permanent, committed test files.
+- Allowed markdown files: README.md, CHANGELOG.md, CONTRIBUTING.md, CLAUDE.md, and files inside docs/.
+- Do NOT create one-off scripts, debug scripts, or helper files outside of scripts/ or tests/.
+- Do NOT create .py files prefixed with test_, debug_, check_, verify_, tmp_, or scratch_ unless they are permanent, committed test files.
 - All explanations of what was done go in commit messages, not in files.
 - If a new file doesn't have a permanent home in the repo structure, don't create it.
 
 ### Test files
 - Temporary test files, experiments, and one-off debug scripts must be deleted after the task is complete.
-- Test files live in `tests/` only. No test files in root, `src/`, `examples/`, or `scripts/`.
-- After any larger task or experiment: audit and delete any `test_*.py`, `debug_*.py`, `check_*.py`, `verify_*.py` files that are not part of the permanent test suite.
-- Every file in `tests/` must be intentional, named clearly, and have a clear scope.
+- Test files live in tests/ only. No test files in root, src/, examples/, or scripts/.
+- After any larger task or experiment: audit and delete any test_*.py, debug_*.py, check_*.py, verify_*.py files that are not part of the permanent test suite.
+- Every file in tests/ must be intentional, named clearly, and have a clear scope.
 
 ### Examples
-- Example files in `examples/` must be self-contained, documented, and useful to an external developer.
-- No throwaway experiment folders in `examples/`. If it's an experiment, use a branch.
-- Each example must have its own `README.md` explaining what it does and how to run it. Nothing else.
+- Example files in examples/ must be self-contained, documented, and useful to an external developer.
+- No throwaway experiment folders in examples/. If it's an experiment, use a branch.
+- Each example must have its own README.md explaining what it does and how to run it.
 
 ### Repo structure
 Always maintain this structure. Do not create top-level folders without explicit approval:
 
-```
 src/          # All SDK source code
 tests/        # All permanent tests
 examples/     # Self-contained, documented examples
 scripts/      # Utility scripts (release, benchmarks, etc.)
 docs/         # Documentation only
 .claude/      # Claude Code context, memory, decisions, skills
-```
 
 ### Code quality
 - No commented-out code blocks left in committed files.
-- No `print()` debug statements in `src/`. Use the logger.
+- No print() debug statements in src/. Use the logger.
 - No hardcoded paths, tokens, or credentials anywhere.
 - Public functions and classes must have docstrings.
 - Follow existing naming conventions. Do not introduce new patterns without discussion.
 
 ### After every major task
 Run this cleanup checklist before committing:
-1. Delete any temporary or one-off `.py` files created during the task.
-2. Delete any process-note `.md` files.
+1. Delete any temporary or one-off .py files created during the task.
+2. Delete any process-note .md files.
 3. Ensure no debug output, print statements, or hardcoded credentials are left in code.
 4. Ensure imports are clean — no unused imports left behind.
 5. Run linter and test suite. Do not commit if either fails.
 6. Commit message must clearly describe what changed and why.
 
 ### General principle
-After every session, the repo should look like a senior engineer reviewed it and approved it for open source release. If something feels like scaffolding or a workaround, clean it up before committing.
+After every session, the repo should look like a senior engineer reviewed it
+and approved it for open source release.
 
 ---
 
@@ -107,7 +112,7 @@ After every session, the repo should look like a senior engineer reviewed it and
 - CLI: Click + Rich
 - Packaging: setuptools_scm (version from git tags), pyproject.toml
 - Extras: [semantic] light-embed · [dev] pre-commit/pytest/ruff
-- Entry point: driftbase.cli.main:cli registered as `driftbase` command
+- Entry point: driftbase.cli.main:cli registered as driftbase command
 
 ## Skills
 Read the relevant skill BEFORE writing any code:
@@ -121,67 +126,62 @@ Read the relevant skill BEFORE writing any code:
 ## Architecture mental model
 Capture → Store → Fingerprint → Diff → Report / Gate / Alert
 
-**Data flow:**
-1. Runtime: `@track` decorator → framework tracer → queue → SQLite
-2. Analysis: CLI `diff` command → load runs → fingerprint → calibrate → compute drift → verdict
+Data flow:
+1. Runtime: @track decorator → framework tracer → queue → SQLite
+2. Analysis: CLI diagnose → epoch_detector → detect shifts → attribute cause
+3. Analysis: CLI diff → load runs → fingerprint → calibrate → compute drift → verdict
 
 Key modules:
-- `sdk/track.py` — @track decorator, framework auto-detection, payload building
-- `local/local_store.py` — non-blocking queue, batched SQLite writes
-- `local/fingerprinter.py` — aggregates runs into BehavioralFingerprint per version
-- `local/diff.py` — compute_drift(), JSD-based scoring, weighted composite
-- `local/use_case_inference.py` — keyword + behavioral inference, 14 use cases,
-  blended confidence weighting, conflict detection, preset weight tables
-- `local/baseline_calibrator.py` — reliability multipliers, t-distribution thresholds,
-  correlation adjustment, power analysis, calibration cache
-- `local/weight_learner.py` — point-biserial correlation on deploy outcomes → learned weights
-- `local/anomaly_detector.py` — isolation forest multivariate anomaly detection
-- `local/budget.py` — BudgetConfig, BudgetBreach, rolling window breach detection
-- `local/rootcause.py` — RootCauseReport, RollbackSuggestion, change event correlation
-- `local/hypothesis_engine.py` — YAML rules → observations + recommendations
-- `verdict.py` — DriftReport → SHIP / MONITOR / REVIEW / BLOCK + exit codes
-- `backends/` — abstract StorageBackend + SQLite implementation, factory pattern
-- `cli/` — Click commands (diff, demo, diagnose, inspect, doctor, chart, compare,
-  budgets, baseline, changes, deploy, cost, testset)
-- `integrations/` — framework tracers (LangChain, LangGraph, OpenAI, AutoGen,
-  CrewAI, smolagents, Haystack, DSPy, LlamaIndex)
+- sdk/track.py — @track decorator, version resolution (explicit → env → git tag → epoch), framework auto-detection, payload building
+- local/local_store.py — non-blocking queue, batched SQLite writes
+- local/epoch_detector.py — automatic behavioral epoch detection using sliding window JSD, TTL-cached in SQLite
+- local/fingerprinter.py — aggregates runs into BehavioralFingerprint per version
+- local/diff.py — compute_drift(), JSD-based scoring, weighted composite
+- local/use_case_inference.py — keyword + behavioral inference, 14 use cases, blended confidence weighting, conflict detection, preset weight tables
+- local/baseline_calibrator.py — reliability multipliers, t-distribution thresholds, correlation adjustment, power analysis, calibration cache
+- local/weight_learner.py — point-biserial correlation on deploy outcomes → learned weights
+- local/anomaly_detector.py — isolation forest multivariate anomaly detection
+- local/budget.py — BudgetConfig, BudgetBreach, rolling window breach detection
+- local/rootcause.py — RootCauseReport, RollbackSuggestion, change event correlation
+- local/hypothesis_engine.py — YAML rules → observations + recommendations
+- verdict.py — DriftReport → SHIP / MONITOR / REVIEW / BLOCK + exit codes
+- backends/ — abstract StorageBackend + SQLite implementation, factory pattern
+- cli/ — Click commands. Primary: diagnose, history. Secondary: diff, demo, inspect, doctor, chart, compare, budgets, baseline, changes, deploy, cost, testset
+- integrations/ — framework tracers (LangChain, LangGraph, OpenAI, AutoGen, CrewAI, smolagents, Haystack, DSPy, LlamaIndex)
 
 ## Never do
 - Don't use async DB calls — all storage in this repo is synchronous SQLite
 - Don't change fingerprint schema without a migration note
 - Don't add dependencies outside pyproject.toml extras
-- Don't hardcode drift weights or thresholds — all scoring parameters flow
-  through baseline_calibrator.py
-- Don't add cloud API calls, external HTTP requests, or network dependencies
-  to any module outside sdk/push.py
+- Don't hardcode drift weights or thresholds — all scoring parameters flow through baseline_calibrator.py
+- Don't add cloud API calls, external HTTP requests, or network dependencies to any module outside sdk/push.py
 - Don't touch web/ under any circumstances
-- Don't raise from budget, calibration, inference, or anomaly detection at
-  runtime — degrade silently and log
-- Don't suggest rollback unless verdict is BLOCK or REVIEW and a stable prior
-  version exists with 30+ runs
-- Don't use `metadata` as a field name in SQLModel — reserved by SQLAlchemy,
-  causes InvalidRequestError at import time. Use `weights_metadata` or similar.
-- Don't escape Rich markup by wrapping strings manually — use
-  `from rich.markup import escape` on any dynamic value in a Rich f-string
-- Don't build dist/ with uncommitted changes — setuptools_scm will produce a
-  `.dev0` version string that cannot be published as a clean release
+- Don't raise from budget, calibration, inference, anomaly detection, or epoch_detector at runtime — degrade silently and log
+- Don't suggest rollback unless verdict is BLOCK or REVIEW and a stable prior version exists with 30+ runs
+- Don't use metadata as a field name in SQLModel — reserved by SQLAlchemy, causes InvalidRequestError at import time
+- Don't escape Rich markup by wrapping strings manually — use from rich.markup import escape on any dynamic value
+- Don't build dist/ with uncommitted changes — setuptools_scm will produce a .dev0 version string that cannot be published
+- Don't put two tags on the same commit — setuptools_scm picks the lower one, producing the wrong version
+- Don't tag before committing linting fixes — pre-commit will block the commit but the tag already exists, causing version mismatch on rebuild
+
+## Version resolution in @track()
+
+_resolve_version() follows this priority order:
+1. Explicit version argument (if provided)
+2. DRIFTBASE_VERSION environment variable
+3. Git tag at HEAD (subprocess, 2s timeout, never raises)
+4. Time-based epoch: epoch-YYYY-MM-DD (Monday of current week)
+
+Never bypass this. Never hardcode a version in SDK internals.
 
 ## Scoring system
 Weights and thresholds are never hardcoded. Full pipeline:
 
-1. `use_case_inference.py` — infers use case from tool names (keyword scoring +
-   behavioral signals), blends two classifiers with conflict detection,
-   returns preset weights
-2. `baseline_calibrator.py` — applies reliability multipliers (CV-based),
-   correlation adjustment (Spearman), t-distribution thresholds from baseline
-   variance, volume scaling, sensitivity multiplier, power analysis for
-   minimum runs needed
-3. `weight_learner.py` — if 10+ labeled deploy outcomes exist, blends learned
-   weights from point-biserial correlation into calibrated weights
-4. `diff.py` — consumes calibrated weights + thresholds, computes 12-dimension
-   composite score, calls anomaly detector as supplementary signal
-5. `verdict.py` — maps composite + anomaly signal → SHIP/MONITOR/REVIEW/BLOCK,
-   only fires at TIER3 (n ≥ power-analysis-derived minimum, default 50)
+1. use_case_inference.py — infers use case from tool names (keyword scoring + behavioral signals), blends two classifiers with conflict detection, returns preset weights
+2. baseline_calibrator.py — applies reliability multipliers (CV-based), correlation adjustment (Spearman), t-distribution thresholds from baseline variance, volume scaling, sensitivity multiplier, power analysis for minimum runs needed
+3. weight_learner.py — if 10+ labeled deploy outcomes exist, blends learned weights from point-biserial correlation into calibrated weights
+4. diff.py — consumes calibrated weights + thresholds, computes 12-dimension composite score, calls anomaly detector as supplementary signal
+5. verdict.py — maps composite + anomaly signal → SHIP/MONITOR/REVIEW/BLOCK, only fires at TIER3 (n ≥ power-analysis-derived minimum, default 50)
 
 Do not bypass this pipeline. Do not reintroduce hardcoded values anywhere.
 
@@ -189,28 +189,26 @@ Do not bypass this pipeline. Do not reintroduce hardcoded values anywhere.
 - TIER1 (n < 15 either version): no analysis shown
 - TIER2 (15 ≤ n < min_runs_needed): directional signal only, no verdict
 - TIER3 (n ≥ min_runs_needed both versions): full analysis + verdict
-- min_runs_needed is computed via power analysis from baseline variance ×
-  use case effect size. Default 50 when insufficient baseline data.
+- min_runs_needed computed via power analysis from baseline variance × use case effect size. Default 50 when insufficient baseline data.
 
 ## Database tables
-- `agent_runs_local` — raw run records (primary table, all captured data)
-- `calibration_cache` — calibrated weights + thresholds per agent+version,
-  includes blend metadata and inferred use case
-- `budget_configs` — persisted budget definitions per agent+version
-- `budget_breaches` — breach events with rolling average values
-- `change_events` — recorded change events per agent+version
-  (model_version, prompt_hash, rag_snapshot, tool_version, custom_*)
-- `deploy_outcomes` — good/bad labels per version for weight learning
-- `learned_weights_cache` — cached learned weights per agent
-- `significance_thresholds` — power analysis results per agent+version
-- `deploy_events` — schema-only, deferred UX
+- agent_runs_local — raw run records (primary table)
+- calibration_cache — calibrated weights + thresholds per agent+version
+- budget_configs — persisted budget definitions per agent+version
+- budget_breaches — breach events with rolling average values
+- change_events — recorded change events per agent+version
+- deploy_outcomes — good/bad labels per version for weight learning
+- learned_weights_cache — cached learned weights per agent
+- significance_thresholds — power analysis results per agent+version
+- detected_epochs — cached epoch detection results, 1-hour TTL
+- deploy_events — schema-only, deferred UX
 
-Location: `~/.driftbase/runs.db` (configurable via DRIFTBASE_DB_PATH)
+Location: ~/.driftbase/runs.db (configurable via DRIFTBASE_DB_PATH)
 
 ## Fingerprint schema
 Stable contract — do not alter field names without explicit instruction.
 
-**12 drift dimensions:**
+12 drift dimensions:
 - decision_drift (JSD on outcome distribution: resolved/escalated/error)
 - tool_sequence (Levenshtein on tool call patterns)
 - tool_distribution (JSD on tool frequency)
@@ -225,44 +223,41 @@ Stable contract — do not alter field names without explicit instruction.
 - tool_sequence_transitions (JSD on bigram transition probabilities)
 
 ## Development commands
-```bash
+
 # Run all tests
 PYTHONPATH=src pytest tests/
 
 # Run specific test file
 PYTHONPATH=src pytest tests/test_diff.py
 
-# Run specific test
-PYTHONPATH=src pytest tests/test_diff.py::TestDiff::test_compute_drift_high_confidence -v
-
 # Linting
 ruff check .
 ruff format .
 
-# Pre-commit hooks (runs before each commit)
+# Pre-commit hooks
 pre-commit run --all-files
 
-# Build package (requires clean git tree — no uncommitted changes)
+# Build package (requires clean git tree)
 python -m build
 
-# Install in editable mode for local development
+# Install in editable mode
 pip install -e .
-pip install -e '.[semantic]'  # With optional semantic features
-pip install -e '.[dev]'       # With dev dependencies
-```
+pip install -e '.[semantic]'
+pip install -e '.[dev]'
 
 ## Tests
 - pytest + pytest-asyncio
 - Fixtures in conftest.py
 - No async tests needed — SDK storage is synchronous
 - Always use PYTHONPATH=src when running tests locally
-- Test files mirror src/ structure: tests/test_diff.py tests local/diff.py
+- Test files mirror src/ structure
 
 ## Core product constraint
 False positive rate is everything. A drift score that moves on cosmetic
 changes is worthless and destroys developer trust. When touching
-fingerprinter.py, diff.py, baseline_calibrator.py, or use_case_inference.py,
-always reason about false positive rate first. When in doubt, be conservative.
+fingerprinter.py, diff.py, baseline_calibrator.py, use_case_inference.py,
+or epoch_detector.py, always reason about false positive rate first.
+When in doubt, be conservative.
 
 ## Tone
 Direct. Technical. Peer-level.

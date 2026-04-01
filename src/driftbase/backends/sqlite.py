@@ -50,6 +50,9 @@ class AgentRunLocal(SQLModel, table=True):
     time_to_first_tool_ms: int = 0
     verbosity_ratio: float = 0.0
     sensitivity: str | None = None
+    # Connector provenance (for imported traces)
+    external_id: str | None = None  # original ID from LangSmith/LangFuse
+    source: str | None = None  # "langsmith", "langfuse", or None for @track()
 
 
 class CalibrationCache(SQLModel, table=True):
@@ -191,6 +194,21 @@ class DetectedEpoch(SQLModel, table=True):
     cache_expires_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class ConnectorSync(SQLModel, table=True):
+    """Connector sync metadata for incremental imports."""
+
+    __tablename__ = "connector_syncs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    source: str = ""  # "langsmith" or "langfuse"
+    project_name: str = ""
+    agent_id: str = ""
+    last_sync_at: datetime = Field(default_factory=datetime.utcnow)
+    runs_imported: int = 0
+    last_external_id: str | None = None
+    status: str = "success"  # success|error
+
+
 def _ensure_dir(path: str) -> None:
     """
     Ensure the parent directory of the database file exists.
@@ -274,6 +292,17 @@ def _migrate_schema(engine: Any) -> None:
                     text("ALTER TABLE agent_runs_local ADD COLUMN sensitivity TEXT")
                 )
                 conn.commit()
+            # Connector provenance fields
+            if "external_id" not in columns:
+                conn.execute(
+                    text("ALTER TABLE agent_runs_local ADD COLUMN external_id TEXT")
+                )
+                conn.commit()
+            if "source" not in columns:
+                conn.execute(
+                    text("ALTER TABLE agent_runs_local ADD COLUMN source TEXT")
+                )
+                conn.commit()
 
             # Migrate learned_weights_cache table (rename metadata to weights_metadata)
             r = conn.execute(text("PRAGMA table_info(learned_weights_cache)"))
@@ -326,6 +355,8 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "time_to_first_tool_ms": r.time_to_first_tool_ms,
         "verbosity_ratio": r.verbosity_ratio,
         "sensitivity": r.sensitivity,
+        "external_id": r.external_id,
+        "source": r.source,
     }
 
 
@@ -366,6 +397,7 @@ class SQLiteBackend(StorageBackend):
         LearnedWeightsCache.__table__.create(self._engine, checkfirst=True)
         SignificanceThreshold.__table__.create(self._engine, checkfirst=True)
         DetectedEpoch.__table__.create(self._engine, checkfirst=True)
+        ConnectorSync.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
         # Add UNIQUE constraints if not exists
@@ -1494,3 +1526,74 @@ class SQLiteBackend(StorageBackend):
                 session.commit()
         except Exception as e:
             logger.debug(f"SQLite clear_detected_epochs failed: {e}")
+
+    def get_connector_sync(
+        self, source: str, project_name: str
+    ) -> dict[str, Any] | None:
+        """Get last sync info for source + project."""
+        try:
+            with Session(self._engine) as session:
+                sync = session.exec(
+                    select(ConnectorSync).where(
+                        ConnectorSync.source == source,
+                        ConnectorSync.project_name == project_name,
+                    )
+                ).first()
+
+                if not sync:
+                    return None
+
+                return {
+                    "id": sync.id,
+                    "source": sync.source,
+                    "project_name": sync.project_name,
+                    "agent_id": sync.agent_id,
+                    "last_sync_at": sync.last_sync_at,
+                    "runs_imported": sync.runs_imported,
+                    "last_external_id": sync.last_external_id,
+                    "status": sync.status,
+                }
+        except Exception as e:
+            logger.debug(f"SQLite get_connector_sync failed: {e}")
+            return None
+
+    def write_connector_sync(
+        self,
+        source: str,
+        project_name: str,
+        agent_id: str,
+        runs_imported: int,
+        last_external_id: str | None = None,
+        status: str = "success",
+    ) -> None:
+        """Update sync metadata (upsert by source + project_name)."""
+        try:
+            with Session(self._engine) as session:
+                existing = session.exec(
+                    select(ConnectorSync).where(
+                        ConnectorSync.source == source,
+                        ConnectorSync.project_name == project_name,
+                    )
+                ).first()
+
+                if existing:
+                    existing.agent_id = agent_id
+                    existing.last_sync_at = datetime.utcnow()
+                    existing.runs_imported += runs_imported
+                    if last_external_id:
+                        existing.last_external_id = last_external_id
+                    existing.status = status
+                else:
+                    sync = ConnectorSync(
+                        source=source,
+                        project_name=project_name,
+                        agent_id=agent_id,
+                        runs_imported=runs_imported,
+                        last_external_id=last_external_id,
+                        status=status,
+                    )
+                    session.add(sync)
+
+                session.commit()
+        except Exception as e:
+            logger.debug(f"SQLite write_connector_sync failed: {e}")
