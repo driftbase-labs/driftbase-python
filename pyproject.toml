@@ -81,6 +81,7 @@ ignore = [
     "N802", "N806", "B904", "UP045", "UP006", "UP031", "UP035",
     "F841", "F401", "W291", "W292", "W293", "B009"
 ]
+extend-safe-fixes = ["SIM117"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -163,6 +163,25 @@ Key modules:
 - Don't build dist/ with uncommitted changes — setuptools_scm will produce a .dev0 version string that cannot be published
 - Don't put two tags on the same commit — setuptools_scm picks the lower one, producing the wrong version
 - Don't tag before committing linting fixes — pre-commit will block the commit but the tag already exists, causing version mismatch on rebuild
+- Never write nested `with` statements in tests or source code.
+  Always use a single `with` statement with multiple contexts.
+  Ruff rule SIM117 flags this and it blocks commits.
+
+  WRONG:
+      with patch.dict(os.environ, {"KEY": "val"}):
+          with patch("some.module.Class") as mock:
+              result = do_something()
+
+  CORRECT:
+      with patch.dict(os.environ, {"KEY": "val"}), \
+           patch("some.module.Class") as mock:
+          result = do_something()
+
+  This applies to all nested with combinations:
+  - patch + patch
+  - patch.dict + patch
+  - patch.object + patch.object
+  - Any other combination
 
 ## Version resolution in @track()
 
