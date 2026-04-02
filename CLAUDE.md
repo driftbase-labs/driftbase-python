@@ -182,6 +182,11 @@ Key modules:
   - patch.dict + patch
   - patch.object + patch.object
   - Any other combination
+- Never run bare `twine upload dist/*` — always use
+  `twine upload dist/* --skip-existing`
+  PyPI returns a 400 "File already exists" error even on successful
+  uploads. --skip-existing treats this as success instead of failure.
+  Always verify with `pip index versions driftbase` after uploading.
 
 ## Version resolution in @track()
 

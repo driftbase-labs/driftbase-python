@@ -69,13 +69,17 @@ unzip -l dist/driftbase-0.8.0-py3-none-any.whl | head -20
 pip install twine
 
 # Upload to TestPyPI first (recommended)
-twine upload --repository testpypi dist/*
+twine upload --repository testpypi dist/* --skip-existing
 
 # Test install from TestPyPI
 pip install --index-url https://test.pypi.org/simple/ driftbase
 
 # If TestPyPI works, upload to real PyPI
-twine upload dist/*
+twine upload dist/* --skip-existing
+
+# Verify upload landed (PyPI index takes 2-3 minutes to update)
+pip index versions driftbase | head -3
+# Must show new version as LATEST
 ```
 
 **Twine credentials:**
