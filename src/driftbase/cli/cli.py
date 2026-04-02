@@ -40,7 +40,7 @@ def _console_no_color(no_color_flag: bool) -> bool:
 
 COMMAND_GROUPS = {
     "Primary": ["diagnose", "history", "diff"],
-    "Integrations": ["connect"],
+    "Integrations": ["connect", "mcp"],
     "Data": ["runs", "versions", "inspect", "prune", "export", "import"],
     "Deploy": ["budgets", "changes", "deploy"],
     "Setup": ["init", "config", "doctor", "demo", "testset"],
@@ -106,6 +106,7 @@ from driftbase.cli.cli_export import export_command, import_command
 from driftbase.cli.cli_history import cmd_history
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
+from driftbase.cli.cli_mcp import cmd_mcp
 from driftbase.cli.cli_prune import cmd_prune
 from driftbase.cli.cli_testset import cmd_testset
 
@@ -124,6 +125,7 @@ cli.add_command(cmd_changes)
 cli.add_command(cmd_deploy)
 cli.add_command(cmd_testset)
 cli.add_command(cmd_connect)
+cli.add_command(cmd_mcp)
 
 # Command aliases are added at the end of the file after all commands are defined
 

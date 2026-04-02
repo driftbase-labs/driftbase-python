@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timedelta
 
 import click
@@ -14,11 +15,276 @@ from driftbase.config import get_settings
 Console, Panel, Table = safe_import_rich()
 
 
-@click.group("connect")
+def _run_auto_detect(ctx: click.Context) -> None:
+    """Auto-detect and connect to LangSmith and/or LangFuse."""
+    console: Console = ctx.obj["console"]
+
+    langsmith_key = os.environ.get("LANGSMITH_API_KEY")
+    langfuse_public = os.environ.get("LANGFUSE_PUBLIC_KEY")
+    langfuse_secret = os.environ.get("LANGFUSE_SECRET_KEY")
+
+    connected_anything = False
+
+    console.print()
+    console.print("[bold]DRIFTBASE CONNECT[/]")
+    console.print()
+    console.print("  Scanning your environment...")
+    console.print()
+
+    # Check LangSmith
+    if langsmith_key:
+        connected_anything = True
+        console.print("  ─────────────────────────────────────────────────────────────")
+        console.print("  [bold]EXISTING OBSERVABILITY[/]")
+        console.print("  ─────────────────────────────────────────────────────────────")
+        console.print()
+        _connect_langsmith_auto(console, ctx)
+
+    # Check LangFuse independently
+    if langfuse_public and langfuse_secret:
+        connected_anything = True
+        if langsmith_key:
+            console.print()
+        else:
+            console.print(
+                "  ─────────────────────────────────────────────────────────────"
+            )
+            console.print("  [bold]EXISTING OBSERVABILITY[/]")
+            console.print(
+                "  ─────────────────────────────────────────────────────────────"
+            )
+            console.print()
+        _connect_langfuse_auto(console, ctx)
+
+    # Fallback if nothing was found
+    if not connected_anything:
+        _show_fallback(console)
+
+
+def _connect_langsmith_auto(console: Console, ctx: click.Context) -> None:
+    """Auto-connect to LangSmith."""
+    try:
+        from driftbase.connectors.langsmith import (
+            LANGSMITH_AVAILABLE,
+            LangSmithConnector,
+        )
+
+        if not LANGSMITH_AVAILABLE:
+            console.print("  [#FFA94D]✗ LangSmith package not installed[/]")
+            console.print("    Run: [#8B5CF6]pip install driftbase[langsmith][/]")
+            return
+
+        console.print("  [#4ADE80]✓[/] LangSmith API key detected")
+        console.print("    Fetching your projects...")
+        console.print()
+
+        connector = LangSmithConnector()
+        projects = connector.list_projects()
+
+        if not projects:
+            console.print(
+                "    [#FFA94D]No projects found or unable to fetch projects.[/]"
+            )
+            return
+
+        console.print("    [bold]Projects:[/]")
+        for i, proj in enumerate(projects[:10], 1):  # Show top 10
+            console.print(f"      {i}. {proj['name']}   ({proj['run_count']} traces)")
+        console.print()
+
+        # Auto-select if non-interactive or only one project
+        is_interactive = sys.stdin.isatty()
+        if not is_interactive:
+            selected = projects[0]
+            console.print("    [dim]Non-interactive: auto-selecting largest project[/]")
+            console.print(f"    Selected: [bold]{selected['name']}[/]")
+        elif len(projects) == 1:
+            selected = projects[0]
+            console.print("    [dim]One project found — importing automatically[/]")
+            console.print(f"    Selected: [bold]{selected['name']}[/]")
+        else:
+            # Interactive selection
+            try:
+                choice = input("    Import which project? [1]: ").strip()
+                if not choice:
+                    choice = "1"
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(projects):
+                    console.print("    [#FF6B6B]Invalid selection.[/]")
+                    return
+                selected = projects[idx]
+            except (ValueError, KeyboardInterrupt):
+                console.print("\n    [#FFA94D]Cancelled.[/]")
+                return
+
+        # Import the selected project
+        console.print()
+        console.print(
+            f'    Importing {selected["run_count"]} traces from "{selected["name"]}"...'
+        )
+
+        # Run the actual import (simplified - reuse existing logic)
+        from driftbase.connectors.base import ConnectorConfig
+
+        since_dt = datetime.utcnow() - timedelta(days=90)
+        config = ConnectorConfig(
+            project_name=selected["name"],
+            since=since_dt,
+            limit=5000,
+            agent_id=None,
+        )
+
+        db_path = get_settings().DRIFTBASE_DB_PATH
+        result = connector.sync(config, db_path, dry_run=False)
+
+        if result.success:
+            console.print(
+                f"    ████████████████████  {result.runs_written}/{result.traces_fetched}  done"
+            )
+            console.print()
+            console.print(f"    [#4ADE80]✓[/] {result.runs_written} runs imported")
+            console.print(
+                "    [dim]⚠ decision outcomes inferred from output content (heuristic)[/]"
+            )
+            console.print()
+            console.print(
+                "    Even if you use LangGraph or LangChain — your LangSmith traces"
+            )
+            console.print("    contain behavioral data Driftbase can use immediately.")
+        else:
+            console.print("    [#FF6B6B]✗ Import failed[/]")
+            for error in result.errors[:3]:
+                console.print(f"    [dim]{error}[/]")
+
+    except Exception as e:
+        console.print(f"    [#FF6B6B]Error: {e}[/]")
+
+
+def _connect_langfuse_auto(console: Console, ctx: click.Context) -> None:
+    """Auto-connect to LangFuse."""
+    try:
+        from driftbase.connectors.langfuse import LANGFUSE_AVAILABLE, LangFuseConnector
+
+        if not LANGFUSE_AVAILABLE:
+            console.print("  [#FFA94D]✗ LangFuse package not installed[/]")
+            console.print("    Run: [#8B5CF6]pip install driftbase[langfuse][/]")
+            return
+
+        console.print("  [#4ADE80]✓[/] LangFuse credentials detected")
+        console.print("    Connecting...")
+        console.print()
+
+        connector = LangFuseConnector()
+        projects = connector.list_projects()
+
+        if not projects:
+            console.print("    [#FFA94D]Unable to fetch project info.[/]")
+            return
+
+        project = projects[0]
+        console.print(
+            f"    Project: [bold]{project['name']}[/]  (approx. {project['run_count']} traces)"
+        )
+        console.print()
+
+        # Ask for confirmation if interactive
+        is_interactive = sys.stdin.isatty()
+        if is_interactive:
+            try:
+                confirm = input("    Import traces? [Y/n]: ").strip().lower()
+                if confirm and confirm not in ["y", "yes"]:
+                    console.print("    [#FFA94D]Cancelled.[/]")
+                    return
+            except KeyboardInterrupt:
+                console.print("\n    [#FFA94D]Cancelled.[/]")
+                return
+
+        console.print("    Importing traces from LangFuse...")
+
+        # Run the actual import
+        from driftbase.connectors.base import ConnectorConfig
+
+        since_dt = datetime.utcnow() - timedelta(days=90)
+        config = ConnectorConfig(
+            project_name=project["name"],
+            since=since_dt,
+            limit=5000,
+            agent_id=None,
+        )
+
+        db_path = get_settings().DRIFTBASE_DB_PATH
+        result = connector.sync(config, db_path, dry_run=False)
+
+        if result.success:
+            console.print(
+                f"    ████████████████████  {result.runs_written}/{result.traces_fetched}  done"
+            )
+            console.print()
+            console.print(f"    [#4ADE80]✓[/] {result.runs_written} runs imported")
+            console.print(
+                "    [dim]⚠ decision outcomes inferred from output content (heuristic)[/]"
+            )
+            console.print()
+            console.print(
+                "    Even if you use LangGraph, CrewAI, or any other framework —"
+            )
+            console.print(
+                "    your LangFuse traces contain behavioral data Driftbase can use."
+            )
+        else:
+            console.print("    [#FF6B6B]✗ Import failed[/]")
+            for error in result.errors[:3]:
+                console.print(f"    [dim]{error}[/]")
+
+    except Exception as e:
+        console.print(f"    [#FF6B6B]Error: {e}[/]")
+
+
+def _show_fallback(console: Console) -> None:
+    """Show fallback instructions when no credentials are found."""
+    console.print("  ─────────────────────────────────────────────────────────────")
+    console.print("  [bold]TWO OPTIONS TO GET STARTED[/]")
+    console.print("  ─────────────────────────────────────────────────────────────")
+    console.print()
+    console.print("  Option A — Instant baseline (5 minutes):")
+    console.print()
+    console.print("    driftbase testset generate --use-case <your-agent-type> \\")
+    console.print("        --output baseline.py")
+    console.print("    # Edit baseline.py: replace the import with your agent")
+    console.print("    python baseline.py")
+    console.print()
+    console.print("  Option B — Instrument going forward:")
+    console.print()
+    console.print("    from driftbase import track")
+    console.print()
+    console.print("    @track()")
+    console.print("    def run_agent(query):")
+    console.print("        return your_agent(query)")
+    console.print()
+    console.print("  Option A gives you immediate behavioral history.")
+    console.print("  Option B builds history from real production traffic.")
+    console.print("  You can do both.")
+    console.print()
+    console.print("  Have LangSmith or LangFuse? Set credentials and run again:")
+    console.print()
+    console.print("    LangSmith:  export LANGSMITH_API_KEY=your-key")
+    console.print("    LangFuse:   export LANGFUSE_PUBLIC_KEY=your-key")
+    console.print("                export LANGFUSE_SECRET_KEY=your-secret")
+    console.print()
+    console.print("  Run: [bold]driftbase testset list[/]  (see all 14 agent types)")
+    console.print()
+
+
+@click.group("connect", invoke_without_command=True)
 @click.pass_context
 def cmd_connect(ctx: click.Context) -> None:
     """Import traces from LangSmith or LangFuse."""
-    pass
+    # If a subcommand was invoked, don't run auto-detection
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Run auto-detection when called without subcommand
+    _run_auto_detect(ctx)
 
 
 @cmd_connect.command("langsmith")

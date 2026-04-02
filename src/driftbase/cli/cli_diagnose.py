@@ -4,6 +4,7 @@ Provides actionable insights and root cause analysis.
 """
 
 import json
+import os
 from typing import Any
 
 import click
@@ -13,6 +14,79 @@ from driftbase.cli._deps import safe_import_rich_extended
 from driftbase.cli.demo_templates import INDUSTRY_BENCHMARKS, REGRESSION_TYPES
 
 Console, Panel, Table, Markdown, Prompt, Confirm = safe_import_rich_extended()
+
+
+def _render_progress_bar(
+    run_count: int, target: int = 40, use_color: bool = True
+) -> str:
+    """Render a progress bar showing runs collected vs target."""
+    percentage = min(100, int(run_count / target * 100))
+    filled = int(percentage / 5)
+    empty = 20 - filled
+
+    if use_color:
+        filled_char = "█"
+        empty_char = "░"
+    else:
+        filled_char = "#"
+        empty_char = "-"
+
+    bar = filled_char * filled + empty_char * empty
+    return f"{bar}  {run_count} / {target} runs recorded  ({percentage}%)"
+
+
+def _estimate_days_remaining(
+    backend: Any, run_count: int, target: int = 40
+) -> str | None:
+    """Estimate days remaining to reach target based on current rate."""
+    try:
+        all_runs = backend.get_all_runs()
+        if not all_runs or len(all_runs) < 2:
+            return None
+
+        # Get earliest and latest timestamps
+        timestamps = []
+        for run in all_runs:
+            started = run.get("started_at")
+            if started:
+                from datetime import datetime
+
+                if isinstance(started, str):
+                    try:
+                        timestamps.append(
+                            datetime.fromisoformat(started.replace("Z", "+00:00"))
+                        )
+                    except Exception:
+                        pass
+                elif hasattr(started, "timestamp"):
+                    timestamps.append(started)
+
+        if len(timestamps) < 2:
+            return None
+
+        oldest = min(timestamps)
+        newest = max(timestamps)
+        span_days = (newest - oldest).total_seconds() / 86400
+
+        if span_days <= 0:
+            return None
+
+        rate = run_count / span_days
+        if rate <= 0:
+            return None
+
+        remaining_runs = target - run_count
+        days_remaining = int(remaining_runs / rate)
+
+        # Cap at 30 days
+        if days_remaining > 30:
+            return None
+        if days_remaining < 1:
+            return None
+
+        return f"~{days_remaining} days"
+    except Exception:
+        return None
 
 
 def _diagnose_behavioral_shift(console: Any, backend: Any) -> None:
@@ -36,15 +110,49 @@ def _diagnose_behavioral_shift(console: Any, backend: Any) -> None:
 
     # Check if enough data for analysis
     if total_runs < 40:
-        console.print(
-            Panel(
-                f"[bold]DRIFTBASE DIAGNOSTIC[/]\n\n"
-                f"Not enough data yet. {total_runs} runs recorded, 40 needed for reliable analysis.\n\n"
-                f"Keep running your agent — analysis improves with more data.",
-                title="Insufficient Data",
-                border_style="yellow",
+        use_color = not console.no_color
+        progress_bar = _render_progress_bar(total_runs, 40, use_color)
+        days_est = _estimate_days_remaining(backend, total_runs, 40)
+
+        rate_msg = ""
+        if days_est:
+            rate_msg = f"\n  At your current rate, baseline ready in {days_est}."
+
+        # Check for LangSmith/LangFuse credentials
+        langsmith_hint = ""
+        langfuse_hint = ""
+        if os.environ.get("LANGSMITH_API_KEY"):
+            langsmith_hint = (
+                "    export LANGSMITH_API_KEY=your-key     # Already set ✓\n"
             )
+        else:
+            langsmith_hint = "    export LANGSMITH_API_KEY=your-key     # LangSmith\n"
+
+        if os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get(
+            "LANGFUSE_SECRET_KEY"
+        ):
+            langfuse_hint = "    export LANGFUSE_PUBLIC_KEY=your-key   # Already set ✓\n    export LANGFUSE_SECRET_KEY=your-secret\n"
+        else:
+            langfuse_hint = "    export LANGFUSE_PUBLIC_KEY=your-key   # LangFuse\n    export LANGFUSE_SECRET_KEY=your-secret\n"
+
+        console.print(f"\n[bold]DRIFTBASE[/]  {agent_id}\n")
+        console.print("  Building behavioral baseline...\n")
+        console.print(f"  {progress_bar}\n")
+        console.print(
+            f"  Driftbase needs 40 runs to detect behavioral shifts reliably.{rate_msg}\n"
         )
+        console.print("  ─────────────────────────────────────────────────────────────")
+        console.print("  [bold]SKIP THE WAIT[/] — establish a baseline in 5 minutes:")
+        console.print(
+            "  ─────────────────────────────────────────────────────────────\n"
+        )
+        console.print(f"{langsmith_hint}{langfuse_hint}    driftbase connect\n")
+        console.print("  No existing observability? Generate a baseline now:\n")
+        console.print("    driftbase testset generate --use-case customer_support \\")
+        console.print("        --output baseline.py")
+        console.print("    # Edit baseline.py: replace the import with your agent")
+        console.print("    python baseline.py\n")
+        console.print("  After either option, run: [bold]driftbase diagnose[/]\n")
         return
 
     # Detect epochs

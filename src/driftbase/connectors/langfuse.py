@@ -60,6 +60,45 @@ class LangFuseConnector(TraceConnector):
             logger.debug(f"LangFuse credential validation failed: {e}")
             return False
 
+    def list_projects(self) -> list[dict[str, Any]]:
+        """
+        List available projects with trace counts.
+        Returns [{"name": str, "run_count": int}] sorted by run_count desc.
+        LangFuse uses projects differently — return the configured project
+        with an estimated trace count.
+        Returns [] on any error. Never raises.
+        """
+        try:
+            if not LANGFUSE_AVAILABLE:
+                return []
+
+            public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+            secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
+
+            if not public_key or not secret_key:
+                return []
+
+            # Fetch traces to get count
+            traces = self.client.get_traces(limit=1)
+
+            # Use pagination total if available
+            count = getattr(traces, "total", "unknown")
+            if count == "unknown":
+                # Try to estimate by fetching a sample
+                try:
+                    sample = self.client.get_traces(limit=1000)
+                    count = len(sample.data) if hasattr(sample, "data") else 0
+                except Exception:
+                    count = 0
+
+            # LangFuse doesn't have explicit projects in the same way - use env var or default
+            project_name = os.environ.get("LANGFUSE_PROJECT", "default")
+
+            return [{"name": project_name, "run_count": count}]
+        except Exception as e:
+            logger.debug(f"Failed to list projects: {e}")
+            return []
+
     def fetch_traces(self, config: ConnectorConfig) -> list[dict]:
         """Fetch traces from LangFuse."""
         try:

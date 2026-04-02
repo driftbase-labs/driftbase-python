@@ -301,3 +301,22 @@ if __name__ == "__main__":
             border_style="green",
         )
     )
+
+    # Add cold start guidance
+    console.print()
+    console.print("  ─────────────────────────────────────────────────────────────")
+    console.print("  [bold]ESTABLISHING YOUR BASELINE[/]")
+    console.print("  ─────────────────────────────────────────────────────────────")
+    console.print()
+    console.print("  Run the generated script to record 50 runs immediately:")
+    console.print()
+    console.print(f"    python {Path(output).name}")
+    console.print()
+    console.print("  This establishes your behavioral baseline in ~5 minutes instead")
+    console.print("  of waiting days for organic traffic.")
+    console.print()
+    console.print("  After running:")
+    console.print("    [bold]driftbase diagnose[/]    ← detect behavioral shifts")
+    console.print("    [bold]driftbase history[/]     ← see your behavioral timeline")
+    console.print("    [bold]driftbase diff v1 v2[/]  ← compare versions explicitly")
+    console.print()

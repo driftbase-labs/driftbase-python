@@ -25,7 +25,8 @@
       "Bash(driftbase diagnose:*)",
       "Bash(driftbase history:*)",
       "Bash(ruff check:*)",
-      "Bash(driftbase connect:*)"
+      "Bash(driftbase connect:*)",
+      "Bash(unset:*)"
     ]
   }
 }

@@ -1,6 +1,7 @@
 """History command for showing longitudinal behavioral timeline."""
 
 import json
+import os
 from datetime import datetime
 from typing import Any
 
@@ -11,6 +12,25 @@ from driftbase.cli._deps import safe_import_rich_extended
 from driftbase.config import get_settings
 
 Console, Panel, Table, _, _, _ = safe_import_rich_extended()
+
+
+def _render_progress_bar(
+    run_count: int, target: int = 40, use_color: bool = True
+) -> str:
+    """Render a progress bar showing runs collected vs target."""
+    percentage = min(100, int(run_count / target * 100))
+    filled = int(percentage / 5)
+    empty = 20 - filled
+
+    if use_color:
+        filled_char = "█"
+        empty_char = "░"
+    else:
+        filled_char = "#"
+        empty_char = "-"
+
+    bar = filled_char * filled + empty_char * empty
+    return f"{bar}  {run_count} / {target} runs recorded  ({percentage}%)"
 
 
 @click.command("history")
@@ -57,16 +77,52 @@ def cmd_history(ctx: click.Context, days: int, format: str) -> None:
 
     # Check if enough data
     if total_runs < 40:
-        console.print(
-            Panel(
-                f"Not enough data for history analysis.\n\n"
-                f"Runs recorded: {total_runs}\n"
-                f"Minimum needed: 40\n\n"
-                f"Keep running your agent to build up history.",
-                title="Insufficient Data",
-                border_style="yellow",
+        use_color = not console.no_color
+        progress_bar = _render_progress_bar(total_runs, 40, use_color)
+
+        # Check for LangSmith/LangFuse credentials
+        langsmith_hint = ""
+        langfuse_hint = ""
+        if os.environ.get("LANGSMITH_API_KEY"):
+            langsmith_hint = (
+                "    export LANGSMITH_API_KEY=your-key     # Already set ✓\n"
             )
+        else:
+            langsmith_hint = "    export LANGSMITH_API_KEY=your-key     # LangSmith\n"
+
+        if os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get(
+            "LANGFUSE_SECRET_KEY"
+        ):
+            langfuse_hint = "    export LANGFUSE_PUBLIC_KEY=your-key   # Already set ✓\n    export LANGFUSE_SECRET_KEY=your-secret\n"
+        else:
+            langfuse_hint = "    export LANGFUSE_PUBLIC_KEY=your-key   # LangFuse\n    export LANGFUSE_SECRET_KEY=your-secret\n"
+
+        console.print(f"\n[bold]DRIFTBASE HISTORY[/]  {agent_id}\n")
+        console.print("  Building behavioral baseline...\n")
+        console.print(f"  {progress_bar}\n")
+        console.print(
+            "  Keep running your agent — behavioral timeline appears automatically"
         )
+        console.print("  once your baseline is established.\n")
+        console.print("  ─────────────────────────────────────────────────────────────")
+        console.print("  [bold]SKIP THE WAIT:[/]")
+        console.print(
+            "  ─────────────────────────────────────────────────────────────\n"
+        )
+        console.print(f"{langsmith_hint}{langfuse_hint}    driftbase connect\n")
+        console.print("  Or generate a baseline from scratch:\n")
+        console.print(
+            "    driftbase testset generate --use-case <type> --output baseline.py"
+        )
+        console.print("    python baseline.py\n")
+        console.print("  Available agent types:")
+        console.print(
+            "    customer_support · financial · healthcare · legal · code_generation"
+        )
+        console.print(
+            "    data_analysis · devops_sre · automation · content_generation · general\n"
+        )
+        console.print("    Run: [bold]driftbase testset list[/]  (see all 14 types)\n")
         return
 
     # Detect epochs

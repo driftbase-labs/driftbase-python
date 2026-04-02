@@ -53,6 +53,47 @@ class LangSmithConnector(TraceConnector):
             logger.debug(f"LangSmith credential validation failed: {e}")
             return False
 
+    def list_projects(self) -> list[dict[str, Any]]:
+        """
+        List available projects with run counts.
+        Returns [{"name": str, "run_count": int}] sorted by run_count desc.
+        Returns [] on any error. Never raises.
+        """
+        try:
+            if not LANGSMITH_AVAILABLE:
+                return []
+
+            projects = list(self.client.list_projects())
+            result = []
+
+            for p in projects:
+                try:
+                    # Get run count for this project
+                    runs = list(self.client.list_runs(project_name=p.name, limit=1))
+                    # LangSmith doesn't provide a direct count API, so we estimate
+                    # by fetching a small sample. For better UX, we could paginate
+                    # but that's slow. Instead, use a heuristic.
+                    count = getattr(p, "run_count", 0)
+                    if count == 0:
+                        # Try to get count from recent runs
+                        try:
+                            recent_runs = list(
+                                self.client.list_runs(project_name=p.name, limit=1000)
+                            )
+                            count = len(recent_runs)
+                        except Exception:
+                            count = 0
+
+                    result.append({"name": p.name, "run_count": count})
+                except Exception as e:
+                    logger.debug(f"Failed to get run count for project {p.name}: {e}")
+                    result.append({"name": p.name, "run_count": 0})
+
+            return sorted(result, key=lambda x: x["run_count"], reverse=True)
+        except Exception as e:
+            logger.debug(f"Failed to list projects: {e}")
+            return []
+
     def fetch_traces(self, config: ConnectorConfig) -> list[dict]:
         """Fetch chain-level runs from LangSmith."""
         try:
