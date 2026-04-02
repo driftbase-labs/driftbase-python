@@ -278,7 +278,7 @@ def _show_fallback(console: Console) -> None:
 @click.group("connect", invoke_without_command=True)
 @click.pass_context
 def cmd_connect(ctx: click.Context) -> None:
-    """Import traces from LangSmith or LangFuse."""
+    """Auto-detect and connect to LangSmith, LangFuse, or set up @track()."""
     # If a subcommand was invoked, don't run auto-detection
     if ctx.invoked_subcommand is not None:
         return
