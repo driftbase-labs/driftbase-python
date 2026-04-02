@@ -13,9 +13,14 @@ from driftbase.config import get_settings
 
 Console, Panel, Table, _, _, _ = safe_import_rich_extended()
 
+# Developer-facing minimum runs threshold.
+# Internal epoch detection uses 40 (implementation detail).
+# All user-facing surfaces use this constant.
+MIN_RUNS_USER_FACING = 50
+
 
 def _render_progress_bar(
-    run_count: int, target: int = 40, use_color: bool = True
+    run_count: int, target: int = MIN_RUNS_USER_FACING, use_color: bool = True
 ) -> str:
     """Render a progress bar showing runs collected vs target."""
     percentage = min(100, int(run_count / target * 100))
@@ -76,9 +81,9 @@ def cmd_history(ctx: click.Context, days: int, format: str) -> None:
     total_runs = len(all_runs)
 
     # Check if enough data
-    if total_runs < 40:
+    if total_runs < MIN_RUNS_USER_FACING:
         use_color = not console.no_color
-        progress_bar = _render_progress_bar(total_runs, 40, use_color)
+        progress_bar = _render_progress_bar(total_runs, MIN_RUNS_USER_FACING, use_color)
 
         # Check for LangSmith/LangFuse credentials
         langsmith_hint = ""
@@ -103,7 +108,7 @@ def cmd_history(ctx: click.Context, days: int, format: str) -> None:
         console.print(
             "  Keep running your agent — behavioral timeline appears automatically"
         )
-        console.print("  once your baseline is established.\n")
+        console.print("  once your baseline is established (50 runs).\n")
         console.print("  ─────────────────────────────────────────────────────────────")
         console.print("  [bold]SKIP THE WAIT:[/]")
         console.print(

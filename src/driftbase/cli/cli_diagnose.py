@@ -15,9 +15,14 @@ from driftbase.cli.demo_templates import INDUSTRY_BENCHMARKS, REGRESSION_TYPES
 
 Console, Panel, Table, Markdown, Prompt, Confirm = safe_import_rich_extended()
 
+# Developer-facing minimum runs threshold.
+# Internal epoch detection uses 40 (implementation detail).
+# All user-facing surfaces use this constant.
+MIN_RUNS_USER_FACING = 50
+
 
 def _render_progress_bar(
-    run_count: int, target: int = 40, use_color: bool = True
+    run_count: int, target: int = MIN_RUNS_USER_FACING, use_color: bool = True
 ) -> str:
     """Render a progress bar showing runs collected vs target."""
     percentage = min(100, int(run_count / target * 100))
@@ -36,7 +41,7 @@ def _render_progress_bar(
 
 
 def _estimate_days_remaining(
-    backend: Any, run_count: int, target: int = 40
+    backend: Any, run_count: int, target: int = MIN_RUNS_USER_FACING
 ) -> str | None:
     """Estimate days remaining to reach target based on current rate."""
     try:
@@ -109,10 +114,10 @@ def _diagnose_behavioral_shift(console: Any, backend: Any) -> None:
     total_runs = len(all_runs)
 
     # Check if enough data for analysis
-    if total_runs < 40:
+    if total_runs < MIN_RUNS_USER_FACING:
         use_color = not console.no_color
-        progress_bar = _render_progress_bar(total_runs, 40, use_color)
-        days_est = _estimate_days_remaining(backend, total_runs, 40)
+        progress_bar = _render_progress_bar(total_runs, MIN_RUNS_USER_FACING, use_color)
+        days_est = _estimate_days_remaining(backend, total_runs, MIN_RUNS_USER_FACING)
 
         rate_msg = ""
         if days_est:
@@ -139,7 +144,7 @@ def _diagnose_behavioral_shift(console: Any, backend: Any) -> None:
         console.print("  Building behavioral baseline...\n")
         console.print(f"  {progress_bar}\n")
         console.print(
-            f"  Driftbase needs 40 runs to detect behavioral shifts reliably.{rate_msg}\n"
+            f"  Driftbase needs 50 runs to detect behavioral shifts reliably.{rate_msg}\n"
         )
         console.print("  ─────────────────────────────────────────────────────────────")
         console.print("  [bold]SKIP THE WAIT[/] — establish a baseline in 5 minutes:")

@@ -24,7 +24,7 @@ def test_history_command_runs_without_error():
 
 
 def test_history_shows_insufficient_data_message():
-    """History shows insufficient data message below 40 runs."""
+    """History shows insufficient data message below 50 runs."""
     runner = CliRunner()
 
     mock_backend = MagicMock()
