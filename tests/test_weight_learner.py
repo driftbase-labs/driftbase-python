@@ -158,24 +158,24 @@ def test_learn_weights_weights_sum_to_one(tmp_path):
 
 
 def test_learn_weights_learned_factor_increases():
-    """Learned factor increases with more training data."""
+    """Learned factor increases with more training data (progressive moat building)."""
     from driftbase.local.weight_learner import _compute_blending_factor
 
-    # n=10: factor = 0.20
+    # n=10: factor = 0.30 (30% learned, 70% preset - minimum to activate)
     factor_10 = _compute_blending_factor(10)
-    assert factor_10 == 0.20
+    assert factor_10 == 0.30
 
-    # n=50: factor = 0.60 (using formula: (50-10)/100 + 0.20)
+    # n=50: factor ≈ 0.478 (approaching balanced - using formula: 0.3 + ((50-10)/90)*0.4)
     factor_50 = _compute_blending_factor(50)
-    assert abs(factor_50 - 0.60) < 0.01
+    assert abs(factor_50 - 0.4778) < 0.01  # Allow small tolerance
 
-    # n=100: factor = 0.90
+    # n=100: factor = 0.70 (70% learned, 30% preset - cap reached, moat established)
     factor_100 = _compute_blending_factor(100)
-    assert factor_100 == 0.90
+    assert factor_100 == 0.70
 
-    # n=150: factor = 0.90 (capped)
+    # n=150: factor = 0.70 (capped at 0.70, moat stays strong but doesn't overfit)
     factor_150 = _compute_blending_factor(150)
-    assert factor_150 == 0.90
+    assert factor_150 == 0.70
 
 
 def test_learn_weights_never_raises(tmp_path):

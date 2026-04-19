@@ -48,14 +48,21 @@ def _compute_blending_factor(n_samples: int) -> float:
     """
     Compute blending factor based on training set size.
 
-    At 10 samples: 20% learned, 80% preset
-    At 20 samples: 40% learned, 60% preset
-    At 50 samples: 70% learned, 30% preset
-    At 100+ samples: 90% learned, 10% preset
+    Progressive blending: as labeled deploys increase, learned weights dominate.
+    This makes the moat compound faster for power users.
+
+    At 10 samples:  30% learned, 70% preset (minimum to activate)
+    At 50 samples:  50% learned, 50% preset (balanced)
+    At 100+ samples: 70% learned, 30% preset (cap reached, moat fully established)
+
+    Returns:
+        Float between 0.0 and 0.7 representing learned weight proportion
     """
     if n_samples < 10:
         return 0.0
-    return min(0.90, (n_samples - 10) / 100 + 0.20)
+    # Linear interpolation from 0.3 (n=10) to 0.7 (n=100)
+    # Formula: 0.3 + ((n - 10) / 90) * 0.4
+    return min(0.70, 0.30 + ((n_samples - 10) / 90) * 0.40)
 
 
 def learn_weights(
@@ -277,3 +284,71 @@ def learn_weights(
     except Exception as e:
         logger.debug(f"Weight learning failed for {agent_id}: {e}")
         return None
+
+
+# TODO (PHASE 9 - DEFERRED until Cloud API is live):
+#
+# Opt-in Data Contribution for Moat Building
+#
+# After learning weights from local labeled deployments, users can optionally contribute
+# anonymized drift patterns to improve baseline weights for all users. This creates a
+# compounding moat: the more users contribute data, the better Driftbase gets for everyone.
+#
+# Requirements:
+# 1. Fully optional - explicit opt-in required
+# 2. Anonymized - no agent IDs, prompts, or identifying information
+# 3. Clear value exchange - users see exactly what data is sent
+# 4. API endpoint: POST api.driftbase.io/api/v1/contribute (does not exist yet)
+#
+# What would be contributed:
+# - Learned weight distributions (which dimensions predict bad outcomes)
+# - Drift-to-outcome correlations (anonymized)
+# - Use case inferences (e.g., "customer support" vs "code generation")
+# - Confidence tiers and sample sizes
+#
+# What would NOT be contributed:
+# - Agent prompts or outputs
+# - User identifiers
+# - Project names or deployment versions
+# - Individual run data
+# - Raw drift scores
+#
+# Configuration:
+#     export DRIFTBASE_CONTRIBUTE_DATA=true  # Opt-in
+#     driftbase contribute enable            # Interactive opt-in with clear disclosure
+#     driftbase contribute status            # Show what data would be sent
+#     driftbase contribute disable           # Opt-out
+#
+# Implementation:
+#     def contribute_learned_weights(weights: LearnedWeights) -> bool:
+#         \"\"\"Contribute anonymized learned weights to improve baseline for all users.\"\"\"
+#         if not is_contribution_enabled():
+#             return False
+#
+#         # Anonymize data
+#         payload = {
+#             "weight_distribution": weights.weights,
+#             "raw_correlations": weights.raw_correlations,
+#             "n_good": weights.n_good,
+#             "n_bad": weights.n_bad,
+#             "top_predictors": weights.top_predictors,
+#             # No agent_id, no version names, fully anonymized
+#         }
+#
+#         # POST to Cloud API
+#         response = requests.post(
+#             "https://api.driftbase.io/api/v1/contribute",
+#             json=payload,
+#             timeout=5
+#         )
+#         return response.status_code == 200
+#
+# Implementation blocked by:
+# - api.driftbase.io/api/v1/contribute endpoint does not exist yet
+# - Cloud backend infrastructure not deployed
+# - Data aggregation and anonymization pipeline not built
+#
+# This will be implemented after Cloud is running and we can demonstrate the value
+# exchange to users with real data.
+#
+# See CHANGELOG.md for more context on why this is deferred.

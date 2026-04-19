@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -18,6 +19,30 @@ ESCALATION_KEYWORDS = [
     "need help",
     "can't handle",
 ]
+
+
+def compute_hash(text: str | None) -> str:
+    """
+    Compute SHA256 hash for fingerprinting.
+
+    Args:
+        text: Text to hash
+
+    Returns:
+        First 16 characters of SHA256 hash (64-bit fingerprint)
+
+    Note:
+        The original text (raw_prompt, raw_output) is stored locally in SQLite.
+        For OSS users, this is fine — data never leaves their machine.
+
+        ⚠️  PRIVACY WARNING: raw_prompt may contain PII. Never transmit without scrubbing.
+        Cloud handles this via the Presidio pipeline in driftbase-cloud.
+        Local-only usage is safe, but if building integrations that send data elsewhere,
+        you MUST implement PII detection/removal before transmission.
+    """
+    if not text:
+        return hashlib.sha256(b"").hexdigest()[:16]
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
 def infer_semantic_cluster(output: str | None, error: bool) -> str:

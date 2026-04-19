@@ -1,0 +1,82 @@
+name: 'Driftbase Behavioral Drift Detection'
+description: 'Detect behavioral drift in AI agents between deployments and gate on stability'
+author: 'Anthropic'
+
+branding:
+  icon: 'activity'
+  color: 'purple'
+
+inputs:
+  baseline-version:
+    description: 'Baseline version to compare against (e.g., v1.0, main, production)'
+    required: true
+  current-version:
+    description: 'Current version being deployed (e.g., v2.0, feature-branch, staging)'
+    required: true
+  driftbase-api-key:
+    description: 'Driftbase Cloud API key (optional - runs in standalone mode if not provided)'
+    required: false
+    default: ''
+  fail-on-review:
+    description: 'Fail the CI check if verdict is REVIEW (default: true)'
+    required: false
+    default: 'true'
+  fail-on-monitor:
+    description: 'Fail the CI check if verdict is MONITOR (default: false)'
+    required: false
+    default: 'false'
+  github-token:
+    description: 'GitHub token for posting PR comments (use ${{ secrets.GITHUB_TOKEN }})'
+    required: true
+  environment:
+    description: 'Environment to filter runs by (optional, e.g., production, staging)'
+    required: false
+    default: 'production'
+  sensitivity:
+    description: 'Threshold sensitivity: strict, standard, or relaxed (default: standard)'
+    required: false
+    default: 'standard'
+
+outputs:
+  verdict:
+    description: 'Deployment verdict: SHIP, MONITOR, REVIEW, or BLOCK'
+    value: ${{ steps.drift-check.outputs.verdict }}
+  drift-score:
+    description: 'Overall drift score (0.0 - 1.0)'
+    value: ${{ steps.drift-check.outputs.drift-score }}
+  exit-code:
+    description: 'Exit code (0 for pass, 1 for fail)'
+    value: ${{ steps.drift-check.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Driftbase CLI
+      shell: bash
+      run: |
+        pip install --quiet driftbase
+        echo "✓ Driftbase CLI installed ($(driftbase --version))"
+
+    - name: Run Drift Check
+      id: drift-check
+      shell: bash
+      env:
+        INPUT_BASELINE_VERSION: ${{ inputs.baseline-version }}
+        INPUT_CURRENT_VERSION: ${{ inputs.current-version }}
+        INPUT_DRIFTBASE_API_KEY: ${{ inputs.driftbase-api-key }}
+        INPUT_FAIL_ON_REVIEW: ${{ inputs.fail-on-review }}
+        INPUT_FAIL_ON_MONITOR: ${{ inputs.fail-on-monitor }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_SENSITIVITY: ${{ inputs.sensitivity }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REF: ${{ github.ref }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+      run: python ${{ github.action_path }}/src/run.py

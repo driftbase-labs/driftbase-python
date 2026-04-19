@@ -148,3 +148,50 @@ class StorageBackend(ABC):
         raise NotImplementedError(
             "get_learned_weights not implemented for this backend"
         )
+
+    def get_calibration_cache(self, cache_key: str) -> dict[str, Any] | None:
+        """Return cached calibration result by cache_key, or None if not found."""
+        raise NotImplementedError(
+            "get_calibration_cache not implemented for this backend"
+        )
+
+    def set_calibration_cache(self, cache_key: str, data: dict[str, Any]) -> None:
+        """Store calibration result in cache (upsert by cache_key). Must not raise."""
+        raise NotImplementedError(
+            "set_calibration_cache not implemented for this backend"
+        )
+
+    def get_significance_threshold(
+        self, agent_id: str, version: str
+    ) -> dict[str, Any] | None:
+        """Return cached significance threshold for agent_id + version, or None if not found."""
+        raise NotImplementedError(
+            "get_significance_threshold not implemented for this backend"
+        )
+
+    def write_significance_threshold(
+        self, agent_id: str, version: str, threshold_data: dict[str, Any]
+    ) -> None:
+        """Write significance threshold for agent_id + version. On conflict, overwrite. Must not raise."""
+        raise NotImplementedError(
+            "write_significance_threshold not implemented for this backend"
+        )
+
+    def write_connector_sync(
+        self,
+        source: str,
+        project_name: str,
+        agent_id: str,
+        runs_imported: int,
+        last_external_id: str | None = None,
+    ) -> None:
+        """Write connector sync metadata for incremental imports. Must not raise."""
+        raise NotImplementedError(
+            "write_connector_sync not implemented for this backend"
+        )
+
+    def get_connector_sync(
+        self, source: str, project_name: str
+    ) -> dict[str, Any] | None:
+        """Return last sync metadata for source + project_name, or None if not found."""
+        raise NotImplementedError("get_connector_sync not implemented for this backend")

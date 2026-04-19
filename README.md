@@ -90,14 +90,27 @@ Shows how your agent's behavior evolved over time — which epochs were stable, 
 
 | What You Get | Why It Matters |
 |--------------|----------------|
+| **60-second wow moment** | Run `driftbase demo --offline` to see drift detection on synthetic data with zero dependencies |
 | **Zero cold start** | Start detecting drift from day 1 using your existing Langfuse traces — no SDK to add, no baseline to collect |
-| **Self-calibrating drift scores** | Weights and thresholds adapt to your agent's use case and baseline behavior automatically — no configuration needed |
-| **Behavioral budgets** | Define acceptable ranges per dimension upfront. Breaches fire immediately, before manual drift checks |
+| **GitHub Action integration** | Automatic drift checks on every PR with rich, color-coded reports posted as comments |
+| **Self-calibrating drift scores** | Weights and thresholds learn from your labeled deployments — the more you use it, the better it gets |
 | **Root cause pinpointing** | Correlates drift with version changes and surfaces the most likely cause with confidence level |
-| **Rollback suggestion** | When regression is unambiguous, suggests the specific prior version to roll back to |
-| **Financial impact analysis** | Translate token bloat into €/$ cost deltas for leadership |
-| **Zero-egress architecture** | All data stays on your machine — no US servers, GDPR-compliant by design |
-| **Framework-agnostic** | Works with any framework already traced in Langfuse — LangChain, OpenAI, CrewAI, custom agents |
+| **100% local-first** | All data stays on your machine in SQLite — no cloud required, GDPR-compliant by design |
+| **Framework-agnostic** | Works with any framework already traced in Langfuse or LangSmith — LangChain, OpenAI, CrewAI, custom agents |
+| **Progressive confidence** | Starts working with just 15 runs, full statistical power at 50+ runs per version |
+
+---
+
+## 60-Second Demo (No Dependencies)
+
+Want to see drift detection in action before connecting your own traces?
+
+```bash
+pip install driftbase
+driftbase demo --offline
+```
+
+This generates synthetic agent runs showing realistic behavioral drift scenarios and walks you through the core commands. **100% offline, zero external dependencies.**
 
 ---
 
@@ -213,26 +226,39 @@ driftbase doctor
 
 ## Use Cases
 
-### 1. Pre-Deploy Drift Gate (CI/CD)
+### 1. Pre-Deploy Drift Gate (GitHub Action)
+
+Add `.github/workflows/drift-check.yml`:
 
 ```yaml
-# .github/workflows/drift-check.yml
 name: Drift Check
-on: [pull_request]
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  contents: read
 
 jobs:
-  drift:
+  drift-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - run: pip install driftbase
-      - env:
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-        run: |
-          driftbase connect
-          driftbase diff main ${{ github.sha }} --exit-on-block
+      - uses: actions/checkout@v4
+
+      - name: Run Driftbase drift check
+        uses: driftbase-labs/driftbase-python/github-action@v1
+        with:
+          baseline-version: main
+          current-version: ${{ github.head_ref }}
+          fail-on-review: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+Posts a color-coded drift report as a PR comment with verdict (SHIP/MONITOR/REVIEW/BLOCK) and dimension breakdown.
+
+See [github-action/README.md](github-action/README.md) for full documentation.
 
 ### 2. Post-Deploy Monitoring
 
@@ -318,17 +344,25 @@ See [docs/configuration.md](docs/configuration.md) for advanced settings.
 
 ## Roadmap
 
-- [x] Langfuse connector
+**Completed:**
+- [x] Langfuse connector with incremental sync
+- [x] LangSmith connector
 - [x] 12-dimension drift analysis
-- [x] Self-calibrating weights & thresholds
-- [x] Anomaly detection
-- [x] Behavioral epochs
-- [x] Root cause correlation
-- [ ] LangSmith connector
+- [x] Progressive weight learning from labeled deployments
+- [x] Statistical confidence tiers (TIER1/TIER2/TIER3)
+- [x] GitHub Action with standalone + cloud modes
+- [x] MCP server for Claude Desktop integration
+- [x] 60-second offline demo
+
+**Deferred (requires Cloud API):**
+- [ ] Privacy-first telemetry
+- [ ] Opt-in data contribution for moat building
+
+**Future:**
 - [ ] Arize connector
 - [ ] Generic OTEL ingestion
 - [ ] Slack/PagerDuty alerting
-- [ ] Web dashboard (Pro tier)
+- [ ] Web dashboard (Cloud tier)
 
 ---
 
@@ -377,7 +411,13 @@ Use `driftbase testset generate` to create synthetic baseline data, or start col
 
 ### Does this work with LangSmith?
 
-Not yet. Driftbase currently supports **Langfuse only**. LangSmith, Arize, and generic OTEL support are planned for future releases.
+Yes! Driftbase supports both **Langfuse and LangSmith**. Use:
+
+```bash
+driftbase connect langsmith --project my-agent
+```
+
+Arize and generic OTEL support are planned for future releases.
 
 ### Is this free?
 

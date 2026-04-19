@@ -1,49 +1,46 @@
-import uuid
-from pathlib import Path
+"""
+Privacy-first telemetry for Driftbase.
 
-import requests
+TODO (PHASE 8 - DEFERRED until Cloud API is live):
+    This module will implement privacy-first usage telemetry with the following requirements:
+
+    1. Opt-out by default - users must explicitly opt-in via environment variable
+    2. Local aggregation - no raw data transmission
+    3. No PII - all identifiers are hashed/anonymized
+    4. Clear value exchange - users see what data is sent before enabling
+    5. API endpoint: POST api.driftbase.io/api/v1/telemetry (does not exist yet)
+
+    Telemetry data will include:
+    - Command usage frequency (e.g., "diff", "diagnose", "connect")
+    - Drift score distributions (aggregated, not per-run)
+    - Error types and frequencies
+    - Performance metrics (latency, memory)
+    - Feature adoption (e.g., "weight learning enabled", "MCP server used")
+
+    What is NOT collected:
+    - Agent prompts or outputs
+    - User identifiers (email, name, etc.)
+    - Repository names or project names
+    - Individual drift scores
+    - Individual run data
+
+    Configuration:
+        export DRIFTBASE_TELEMETRY=true  # Opt-in
+        driftbase telemetry enable       # Interactive opt-in with consent dialog
+        driftbase telemetry status       # Show what data would be sent
+        driftbase telemetry disable      # Opt-out
+
+    Implementation blocked by:
+    - api.driftbase.io/api/v1/telemetry endpoint does not exist yet
+    - Cloud backend infrastructure not deployed
+
+    Shipping telemetry code that phones home to a non-existent endpoint is worse
+    than no telemetry. This will be implemented after Cloud is running.
+
+    See CHANGELOG.md for more context on why this is deferred.
+"""
 
 
-def is_telemetry_enabled():
-    """Enterprise kill switch for GDPR/DORA compliance."""
-    return False  # Disabled until driftbase-platform is live
-
-
-def get_machine_id():
-    """Retrieve or generate a persistent anonymous ID for this machine."""
-    config_dir = Path.home() / ".driftbase"
-    id_file = config_dir / "telemetry_id"
-
-    if id_file.exists():
-        return id_file.read_text().strip()
-
-    config_dir.mkdir(parents=True, exist_ok=True)
-    new_id = str(uuid.uuid4())
-    id_file.write_text(new_id)
-    return new_id
-
-
-def push_trace(
-    api_key: str,
-    latency: int,
-    tokens: dict,
-    status: str = "success",
-    endpoint: str = "http://localhost:3000/api/traces",
-):
-    """
-    Push LLM execution metadata directly to the customer's secure vault.
-    Strictly isolated from general product analytics.
-    """
-    if not is_telemetry_enabled():
-        return
-
-    try:
-        requests.post(
-            endpoint,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={"latency": latency, "status": status, "payload": tokens},
-            timeout=1.5,  # Critical: Never block the host application if the vault is unreachable.
-        )
-    except requests.exceptions.RequestException:
-        # Silent fail. The observability tool must never crash the client's production app.
-        pass
+def is_telemetry_enabled() -> bool:
+    """Telemetry is disabled until Cloud API is live."""
+    return False

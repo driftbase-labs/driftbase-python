@@ -1,0 +1,87 @@
+# Driftbase Drift Check - Example Workflow
+#
+# Copy this file to .github/workflows/drift-check.yml in your repository
+# to enable automatic drift checking on pull requests.
+#
+# This workflow:
+# - Runs on every PR targeting the main branch
+# - Compares the PR branch against main
+# - Posts a drift report as a PR comment
+# - Blocks merge if drift verdict is BLOCK or REVIEW (configurable)
+# - Allows merge if drift is SHIP or MONITOR
+#
+# Two modes available:
+# - STANDALONE (default): Uses local SQLite database via `driftbase diff --ci`
+# - CLOUD: POSTs to api.driftbase.io (requires driftbase-api-key)
+
+name: Drift Check
+
+on:
+  pull_request:
+    branches: [main]
+
+# Required permissions for posting PR comments
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    name: Compare Behavioral Drift
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Optional: Run your tests/integration tests here to generate agent runs
+      # Make sure your tests are instrumented with Langfuse or LangSmith to record traces
+      # - name: Run integration tests
+      #   run: pytest tests/integration
+      #   env:
+      #     LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      #     LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+
+      - name: Run Driftbase drift check
+        uses: driftbase-labs/driftbase-python/github-action@v1
+        with:
+          baseline-version: main
+          current-version: ${{ github.head_ref }}
+          fail-on-review: true
+          fail-on-monitor: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Optional: Uncomment if using Driftbase Cloud
+          # driftbase-api-key: ${{ secrets.DRIFTBASE_API_KEY }}
+
+          # Optional: Filter by environment
+          # environment: production
+
+          # Optional: Set sensitivity (strict/standard/relaxed)
+          # sensitivity: standard
+
+# Configuration Examples:
+#
+# 1. Strict gating (fail on REVIEW):
+#    fail-on-review: true
+#    fail-on-monitor: false
+#
+# 2. Very strict gating (fail on MONITOR too):
+#    fail-on-review: true
+#    fail-on-monitor: true
+#
+# 3. Advisory only (never fail):
+#    fail-on-review: false
+#    fail-on-monitor: false
+#
+# 4. Multi-environment:
+#    baseline-version: v1.0
+#    current-version: v2.0
+#    environment: staging
+#
+# 5. Cloud mode with Driftbase API:
+#    driftbase-api-key: ${{ secrets.DRIFTBASE_API_KEY }}
+#    (Store API key in Settings > Secrets > Actions)
+#
+# 6. Relaxed sensitivity for experimental features:
+#    sensitivity: relaxed

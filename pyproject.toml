@@ -5,15 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "driftbase"
 dynamic = ["version"]
-description = "Behavioral drift detection for AI agents using Langfuse traces."
+description = "Behavioral drift detection for AI agents. Prevent regressions with automated drift checks in CI/CD."
 readme = "README.md"
 requires-python = ">=3.10"
 license-files = ["LICENSE"]
+keywords = [
+    "ai", "agents", "drift-detection", "langfuse", "langsmith",
+    "observability", "testing", "ci-cd", "behavioral-testing",
+    "llm", "monitoring", "regression-detection"
+]
 authors = [
     { name = "Driftbase", email = "info@driftbase.io" }
 ]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "pydantic>=2.0.0",
@@ -35,6 +49,8 @@ dependencies = [
 Homepage = "https://driftbase.io"
 Documentation = "https://driftbase.io/docs"
 Repository = "https://github.com/driftbase-labs/driftbase-python"
+Issues = "https://github.com/driftbase-labs/driftbase-python/issues"
+Changelog = "https://github.com/driftbase-labs/driftbase-python/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 mcp = [

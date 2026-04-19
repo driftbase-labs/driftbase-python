@@ -153,7 +153,7 @@ async def test_record_run_success():
         server = MCPServer()
 
         # Mock backend
-        with patch("driftbase.mcp.server.get_backend") as mock_get_backend:
+        with patch("driftbase.backends.factory.get_backend") as mock_get_backend:
             mock_backend = Mock()
             mock_get_backend.return_value = mock_backend
 
@@ -188,7 +188,7 @@ async def test_diagnose_insufficient_data():
 
         server = MCPServer()
 
-        with patch("driftbase.mcp.server.get_backend") as mock_get_backend:
+        with patch("driftbase.backends.factory.get_backend") as mock_get_backend:
             mock_backend = Mock()
             mock_backend.get_all_runs.return_value = [
                 {"id": f"run-{i}", "session_id": "test-agent"} for i in range(20)
@@ -216,7 +216,7 @@ async def test_get_history_insufficient_data():
 
         server = MCPServer()
 
-        with patch("driftbase.mcp.server.get_backend") as mock_get_backend:
+        with patch("driftbase.backends.factory.get_backend") as mock_get_backend:
             mock_backend = Mock()
             mock_backend.get_all_runs.return_value = [
                 {"id": f"run-{i}", "session_id": "test-agent"} for i in range(30)

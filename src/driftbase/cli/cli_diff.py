@@ -153,6 +153,11 @@ def _apply_filters_to_runs(
     "--json", "json_output", is_flag=True, help="Machine-readable output for CI."
 )
 @click.option(
+    "--ci",
+    is_flag=True,
+    help="CI mode: JSON output + fail on drift (equivalent to --json --fail-on-drift).",
+)
+@click.option(
     "--remote", is_flag=True, help="Compute diff using the Driftbase Pro cloud engine."
 )
 @click.option(
@@ -209,6 +214,7 @@ def cmd_diff(
     environment: str | None,
     threshold: float,
     json_output: bool,
+    ci: bool,
     remote: bool,
     since: str | None,
     between: str | None,
@@ -231,6 +237,9 @@ def cmd_diff(
       driftbase diff --last 50 --against v2.0
 
       # CI mode: fail if drift detected
+      driftbase diff v1.0 v2.0 --ci
+
+      # Alternative: explicit flags
       driftbase diff v1.0 v2.0 --json --fail-on-drift
 
       # Filter by time and outcome
@@ -241,6 +250,11 @@ def cmd_diff(
     """
     console: Console = ctx.obj["console"]
     use_color = not console.no_color
+
+    # Handle --ci flag: automatically enable JSON output and fail-on-drift
+    if ci:
+        json_output = True
+        fail_on_drift = True
 
     # Handle Cloud Diff
     if remote:

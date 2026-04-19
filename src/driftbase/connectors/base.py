@@ -58,10 +58,21 @@ class TraceConnector(ABC):
         """
 
     def sync(
-        self, config: ConnectorConfig, db_path: str, dry_run: bool = False
+        self,
+        config: ConnectorConfig,
+        db_path: str,
+        dry_run: bool = False,
+        incremental: bool = True,
     ) -> SyncResult:
         """
-        Full sync: fetch → map → write to SQLite.
+        Full or incremental sync: fetch → map → write to SQLite.
+
+        Args:
+            config: Connector configuration
+            db_path: Path to database (unused, kept for compatibility)
+            dry_run: If True, don't write to database
+            incremental: If True, use last_sync_at to fetch only new traces
+
         Never raises. Returns SyncResult with counts and any errors.
         """
         from driftbase.backends.factory import get_backend
@@ -74,6 +85,30 @@ class TraceConnector(ABC):
                 success=False,
                 errors=["Invalid credentials. Check your API keys."],
             )
+
+        # Get backend
+        try:
+            backend = get_backend()
+        except Exception as e:
+            logger.error(f"Failed to get backend: {e}")
+            return SyncResult(
+                success=False,
+                errors=[f"Failed to get backend: {str(e)}"],
+            )
+
+        # Check for last sync (incremental mode)
+        last_sync_data = None
+        if incremental and not config.since:
+            try:
+                last_sync_data = backend.get_connector_sync(
+                    source=self.__class__.__name__.lower().replace("connector", ""),
+                    project_name=config.project_name or "",
+                )
+                if last_sync_data and last_sync_data.get("last_sync_at"):
+                    config.since = last_sync_data["last_sync_at"]
+                    logger.info(f"Incremental sync from {config.since}")
+            except Exception as e:
+                logger.debug(f"Failed to get last sync: {e}")
 
         # Fetch traces
         try:
@@ -139,6 +174,24 @@ class TraceConnector(ABC):
                     skipped=skipped_count,
                     errors=[f"Failed to write runs: {str(e)}"],
                 )
+
+        # Update sync metadata (for incremental sync)
+        if not dry_run and runs_to_write:
+            try:
+                source_name = self.__class__.__name__.lower().replace("connector", "")
+                last_external_id = (
+                    runs_to_write[-1].get("external_id") if runs_to_write else None
+                )
+
+                backend.write_connector_sync(
+                    source=source_name,
+                    project_name=config.project_name or "",
+                    agent_id=config.agent_id or "",
+                    runs_imported=len(runs_to_write),
+                    last_external_id=last_external_id,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to update sync metadata: {e}")
 
         return SyncResult(
             success=True,

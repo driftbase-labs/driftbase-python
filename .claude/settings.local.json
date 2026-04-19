@@ -28,7 +28,12 @@
       "Bash(driftbase connect:*)",
       "Bash(unset:*)",
       "Bash(git checkout:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "Bash(driftbase --version:*)",
+      "Bash(driftbase:*)",
+      "Bash(timeout 3 driftbase mcp:*)",
+      "Bash(chmod:*)",
+      "Bash(./scripts/verify_install.sh:*)"
     ]
   }
 }

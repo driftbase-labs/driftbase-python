@@ -713,6 +713,11 @@ def show_cost_impact(
     is_flag=True,
     help="Show detailed technical output (disables narrative mode)",
 )
+@click.option(
+    "--offline",
+    is_flag=True,
+    help="Confirm offline mode (demo already runs 100%% locally with zero dependencies)",
+)
 @click.pass_context
 def cmd_demo(
     ctx: click.Context,
@@ -726,6 +731,7 @@ def cmd_demo(
     cost_model: str | None,
     volume: int,
     verbose: bool,
+    offline: bool,
 ) -> None:
     """Generate synthetic runs to explore Driftbase.
 
@@ -765,6 +771,23 @@ def cmd_demo(
       driftbase demo --cost-model budget --volume 50000
     """
     console: Console = ctx.obj["console"]
+
+    # Offline mode confirmation
+    if offline:
+        console.print(
+            Panel(
+                "[bold #4ADE80]Offline Mode Confirmed[/]\n\n"
+                "The demo command runs 100% locally with zero external dependencies:\n"
+                "  ✓ No network requests\n"
+                "  ✓ No cloud services\n"
+                "  ✓ All data stored in local SQLite database\n"
+                "  ✓ Synthetic data generation runs entirely in-process\n\n"
+                "[dim]Your data never leaves your machine.[/]",
+                title="🔒 Privacy First",
+                border_style="#4ADE80",
+            )
+        )
+        console.print()
 
     # Handle scenario template generation
     if init_scenario:

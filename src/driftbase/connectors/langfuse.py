@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -10,7 +11,9 @@ from uuid import uuid4
 
 from driftbase.connectors.base import ConnectorConfig, TraceConnector
 from driftbase.connectors.mapper import (
+    compute_hash,
     compute_verbosity_ratio,
+    detect_retry_patterns,
     extract_tool_sequence,
     infer_semantic_cluster,
 )
@@ -150,8 +153,14 @@ class LangFuseConnector(TraceConnector):
     def map_trace(self, trace: dict, config: ConnectorConfig) -> dict | None:
         """Map LangFuse trace to Driftbase schema."""
         try:
-            # Extract version from trace metadata
-            version = trace.get("release") or trace.get("version")
+            # Extract version from trace metadata (try multiple fields)
+            version = (
+                trace.get("release")
+                or trace.get("version")
+                or trace.get("metadata", {}).get("deployment_version")
+                or trace.get("metadata", {}).get("version")
+                or trace.get("metadata", {}).get("release")
+            )
 
             if not version:
                 # Fall back to epoch label based on timestamp
@@ -166,21 +175,52 @@ class LangFuseConnector(TraceConnector):
                 else:
                     version = "unknown"
 
-            # Compute latency from metadata or observations
-            latency_ms = 0
+            # Extract metadata early for various field extraction
+            metadata = trace.get("metadata", {})
+
+            # Extract environment from metadata
+            environment = metadata.get("environment", "production")
+
+            # Extract model information
+            model = trace.get("model") or metadata.get("model") or "unknown"
+
+            # Compute latency - prefer metadata.latency_ms, then trace.latency, then calculate from timestamps
+            latency_ms_from_metadata = metadata.get("latency_ms")
+            if latency_ms_from_metadata is not None:
+                latency_ms = int(latency_ms_from_metadata)
+            else:
+                latency_raw = trace.get("latency")
+                if latency_raw is not None:
+                    latency_ms = int(float(latency_raw))
+                else:
+                    # Fall back to timestamp calculation
+                    latency_ms = 0
+
             start_dt = None
             end_dt = None
 
-            timestamp = trace.get("timestamp")
+            timestamp = trace.get("timestamp") or trace.get("startTime")
             if timestamp:
                 if isinstance(timestamp, str):
                     start_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
                 else:
                     start_dt = timestamp
 
-            # Try to get end time from observations or add duration
+            # Try to get end time from observations, trace.endTime, or calculate from latency
             observations = trace.get("observations", [])
-            if observations:
+
+            # Check trace-level endTime first
+            end_time_field = trace.get("endTime") or trace.get("end_time")
+            if end_time_field:
+                if isinstance(end_time_field, str):
+                    end_dt = datetime.fromisoformat(
+                        end_time_field.replace("Z", "+00:00")
+                    )
+                else:
+                    end_dt = end_time_field
+
+            # If no trace-level end time, check observations
+            if not end_dt and observations:
                 # Get latest observation end time
                 for obs in observations:
                     obs_end = obs.get("endTime") or obs.get("end_time")
@@ -194,12 +234,16 @@ class LangFuseConnector(TraceConnector):
                         if not end_dt or obs_end_dt > end_dt:
                             end_dt = obs_end_dt
 
-            if not end_dt and start_dt:
+            # Calculate latency from timestamps if not already set
+            if latency_ms == 0 and start_dt and end_dt:
+                latency_ms = int((end_dt - start_dt).total_seconds() * 1000)
+
+            # If still no end time, calculate from start + latency
+            if not end_dt and start_dt and latency_ms > 0:
+                end_dt = start_dt + timedelta(milliseconds=latency_ms)
+            elif not end_dt and start_dt:
                 # Use current time as fallback
                 end_dt = datetime.now(tz=timezone.utc)
-
-            if start_dt and end_dt:
-                latency_ms = int((end_dt - start_dt).total_seconds() * 1000)
 
             # Extract tool sequence from observations
             tool_observations = [
@@ -208,6 +252,43 @@ class LangFuseConnector(TraceConnector):
             tool_sequence_json, tool_call_count = extract_tool_sequence(
                 tool_observations
             )
+
+            # Detect retry patterns from tool observations
+            retry_count = detect_retry_patterns(tool_observations)
+
+            # Infer loop count from observation structure
+            # Count distinct "generations" or reasoning steps as loop iterations
+            loop_count = max(
+                1,
+                len(
+                    [
+                        obs
+                        for obs in observations
+                        if obs.get("type") in ["generation", "span"]
+                    ]
+                ),
+            )
+
+            # Compute time to first tool from observations
+            time_to_first_tool_ms = 0
+            if tool_observations and start_dt:
+                first_tool_time = None
+                for obs in tool_observations:
+                    obs_start = obs.get("startTime") or obs.get("start_time")
+                    if obs_start:
+                        if isinstance(obs_start, str):
+                            obs_start_dt = datetime.fromisoformat(
+                                obs_start.replace("Z", "+00:00")
+                            )
+                        else:
+                            obs_start_dt = obs_start
+                        if not first_tool_time or obs_start_dt < first_tool_time:
+                            first_tool_time = obs_start_dt
+
+                if first_tool_time:
+                    time_to_first_tool_ms = int(
+                        (first_tool_time - start_dt).total_seconds() * 1000
+                    )
 
             # Token counts from observations
             prompt_tokens = 0
@@ -218,18 +299,51 @@ class LangFuseConnector(TraceConnector):
                     prompt_tokens += usage.get("input", 0) or 0
                     completion_tokens += usage.get("output", 0) or 0
 
-            # Error detection
+            # Extract input and output for hashing and raw storage
+            input_data = trace.get("input")
+            output_data = trace.get("output")
+
+            # Serialize to JSON strings
+            raw_prompt = json.dumps(input_data) if input_data else ""
+            output_str = json.dumps(output_data) if output_data else ""
+
+            # Compute hashes for fingerprinting
+            task_input_hash = compute_hash(raw_prompt)
+            output_structure_hash = compute_hash(output_str)
+
+            # Error detection - check multiple sources like Cloud does
             error = False
             error_message = None
-            for obs in observations:
-                if obs.get("level") == "ERROR":
+
+            # Check metadata.error first
+            metadata_error = metadata.get("error")
+            if metadata_error is True:
+                error = True
+            elif metadata_error is False:
+                error = False
+            else:
+                # Check trace-level status and level
+                status = trace.get("status", "success") or "success"
+                level = trace.get("level", "") or ""
+
+                if (
+                    status in ("error", "ERROR")
+                    or level in ("ERROR", "error")
+                    or output_str
+                    and "Error:" in output_str
+                ):
                     error = True
-                    error_message = obs.get("statusMessage") or obs.get("output")
-                    break
+                # Check observations for ERROR level
+                else:
+                    for obs in observations:
+                        if obs.get("level") == "ERROR":
+                            error = True
+                            error_message = obs.get("statusMessage") or obs.get(
+                                "output"
+                            )
+                            break
 
             # Semantic cluster
-            output = trace.get("output") or ""
-            output_str = str(output) if output else ""
             semantic_cluster = infer_semantic_cluster(output_str, error)
 
             # Session ID
@@ -249,7 +363,8 @@ class LangFuseConnector(TraceConnector):
                 "source": "langfuse",
                 "session_id": session_id,
                 "deployment_version": version,
-                "environment": "production",
+                "environment": environment,  # Extracted from metadata
+                "model": model,  # Extracted from trace or metadata
                 "started_at": start_dt,
                 "completed_at": end_dt,
                 "latency_ms": latency_ms,
@@ -259,18 +374,20 @@ class LangFuseConnector(TraceConnector):
                 "tool_sequence": tool_sequence_json,
                 "tool_call_sequence": tool_sequence_json,
                 "tool_call_count": tool_call_count,
-                "loop_count": 0,  # Cannot infer from LangFuse
-                "time_to_first_tool_ms": 0,  # Cannot infer
+                "loop_count": loop_count,
+                "time_to_first_tool_ms": max(
+                    0, time_to_first_tool_ms
+                ),  # Ensure non-negative
                 "output_length": len(output_str),
                 "semantic_cluster": semantic_cluster,
                 "verbosity_ratio": compute_verbosity_ratio(
                     prompt_tokens, completion_tokens
                 ),
-                "task_input_hash": "",  # No input hash for imports
-                "output_structure_hash": "",  # No structure hash
+                "task_input_hash": task_input_hash,  # SHA256 hash of input
+                "output_structure_hash": output_structure_hash,  # SHA256 hash of output
                 "raw_output": output_str[:5000],  # Truncate to 5000 chars
-                "raw_prompt": "",
-                "retry_count": 0,
+                "raw_prompt": raw_prompt[:5000],  # Truncate to 5000 chars
+                "retry_count": retry_count,
                 "sensitivity": None,
             }
         except Exception as e:

@@ -532,6 +532,23 @@ def cmd_diagnose(
     console: Console = ctx.obj["console"]
     backend = get_backend()
 
+    # Show helpful introduction
+    if version is None:
+        console.print(
+            Panel(
+                "[bold]Behavioral Diagnostics[/]\n\n"
+                "This command analyzes your agent's behavior to detect changes and regressions.\n"
+                "It will:\n"
+                "  • Auto-detect behavioral shifts across time\n"
+                "  • Identify regression patterns (latency, cost, loops, etc.)\n"
+                "  • Provide actionable recommendations\n\n"
+                "[dim]Tip: Specify a version to compare: driftbase diagnose v2.0 --compare v1.0[/]",
+                title="🔬 Diagnose",
+                border_style="#8B5CF6",
+            )
+        )
+        console.print()
+
     # If no version provided, run epoch-based diagnostic
     if version is None:
         _diagnose_behavioral_shift(console, backend)
