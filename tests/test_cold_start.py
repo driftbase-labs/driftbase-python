@@ -82,63 +82,6 @@ def test_estimate_days_remaining_returns_none_with_insufficient_data():
     assert result is None
 
 
-def test_langsmith_list_projects_returns_empty_on_error():
-    """LangSmith list_projects() returns [] on error, never raises."""
-    from driftbase.connectors.langsmith import LANGSMITH_AVAILABLE, LangSmithConnector
-
-    if not LANGSMITH_AVAILABLE:
-        pytest.skip("LangSmith not installed")
-
-    with (
-        patch.dict(os.environ, {"LANGSMITH_API_KEY": "test-key"}),
-        patch("driftbase.connectors.langsmith.LangSmithClient") as mock_client,
-    ):
-        mock_client.return_value.list_projects.side_effect = Exception("API error")
-
-        connector = LangSmithConnector()
-        projects = connector.list_projects()
-
-        assert projects == []
-
-
-def test_langsmith_list_projects_returns_sorted_by_run_count():
-    """LangSmith list_projects() returns sorted list by run_count desc."""
-    from driftbase.connectors.langsmith import LANGSMITH_AVAILABLE, LangSmithConnector
-
-    if not LANGSMITH_AVAILABLE:
-        pytest.skip("LangSmith not installed")
-
-    with (
-        patch.dict(os.environ, {"LANGSMITH_API_KEY": "test-key"}),
-        patch("driftbase.connectors.langsmith.LangSmithClient") as mock_client,
-    ):
-        # Mock projects
-        proj1 = MagicMock()
-        proj1.name = "project-a"
-        proj1.run_count = 100
-
-        proj2 = MagicMock()
-        proj2.name = "project-b"
-        proj2.run_count = 500
-
-        proj3 = MagicMock()
-        proj3.name = "project-c"
-        proj3.run_count = 50
-
-        mock_client.return_value.list_projects.return_value = [proj1, proj2, proj3]
-        mock_client.return_value.list_runs.return_value = []
-
-        connector = LangSmithConnector()
-        projects = connector.list_projects()
-
-        # Should be sorted descending by run_count
-        assert len(projects) == 3
-        assert projects[0]["name"] == "project-b"
-        assert projects[0]["run_count"] == 500
-        assert projects[1]["name"] == "project-a"
-        assert projects[2]["name"] == "project-c"
-
-
 def test_langfuse_list_projects_returns_empty_on_error():
     """LangFuse list_projects() returns [] on error, never raises."""
     from driftbase.connectors.langfuse import LANGFUSE_AVAILABLE, LangFuseConnector

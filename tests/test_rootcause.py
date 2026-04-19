@@ -313,57 +313,6 @@ class TestDatabaseRoundTrip:
             assert events[0]["current"] == "gpt-4o-2024-03"  # First value kept
 
 
-class TestTrackIntegration:
-    """Tests for @track decorator integration."""
-
-    def test_track_changes_parameter_persisted(self):
-        """@track changes= parameter: persisted to SQLite on first run."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = os.path.join(tmpdir, "test.db")
-            os.environ["DRIFTBASE_DB_PATH"] = db_path
-            os.environ["DRIFTBASE_SESSION_ID"] = "test_agent"
-
-            try:
-                from driftbase.sdk.track import _change_events_persisted, track
-
-                # Clear global state to ensure clean test
-                _change_events_persisted.clear()
-
-                @track(
-                    version="v2.0",
-                    changes={
-                        "model_version": "gpt-4o-2024-11",
-                        "prompt_hash": "sha256:abc123",
-                    },
-                )
-                def test_function(x: int) -> int:
-                    return x + 1
-
-                result = test_function(5)
-                assert result == 6
-
-                # Drain queue
-                from driftbase.backends.factory import get_backend
-                from driftbase.local.local_store import drain_local_store
-
-                drain_local_store(timeout=2.0)
-
-                # Check if changes were persisted - use factory to get same backend instance
-                backend = get_backend()
-                events = backend.get_change_events("test_agent", "v2.0")
-
-                assert len(events) >= 2
-                change_types = {e["change_type"] for e in events}
-                assert "model_version" in change_types
-                assert "prompt_hash" in change_types
-
-            finally:
-                if "DRIFTBASE_DB_PATH" in os.environ:
-                    del os.environ["DRIFTBASE_DB_PATH"]
-                if "DRIFTBASE_SESSION_ID" in os.environ:
-                    del os.environ["DRIFTBASE_SESSION_ID"]
-
-
 class TestRollbackSuggestion:
     """Tests for rollback suggestion functionality."""
 

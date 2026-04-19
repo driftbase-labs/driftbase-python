@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "driftbase"
 dynamic = ["version"]
-description = "Behavioral drift monitoring for AI agents."
+description = "Behavioral drift detection for AI agents using Langfuse traces."
 readme = "README.md"
 requires-python = ">=3.10"
 license-files = ["LICENSE"]
@@ -28,6 +28,7 @@ dependencies = [
     "scipy>=1.10.0",
     "rich>=13.0.0",
     "scikit-learn>=1.3.0",
+    "langfuse>=2.0.0",
 ]
 
 [project.urls]
@@ -36,15 +37,6 @@ Documentation = "https://driftbase.io/docs"
 Repository = "https://github.com/driftbase-labs/driftbase-python"
 
 [project.optional-dependencies]
-semantic = [
-    "light-embed>=1.0.0",
-]
-langsmith = [
-    "langsmith>=0.1.0",
-]
-langfuse = [
-    "langfuse>=2.0.0",
-]
 mcp = [
     "mcp>=1.0.0",
 ]
@@ -52,7 +44,6 @@ dev = [
     "pre-commit>=3.5.0",
     "pytest>=7.0.0",
     "ruff>=0.15.0",
-    "langchain-core>=0.1.0",
 ]
 
 [project.scripts]

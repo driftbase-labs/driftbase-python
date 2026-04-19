@@ -12,8 +12,11 @@ Driftbase = institutional memory for AI agent behavior.
 
 Core value: "Always know exactly when your agent changed and why."
 
+**CRITICAL: Driftbase is a drift detection layer, NOT a tracing tool.**
+We read traces from Langfuse. We don't capture them.
+
 Primary user journey:
-  Add @track() → run agent normally → when something feels wrong →
+  Connect Langfuse → driftbase connect → when something feels wrong →
   driftbase diagnose → immediate answer with root cause attribution.
 
 Secondary user journey:
@@ -23,14 +26,15 @@ Tertiary user journey:
   Pre-deploy check → driftbase diff v1 v2 → verdict + CI gate.
 
 Free SDK positioning:
-- @track() — zero config, version is optional, automatic weekly epochs
-- diagnose — reach for it when something feels wrong (no prior setup needed)
+- Langfuse connector — zero config, instant import of existing traces
+- diagnose — reach for it when something feels wrong (no prior setup needed, works on historical data)
 - history — longitudinal arc of agent behavior over its recorded lifetime
 - diff — explicit version comparison with statistical verdict
 - Monitoring, real-time alerting = Pro tier only
 
 Key insight: the longer a team uses Driftbase, the more valuable their
-history becomes. This is the moat. Build toward it.
+history becomes. This is the moat. Langfuse users get instant value from
+existing traces on day 1 → zero cold start.
 
 ## Role
 Senior Python backend engineer. Focus on correctness, signal quality, and
@@ -104,14 +108,14 @@ and approved it for open source release.
 ---
 
 ## Stack
-- Language: Python 3.9+ (tested on 3.9–3.11)
+- Language: Python 3.10+ (tested on 3.10–3.12)
 - Storage: SQLite only (via SQLModel). No PostgreSQL, no cloud storage in this repo.
 - Config: pydantic-settings (DRIFTBASE_* env vars) + layered config
   (env → .driftbase/config → pyproject.toml → defaults)
 - Math: numpy, scipy, scikit-learn — core dependencies, always available
 - CLI: Click + Rich
 - Packaging: setuptools_scm (version from git tags), pyproject.toml
-- Extras: [semantic] light-embed · [dev] pre-commit/pytest/ruff
+- Extras: [mcp] MCP server · [dev] pre-commit/pytest/ruff
 - Entry point: driftbase.cli.main:cli registered as driftbase command
 
 ## Skills
@@ -124,16 +128,17 @@ Read the relevant skill BEFORE writing any code:
 - Cutting a release, tagging, building, uploading to PyPI → .claude/skills/release.md
 
 ## Architecture mental model
-Capture → Store → Fingerprint → Diff → Report / Gate / Alert
+Import → Store → Fingerprint → Diff → Report / Gate / Alert
 
 Data flow:
-1. Runtime: @track decorator → framework tracer → queue → SQLite
+1. Import: driftbase connect → Langfuse connector → map traces → SQLite
 2. Analysis: CLI diagnose → epoch_detector → detect shifts → attribute cause
 3. Analysis: CLI diff → load runs → fingerprint → calibrate → compute drift → verdict
 
 Key modules:
-- sdk/track.py — @track decorator, version resolution (explicit → env → git tag → epoch), framework auto-detection, payload building
-- local/local_store.py — non-blocking queue, batched SQLite writes
+- connectors/langfuse.py — Langfuse trace import, trace-to-run mapping
+- connectors/mapper.py — Generic trace mapping logic (heuristics for decision outcomes, tool extraction, semantic clustering)
+- local/local_store.py — SQLite schema, batched writes
 - local/epoch_detector.py — automatic behavioral epoch detection using sliding window JSD, TTL-cached in SQLite
 - local/fingerprinter.py — aggregates runs into BehavioralFingerprint per version
 - local/diff.py — compute_drift(), JSD-based scoring, weighted composite
@@ -146,8 +151,7 @@ Key modules:
 - local/hypothesis_engine.py — YAML rules → observations + recommendations
 - verdict.py — DriftReport → SHIP / MONITOR / REVIEW / BLOCK + exit codes
 - backends/ — abstract StorageBackend + SQLite implementation, factory pattern
-- cli/ — Click commands. Primary: diagnose, history. Secondary: diff, demo, inspect, doctor, chart, compare, budgets, baseline, changes, deploy, cost, testset
-- integrations/ — framework tracers (LangChain, LangGraph, OpenAI, AutoGen, CrewAI, smolagents, Haystack, DSPy, LlamaIndex)
+- cli/ — Click commands. Primary: connect, diagnose, history. Secondary: diff, init, inspect, doctor, budgets, changes, export, prune, testset, mcp
 
 ## Never do
 - Don't use async DB calls — all storage in this repo is synchronous SQLite
@@ -188,15 +192,15 @@ Key modules:
   uploads. --skip-existing treats this as success instead of failure.
   Always verify with `pip index versions driftbase` after uploading.
 
-## Version resolution in @track()
+## Version resolution
 
-_resolve_version() follows this priority order:
-1. Explicit version argument (if provided)
-2. DRIFTBASE_VERSION environment variable
-3. Git tag at HEAD (subprocess, 2s timeout, never raises)
-4. Time-based epoch: epoch-YYYY-MM-DD (Monday of current week)
+Versions are extracted from Langfuse traces using these sources (in order of precedence):
+1. `release` field in Langfuse trace (if present)
+2. `version:X.Y.Z` tag in Langfuse trace
+3. `DRIFTBASE_VERSION` environment variable (fallback if trace has no version info)
+4. Time-based epoch: epoch-YYYY-MM-DD (Monday of current week, fallback for unversioned traces)
 
-Never bypass this. Never hardcode a version in SDK internals.
+Never hardcode versions in analysis code. Always use what's in the trace.
 
 ## Scoring system
 Weights and thresholds are never hardcoded. Full pipeline:
@@ -243,7 +247,7 @@ Stable contract — do not alter field names without explicit instruction.
 - verbosity_ratio (t-test on output_length / prompt_tokens)
 - output_length (t-test on completion_tokens)
 - time_to_first_tool (t-test on time_to_first_tool_ms)
-- semantic_drift (cosine distance on output embeddings, requires [semantic])
+- semantic_drift (JSD on heuristic semantic cluster distribution: resolved/escalated/error/unknown)
 - tool_sequence_transitions (JSD on bigram transition probabilities)
 
 ## Development commands
@@ -266,8 +270,7 @@ python -m build
 
 # Install in editable mode
 pip install -e .
-pip install -e '.[semantic]'
-pip install -e '.[dev]'
+pip install -e '.[dev]'  # For development with pre-commit, pytest, ruff
 
 ## Tests
 - pytest + pytest-asyncio

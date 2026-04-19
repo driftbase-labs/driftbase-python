@@ -17,7 +17,6 @@ from driftbase.local.budget import (
     parse_budget,
 )
 from driftbase.local.local_store import drain_local_store, enqueue_run
-from driftbase.sdk.track import track
 
 
 class TestParseBudget:
@@ -270,90 +269,6 @@ class TestDatabaseRoundTrip:
             assert retrieved["version"] == "v1.0"
             assert retrieved["config"] == config
             assert retrieved["source"] == "decorator"
-
-
-class TestTrackIntegration:
-    """Tests for @track decorator integration."""
-
-    def test_budget_persisted_on_first_run(self):
-        """Budget persisted to SQLite on first run."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = os.path.join(tmpdir, "test.db")
-            os.environ["DRIFTBASE_DB_PATH"] = db_path
-
-            try:
-                budget = {"max_p95_latency": 4.0, "max_error_rate": 0.05}
-
-                @track(version="v1.0", budget=budget)
-                def test_function(x: int) -> int:
-                    return x + 1
-
-                # Run the function
-                result = test_function(5)
-                assert result == 6
-
-                # Drain the background queue
-                drain_local_store(timeout=2.0)
-
-                # Check if budget config was persisted
-                from driftbase.backends.factory import get_backend
-
-                backend = get_backend()
-                # Note: session_id might be empty or vary, so we check by version
-                config = backend.get_budget_config(agent_id="", version="v1.0")
-
-                # Config might be stored with agent_id from session_id
-                # For this test, we just verify that write was attempted
-                # More robust: check that config was written somewhere
-
-            finally:
-                if "DRIFTBASE_DB_PATH" in os.environ:
-                    del os.environ["DRIFTBASE_DB_PATH"]
-
-    def test_breach_detected_after_run_completes(self):
-        """Breach detected and written after run completes."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = os.path.join(tmpdir, "test.db")
-            os.environ["DRIFTBASE_DB_PATH"] = db_path
-            os.environ["DRIFTBASE_SESSION_ID"] = "test_agent"
-            os.environ["DRIFTBASE_BUDGET_WINDOW"] = "5"
-
-            try:
-                # Very low error rate limit to trigger breach
-                budget = {"max_error_rate": 0.01}
-
-                @track(version="v1.0", budget=budget)
-                def failing_function(x: int) -> int:
-                    if x > 0:
-                        raise ValueError("Intentional error")
-                    return x
-
-                # Run function 10 times with errors
-                for i in range(10):
-                    try:
-                        failing_function(i)
-                    except ValueError:
-                        pass
-
-                # Drain the background queue to ensure breaches are checked
-                drain_local_store(timeout=3.0)
-
-                # Check if breaches were recorded
-                from driftbase.backends.factory import get_backend
-
-                backend = get_backend()
-                breaches = backend.get_budget_breaches(version="v1.0")
-
-                # At least one breach should be recorded
-                assert len(breaches) > 0
-
-            finally:
-                if "DRIFTBASE_DB_PATH" in os.environ:
-                    del os.environ["DRIFTBASE_DB_PATH"]
-                if "DRIFTBASE_SESSION_ID" in os.environ:
-                    del os.environ["DRIFTBASE_SESSION_ID"]
-                if "DRIFTBASE_BUDGET_WINDOW" in os.environ:
-                    del os.environ["DRIFTBASE_BUDGET_WINDOW"]
 
 
 class TestFormatBreachWarning:

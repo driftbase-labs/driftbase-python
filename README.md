@@ -1,26 +1,22 @@
 # Driftbase
 
-## Your AI agent changed. Do you know when?
+**Behavioral drift detection for AI agents using your Langfuse traces.**
 
-AI agents drift. A prompt update, a model version bump, a RAG reindex —
-any of these can shift how your agent makes decisions, without triggering
-a single test failure.
+AI agents drift. A prompt update, a model swap, a RAG reindex — any of these can shift how your agent makes decisions, without triggering a single test failure.
 
-Driftbase tells you when your agent changed, what caused it, and whether
-it got better or worse.
+Driftbase tells you **when** your agent changed, **what** caused it, and whether it got **better or worse** — by analyzing the traces you're already collecting in Langfuse.
 
 ```bash
 pip install driftbase
 ```
 
-Add one line to your agent:
+Connect your Langfuse instance:
 
-```python
-from driftbase import track
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
 
-@track()  # version is optional — Driftbase figures it out
-def run_agent(query):
-    return agent.invoke(query)
+driftbase connect
 ```
 
 Then, when something feels off:
@@ -33,58 +29,79 @@ driftbase diagnose
 DRIFTBASE DIAGNOSTIC
 
   Behavioral shift detected 11 days ago (2026-03-20)
-  Most likely cause: prompt change recorded on 2026-03-19
+  Most likely cause: prompt change in release v2.1
   Affected:          escalation rate 4% → 19%, latency +1.2s
+
+  Recommendation:    REVIEW before production deploy
 ```
 
-No test sets to write. No versions to declare. No configuration.
-Just answers.
+No agent code changes. No instrumentation. Just instant answers from your existing Langfuse data.
 
 [![PyPI version](https://badge.fury.io/py/driftbase.svg)](https://pypi.org/project/driftbase/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
 ## How it works
 
-Driftbase observes your agent's behavior across runs and detects when
-something changes.
+Driftbase is a **drift detection layer** on top of Langfuse. You already trace your agent with Langfuse — Driftbase reads those traces and detects behavioral drift.
 
-**Instrument once**
-Add `@track()` to your agent's entry point. Driftbase records behavioral
-signals on every run — tool calls, outcomes, latency, errors — to a local
-SQLite database. Zero network calls. Zero configuration.
+### 1. You're already tracing with Langfuse
 
-**Run when something feels wrong**
-`driftbase diagnose` scans your agent's full run history, detects behavioral
-shifts automatically, and correlates them with recorded change events.
+Your AI agent is instrumented with Langfuse (via LangChain, LangGraph, OpenAI, or any other framework). Traces flow into Langfuse automatically.
 
-**Understand the full arc**
-`driftbase history` shows how your agent's behavior evolved over its entire
-recorded lifetime — which epochs were stable, which shifted, and what changed
-at each breakpoint.
+### 2. Connect Driftbase to Langfuse
 
-**Gate deploys**
-`driftbase diff v1.0 v2.0` compares two explicit versions with a statistical
-drift score and SHIP / MONITOR / REVIEW / BLOCK verdict — for teams that want
-explicit pre-deploy checks.
+Driftbase pulls historical traces from Langfuse and stores them locally for analysis:
 
-### Core Value Proposition
+```bash
+driftbase connect
+```
 
-| What You Get | Why It Matters |
-|--------------|----------------|
-| **Self-calibrating drift scores** | Weights and thresholds adapt to your agent's use case and baseline behavior automatically — no configuration needed |
-| **Behavioral budgets** | Define acceptable ranges per dimension upfront. Breach fires immediately, before a full diff is needed |
-| **Root cause pinpointing** | Correlates drift with recorded change events (model update, prompt change, RAG snapshot) and surfaces the most likely cause with confidence level |
-| **Rollback suggestion** | When regression is unambiguous, surfaces the specific prior version to target in your deploy pipeline |
-| **Financial impact analysis** | Translate token bloat into €/$ cost deltas for leadership |
-| **Zero-egress architecture** | All data stays on your machine — no US servers, GDPR-compliant by design |
-| **Framework-agnostic** | Auto-detects LangChain, LangGraph, OpenAI, AutoGen, CrewAI, smolagents, Haystack, DSPy, LlamaIndex — zero config |
+This imports your traces into a local SQLite database (`~/.driftbase/runs.db`). All analysis runs on your machine. No data leaves your environment.
+
+### 3. Detect drift
+
+**When something feels wrong:**
+```bash
+driftbase diagnose
+```
+
+Scans your full trace history, detects behavioral shifts, and correlates them with version changes.
+
+**Compare explicit versions:**
+```bash
+driftbase diff v1.0 v2.0
+```
+
+Produces a statistical drift score and a deployment verdict (SHIP / MONITOR / REVIEW / BLOCK).
+
+**View behavioral history:**
+```bash
+driftbase history
+```
+
+Shows how your agent's behavior evolved over time — which epochs were stable, which shifted, and what changed at each breakpoint.
 
 ---
 
-## The 60-Second Quickstart
+## Core Value Proposition
+
+| What You Get | Why It Matters |
+|--------------|----------------|
+| **Zero cold start** | Start detecting drift from day 1 using your existing Langfuse traces — no SDK to add, no baseline to collect |
+| **Self-calibrating drift scores** | Weights and thresholds adapt to your agent's use case and baseline behavior automatically — no configuration needed |
+| **Behavioral budgets** | Define acceptable ranges per dimension upfront. Breaches fire immediately, before manual drift checks |
+| **Root cause pinpointing** | Correlates drift with version changes and surfaces the most likely cause with confidence level |
+| **Rollback suggestion** | When regression is unambiguous, suggests the specific prior version to roll back to |
+| **Financial impact analysis** | Translate token bloat into €/$ cost deltas for leadership |
+| **Zero-egress architecture** | All data stays on your machine — no US servers, GDPR-compliant by design |
+| **Framework-agnostic** | Works with any framework already traced in Langfuse — LangChain, OpenAI, CrewAI, custom agents |
+
+---
+
+## The 5-Minute Quickstart
 
 ### 1. Install
 
@@ -92,644 +109,295 @@ explicit pre-deploy checks.
 pip install driftbase
 ```
 
-That's it. All analysis features included.
+### 2. Set Langfuse credentials
 
-For semantic drift detection (optional, adds ~50MB):
 ```bash
-pip install 'driftbase[semantic]'
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://cloud.langfuse.com  # optional
 ```
 
-### 2. Run the demo
+Get your keys from [Langfuse Settings → API Keys](https://cloud.langfuse.com).
+
+### 3. Import traces
 
 ```bash
-driftbase demo              # Standard demo (50 runs each)
-driftbase demo --quick      # Fast mode (~5 seconds)
-driftbase demo --interactive  # Step-by-step tutorial
+# Auto-detect and import
+driftbase connect
+
+# Or specify project explicitly
+driftbase connect langfuse --project my-agent --limit 1000
 ```
 
-### 3. Diff the versions
+### 4. Detect drift
 
 ```bash
+# Automatic drift detection
+driftbase diagnose
+
+# Compare specific versions
 driftbase diff v1.0 v2.0
+
+# View behavioral history
+driftbase history
 ```
 
-```plaintext
-────────────────────────────────────────────────
-  DRIFTBASE  v1.0 → v2.0  ·  50 vs 50 runs
-────────────────────────────────────────────────
+**That's it.** You're detecting drift in 5 minutes using traces you already have.
 
-  Overall drift      0.28  [0.24–0.31, 95% CI]
+See [examples/langfuse-quickstart](examples/langfuse-quickstart/) for a complete walkthrough.
 
-  Decisions          0.39  · MODERATE
-    └─ escalation rate jumped from 5% → 17%
-  Latency            0.34  · MODERATE
-    └─ p95 increased 4970ms → 6684ms
-  Errors             0.03  ✓ STABLE
+---
 
-  Calibration
-  ───────────────────────────────────────────
-  Inferred use case   customer_support  (confidence: 0.84)
-  Calibration method  statistical  (baseline n=312)
-  Top dimensions      decision_drift 0.31 · tool_sequence 0.22 · latency 0.18
+## What Driftbase analyzes
 
-╭──────────────── Financial Impact ─────────────────╮
-│ Cost increased by 223.6%. This change will cost   │
-│ an additional €10.46 per 10,000 runs.             │
-╰────────────────────────────────────────────────────╯
+Driftbase computes drift across **12 behavioral dimensions**:
 
-  Root Cause
-  ────────────────────────────────────────────────────────
-  Most likely cause   model version change  (confidence: HIGH)
-                      gpt-4o-2024-03 → gpt-4o-2024-11
-  Affected dims       decision_drift ✓  error_rate ✓  tool_sequence ✓
-  Ruled out           prompt_hash (unchanged)
-  Suggested action    Pin model version explicitly: model="gpt-4o-2024-03"
+1. **Decision drift** — Changes in outcome distribution (resolved/escalated/error)
+2. **Tool sequence** — Pattern changes in tool usage order
+3. **Tool distribution** — Frequency changes in which tools are called
+4. **Latency** — p95 latency shifts
+5. **Error rate** — Proportion of failed runs
+6. **Retry rate** — How often the agent retries operations
+7. **Loop depth** — Changes in iterative reasoning patterns
+8. **Verbosity ratio** — Output length relative to input
+9. **Output length** — Total token count in responses
+10. **Time to first tool** — How quickly the agent starts using tools
+11. **Semantic drift** — Heuristic clustering of output semantics
+12. **Tool transitions** — Changes in tool-to-tool call patterns
 
-  Rollback
-  ────────────────────────────────────────────────────────
-  Suggested version   v1.2
-  Reason              v1.2 was last stable (SHIP) with 312 runs recorded
-  Command             driftbase rollback customer-agent v1.2
+Each dimension is weighted based on your agent's inferred use case (e.g., customer support vs. code generation).
 
-╭──────────────── VERDICT  ⚠ REVIEW ────────────────╮
-│ Significant behavioral drift detected.             │
-│                                                     │
-│ Next steps:                                        │
-│ □ Review prompt changes that removed tool usage   │
-│ □ Check if escalation rate increase is acceptable │
-│ □ Profile latency regression before production    │
-╰────────────────────────────────────────────────────╯
+---
+
+## CLI Commands
+
+### Core Commands
+
+```bash
+# Connect to Langfuse and import traces
+driftbase connect
+
+# Detect drift automatically across all versions
+driftbase diagnose
+
+# Compare two specific versions
+driftbase diff v1.0 v2.0
+
+# View behavioral history over time
+driftbase history
+
+# Interactive setup guide
+driftbase init
+```
+
+### Advanced Commands
+
+```bash
+# Inspect individual runs
+driftbase inspect <run-id>
+
+# Export drift report as JSON
+driftbase export --format json --output report.json
+
+# Set up behavioral budgets
+driftbase budgets set --dimension error_rate --threshold 0.05
+
+# Prune old runs to save space
+driftbase prune --before 2026-01-01
+
+# Health check
+driftbase doctor
 ```
 
 ---
 
-## Instrument Your Code
+## Use Cases
 
-Drop `@track` onto the function that runs your agent. Driftbase auto-detects your framework and captures telemetry with zero additional configuration.
-
-```python
-from driftbase import track
-
-@track()  # version is optional
-def run_agent(user_query: str):
-    # Your agent logic here — unchanged
-    ...
-```
-
-### Full parameter reference
-
-```python
-@track(
-    version="v2.1",                    # Optional. Auto-detected from env var, git tag, or weekly epoch.
-    environment="production",          # Optional. Label for filtering (staging/prod/etc).
-
-    # Record what changed at deploy time — enables root cause pinpointing
-    changes={
-        "model_version": "gpt-4o-2024-11",
-        "prompt_hash": "sha256:abc123...",
-        "rag_snapshot": "snapshot-2024-03-21",
-    },
-
-    # Define acceptable ranges — breach fires immediately, before a full diff
-    budget={
-        "max_p95_latency": 4.0,        # seconds
-        "max_error_rate": 0.05,        # 5%
-        "max_escalation_rate": 0.20,   # 20%
-        "min_resolution_rate": 0.70,   # 70%
-        "max_retry_rate": 0.10,
-        "max_loop_depth": 5.0,
-    },
-
-    # Optional. Default: "standard". Adjusts detection sensitivity.
-    # strict = catches more, higher false positive rate
-    # relaxed = only flags clear regressions
-    sensitivity="strict",
-)
-def run_agent(user_query: str):
-    ...
-```
-
-All parameters are optional. `@track()` with no arguments is all you need to start.
-
-### Version Resolution
-
-When `version` is not provided, Driftbase uses:
-1. `DRIFTBASE_VERSION` environment variable
-2. Git tag at HEAD (if repository has a tag)
-3. Time-based epoch: `epoch-YYYY-MM-DD` (Monday of current week)
-
-This means you get automatic behavioral epochs without declaring versions explicitly.
-
----
-
-## Behavioral Budgets
-
-Budgets are hard limits on absolute dimension values. They fire immediately when a rolling average breaches a limit — no full diff needed. Independent from drift scoring.
-
-```python
-@track(
-    version="v2.0",
-    budget={
-        "max_p95_latency": 4.0,
-        "max_error_rate": 0.05,
-        "max_escalation_rate": 0.20,
-        "min_resolution_rate": 0.70,
-    }
-)
-def my_agent(query: str) -> str:
-    ...
-```
-
-Breach detection activates after 5 runs. Uses a rolling window of the last 10 runs (configurable via `DRIFTBASE_BUDGET_WINDOW`). A single slow run does not trigger a breach — the window smooths noise.
-
-**Supported budget keys:**
-
-| Key | Dimension |
-|-----|-----------|
-| `max_p95_latency` | latency_p95 (seconds) |
-| `max_p50_latency` | latency_p50 (seconds) |
-| `max_error_rate` | error_rate (0.0–1.0) |
-| `max_escalation_rate` | escalation outcome proportion |
-| `min_resolution_rate` | resolution outcome proportion |
-| `max_retry_rate` | retry_rate (0.0–1.0) |
-| `max_loop_depth` | average loop depth |
-| `max_verbosity_ratio` | verbosity_ratio |
-| `max_output_length` | output token count |
-| `max_time_to_first_tool` | seconds before first tool call |
-
-**Define budgets in config (persistent, team defaults):**
+### 1. Pre-Deploy Drift Gate (CI/CD)
 
 ```yaml
-# .driftbase/config
-budgets:
-  my-agent-id:
-    max_p95_latency: 4.0
-    max_error_rate: 0.05
+# .github/workflows/drift-check.yml
+name: Drift Check
+on: [pull_request]
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: pip install driftbase
+      - env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          driftbase connect
+          driftbase diff main ${{ github.sha }} --exit-on-block
 ```
 
-`@track` budget takes precedence over config file on key conflicts.
-
-**CLI:**
+### 2. Post-Deploy Monitoring
 
 ```bash
-driftbase budgets show [agent_id] [version]   # View breaches (exit 1 if any)
-driftbase budgets set <agent_id> <version> --config budget.yaml
-driftbase budgets clear [agent_id] [version]  # Clear breach history
+#!/bin/bash
+# Daily drift check (cron: 0 9 * * *)
+
+export LANGFUSE_PUBLIC_KEY=...
+export LANGFUSE_SECRET_KEY=...
+
+driftbase connect --since $(date -d '1 day ago' +%Y-%m-%d)
+driftbase diagnose --alert-on-drift
 ```
 
-`driftbase budgets show` returns exit code 1 if breaches exist — use it as a CI gate independent of drift verdict.
+### 3. Incident Response
 
----
-
-## Root Cause Pinpointing
-
-Record what changed at deploy time. When drift is detected, Driftbase correlates the drifted dimensions with recorded change events and surfaces the most likely cause.
-
-**Via `@track`:**
-
-```python
-@track(
-    version="v2.0",
-    changes={
-        "model_version": "gpt-4o-2024-11",
-        "prompt_hash": "sha256:abc123...",
-        "rag_snapshot": "snapshot-2024-03-21",
-    }
-)
-def my_agent(query: str) -> str:
-    ...
-```
-
-**Via CLI (for infra-level changes outside your code):**
+When users report unexpected agent behavior:
 
 ```bash
-driftbase changes record my-agent v2.0 \
-  --model-version gpt-4o-2024-11 \
-  --prompt-hash sha256:abc123 \
-  --rag-snapshot snapshot-2024-03-21 \
-  --custom deployed_by=ci-pipeline-447
+# Pull latest traces and diagnose
+driftbase connect --since 2026-03-01
+driftbase diagnose
 
-driftbase changes list my-agent [version]
-```
+# Inspect specific problematic run
+driftbase inspect <run-id>
 
-**Supported change types:**
-
-| Key | What it tracks |
-|-----|----------------|
-| `model_version` | LLM model identifier |
-| `prompt_hash` | SHA256 of system prompt |
-| `rag_snapshot` | RAG index or document snapshot identifier |
-| `tool_version` | A specific tool's version |
-| `custom_*` | Any custom key with `custom_` prefix |
-
-When drift is detected, the diff output includes a root cause section showing the most likely cause, affected dimensions, ruled-out changes, and a suggested action. Confidence levels: HIGH (≥80%), MEDIUM (≥50%), LOW (≥20%), UNLIKELY (<20%).
-
-Model version is auto-detected from run payloads when not explicitly provided — you get root cause data even without configuring `changes={}`.
-
----
-
-## Rollback Suggestion
-
-When verdict is REVIEW or BLOCK and a prior stable version exists in SQLite with 30+ runs, Driftbase surfaces the specific version to target in your deploy pipeline.
-
-```
-Rollback
-────────────────────────────────────────────────────────
-Suggested version   v1.2
-Reason              v1.2 was last stable (SHIP) with 312 runs recorded
-Command             driftbase rollback my-agent v1.2
-```
-
-Fires only when the regression is unambiguous. If the bar is not met, nothing is shown — a wrong suggestion destroys trust faster than no suggestion.
-
-Conditions required: verdict is BLOCK or REVIEW, a prior version exists with SHIP or MONITOR verdict, that version has ≥30 runs recorded.
-
----
-
-## Intelligent Scoring
-
-Driftbase does not use hardcoded weights or thresholds. The scoring system self-calibrates to your specific agent automatically.
-
-### How it works
-
-**1. Use-case inference**
-
-On every diff, Driftbase reads the tool names your agent called and infers its use case via keyword scoring across 14 categories: FINANCIAL, CUSTOMER_SUPPORT, RESEARCH_RAG, CODE_GENERATION, AUTOMATION, CONTENT_GENERATION, HEALTHCARE, LEGAL, HR_RECRUITING, DATA_ANALYSIS, ECOMMERCE_SALES, SECURITY_ITOPS, DEVOPS_SRE, GENERAL.
-
-Each use case maps to a preset weight table that reflects what actually matters for that type of agent. A financial agent weights `decision_drift` and `error_rate` heavily. A content generation agent weights `semantic_drift` and `output_length`. Zero configuration required.
-
-**2. Baseline variance calibration**
-
-With 30+ runs, Driftbase measures each dimension's natural variance during a stable baseline period and applies a reliability multiplier:
-
-```
-reliability_multiplier = 1.0 / (1.0 + coefficient_of_variation)
-```
-
-Noisy dimensions (high natural variance) get their weight suppressed. Stable dimensions (low natural variance) keep their full weight. Thresholds are then derived statistically:
-
-```
-MONITOR  when score > baseline_mean + 2σ
-REVIEW   when score > baseline_mean + 3σ
-BLOCK    when score > baseline_mean + 4σ
-```
-
-**3. Volume-adjusted thresholds**
-
-As run count grows, thresholds tighten automatically — because drift at 10,000 runs/month means more mishandled interactions than drift at 100 runs/month.
-
-| Run count | Threshold adjustment |
-|-----------|---------------------|
-| < 500 | No adjustment |
-| 500–2,000 | Tighten 10% |
-| 2,000–10,000 | Tighten 20% |
-| > 10,000 | Tighten 30% |
-
-**4. Optional sensitivity override**
-
-```python
-@track(version="v2.0", sensitivity="strict")   # catches more, higher false positive rate
-@track(version="v2.0", sensitivity="relaxed")  # only flags clear regressions
-```
-
-Or via env var: `DRIFTBASE_SENSITIVITY=strict`
-
-### Drift dimensions (12 total)
-
-| # | Dimension | What it measures |
-|---|-----------|-----------------|
-| 1 | decision_drift | Outcome distribution — resolved vs escalated vs fallback vs error |
-| 2 | tool_sequence | Order in which tools are called (Markov transitions) |
-| 3 | tool_distribution | Mix of which tools are used, regardless of order |
-| 4 | latency | Composite of p50/p95/p99 — typical speed and tail behavior |
-| 5 | error_rate | Proportion of runs that produced an error |
-| 6 | loop_depth | How deeply the agent cycles through tool-call loops |
-| 7 | verbosity_ratio | Ratio of output tokens to input tokens |
-| 8 | retry_rate | How often the agent retries a tool call within a single run |
-| 9 | output_length | Raw output token count distribution |
-| 10 | time_to_first_tool | Latency from run start to first tool call — isolates reasoning overhead |
-| 11 | semantic_drift | Whether the meaning of outputs shifts (requires `[semantic]` extra) |
-| 12 | tool_sequence_transitions | Specific A→B Markov transitions — catches new paths through the tool graph |
-
-The diff output shows which dimensions the calibration system weighted most heavily for your agent, and why.
-
-### Verdict mapping
-
-| Verdict | Meaning | CI exit code |
-|---------|---------|--------------|
-| SHIP | No meaningful drift detected | 0 |
-| MONITOR | Minor drift — watch but don't block | 0 |
-| REVIEW | Significant drift — human review recommended | 1 |
-| BLOCK | Severe regression — block this deploy | 1 |
-
----
-
-## Supported Frameworks
-
-Driftbase auto-detects your framework. The `@track` decorator works with all of them.
-
-Explicit tracers are available for frameworks where that provides better granularity:
-
-| Framework | Integration |
-|-----------|-------------|
-| OpenAI SDK | `@track` auto-detects |
-| LangChain | `@track` auto-detects |
-| LangGraph | `@track` auto-detects |
-| AutoGen | `@track` auto-detects |
-| CrewAI | `@track` auto-detects |
-| smolagents | `SmolagentsTracer` — captures generated code blocks and sandbox execution |
-| Haystack | `HaystackTracer` — GDPR-hashed document content, component sequence |
-| DSPy | `DSPyTracer` — exact model strings, signature tracking, optimizer excluded by default |
-| LlamaIndex | `LlamaIndexTracer` — query, retrieval, LLM, embedding, synthesis events |
-
-**smolagents:**
-```python
-from driftbase.integrations import SmolagentsTracer
-tracer = SmolagentsTracer(version="v1.0", agent_id="research-agent")
-agent = ToolCallingAgent(model=model, tools=tools, step_callbacks=[tracer])
-```
-
-**Haystack:**
-```python
-from driftbase.integrations import HaystackTracer
-from haystack.tracing import enable_tracing
-tracer = HaystackTracer(version="v1.0", agent_id="rag-pipeline")
-enable_tracing(tracer)
-```
-
-**DSPy:**
-```python
-from driftbase.integrations import DSPyTracer
-tracer = DSPyTracer(version="v1.0", agent_id="qa-system")
-dspy.configure(callbacks=[tracer], lm=dspy.LM("openai/gpt-4o"))
-```
-
-**LlamaIndex:**
-```python
-from driftbase.integrations import LlamaIndexTracer
-tracer = LlamaIndexTracer(version="v1.0", agent_id="rag-engine")
-Settings.callback_manager.add_handler(tracer)
+# Compare current vs. last known good
+driftbase diff v2.0-stable v2.1-current
 ```
 
 ---
 
-## CI/CD Integration
+## Configuration
+
+Driftbase works out of the box with zero configuration. Optional settings:
 
 ```bash
-# Fail on REVIEW or BLOCK verdict
-driftbase diff v1.0 v2.0 --exit-nonzero-above 0.15
+# Set custom DB path
+export DRIFTBASE_DB_PATH=/path/to/runs.db
 
-# Gate on budget health independently of drift verdict
-driftbase budgets show my-agent v2.0  # exit 1 if breaches exist
+# Set default Langfuse host
+export LANGFUSE_HOST=https://your-instance.com
 
-# Output formats
-driftbase diff v1.0 v2.0 --format md > pr_comment.md
-driftbase diff v1.0 v2.0 --json > drift_report.json
+# Configure cost tracking
+export DRIFTBASE_RATE_PROMPT_1M=2.50
+export DRIFTBASE_RATE_COMPLETION_1M=10.00
 ```
 
-GitHub Actions example:
-
-```yaml
-- name: Drift check
-  run: |
-    pip install driftbase
-    driftbase diff ${{ env.BASELINE_VERSION }} ${{ env.DEPLOY_VERSION }} \
-      --exit-nonzero-above 0.15
-```
-
----
-
-## Data Privacy & Sovereignty
-
-Driftbase is engineered for European teams with strict compliance obligations (GDPR, EU AI Act, DORA, NIS2).
-
-- **Local-first**: All data stays in `~/.driftbase/runs.db` on your machine
-- **No telemetry**: No third-party analytics
-- **Structural hashing**: We analyze *what tools were called*, not *what the user said*
-- **Edge PII scrubbing**: Optional regex-based redaction before disk write
-
-```bash
-export DRIFTBASE_SCRUB_PII=true
-```
-
-Strips emails, IBANs, phone numbers, and IP addresses from tool parameters and user inputs before hashing. Scrubbing happens at the edge — sensitive data never touches disk.
-
----
-
-## Configuration Reference
-
-```bash
-# Database location (default: ~/.driftbase/runs.db)
-DRIFTBASE_DB_PATH="/path/to/runs.db"
-
-# Default version label if not set in @track
-DRIFTBASE_DEPLOYMENT_VERSION="v2.1"
-
-# Environment label
-DRIFTBASE_ENVIRONMENT="staging"
-
-# Detection sensitivity: strict | standard | relaxed (default: standard)
-DRIFTBASE_SENSITIVITY="strict"
-
-# Budget rolling window size (default: 10, min: 5)
-DRIFTBASE_BUDGET_WINDOW=10
-
-# Retention limit (default: 100,000 runs)
-DRIFTBASE_LOCAL_RETENTION_LIMIT=50000
-
-# PII scrubbing (default: false)
-DRIFTBASE_SCRUB_PII=true
-
-# Token pricing for cost delta calculation
-DRIFTBASE_RATE_PROMPT_1M=2.50       # € per 1M prompt tokens
-DRIFTBASE_RATE_COMPLETION_1M=10.00  # € per 1M completion tokens
-
-# Pro sync
-DRIFTBASE_API_KEY="your_pro_key"
-```
-
-Layered config: env vars → `.driftbase/config` → `pyproject.toml [tool.driftbase]` → defaults.
-
-```bash
-driftbase config   # Show resolved configuration
-driftbase doctor   # Check configuration and database health
-```
-
----
-
-## CLI Reference
-
-### Primary Commands
-
-| Command | Description |
-|---------|-------------|
-| `driftbase diagnose` | Detect what changed in your agent and when — the primary command |
-| `driftbase history` | Full behavioral timeline — how your agent evolved over time |
-| `driftbase diff <v1> <v2>` | Compare two versions explicitly |
-
-### Data and Configuration
-
-| Command | Description |
-|---------|-------------|
-| `driftbase runs -v <version>` | List runs for a version |
-| `driftbase versions` | List all versions and run counts |
-| `driftbase inspect <run_id>` | Deep-dive a specific run |
-| `driftbase prune` | Delete runs by retention criteria |
-| `driftbase export` | Export runs to JSON |
-| `driftbase import <file>` | Import runs from JSON |
-| `driftbase baseline` | Set/get/clear baseline version |
-| `driftbase budgets` | Define acceptance criteria, view breaches |
-| `driftbase changes` | Record what changed at deploy time |
-| `driftbase deploy` | Label versions good/bad for weight learning |
-| `driftbase chart -v <version>` | Terminal charts for run metrics |
-| `driftbase cost` | Financial impact analysis |
-| `driftbase demo` | Generate synthetic runs for exploration |
-| `driftbase compare <v1> <v2> <v3>` | Multi-version comparison |
-| `driftbase init` | Interactive setup |
-| `driftbase config` | Show resolved configuration |
-| `driftbase doctor` | Check configuration and database health |
+See [docs/configuration.md](docs/configuration.md) for advanced settings.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│ 1. Your Agent Code                              │
-│    @track(version="v2.1", changes={...},        │
-│           budget={...})                         │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────┐
-│ 2. Auto-Detection Layer                         │
-│    Detects: LangChain / LangGraph / OpenAI /    │
-│    AutoGen / CrewAI / smolagents / Haystack     │
-│    Captures: tools, tokens, latency, errors,    │
-│    loop depth, verbosity, retries, outcomes     │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────┐
-│ 3. PII Scrubbing + Structural Hashing           │
-│    Optional regex redaction at the edge         │
-│    Hash tool parameters, preserve structure     │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────┐
-│ 4. Background Writer                            │
-│    Non-blocking writes to SQLite (WAL mode)     │
-│    Budget breach detection after each batch     │
-│    Change event persistence on first run        │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  ▼
-┌─────────────────────────────────────────────────┐
-│ 5. Local SQLite — ~/.driftbase/runs.db          │
-│    Tables: agent_runs_local, calibration_cache, │
-│    budget_configs, budget_breaches,             │
-│    change_events                                │
-└─────────────────────────────────────────────────┘
-
-Later, in your terminal or CI:
-
-┌─────────────────────────────────────────────────┐
-│ driftbase diff v2.0 v2.1                        │
-│   ↓                                             │
-│ 1. Load runs from SQLite                        │
-│ 2. Infer use case from tool names               │
-│ 3. Calibrate weights from baseline variance     │
-│ 4. Compute 12-dimension drift score             │
-│ 5. Correlate with change events → root cause    │
-│ 6. Check for rollback candidate                 │
-│ 7. Render verdict with financial impact         │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  YOUR AI AGENT                                               │
+│  (instrumented with Langfuse via any framework)              │
+└────────────────┬─────────────────────────────────────────────┘
+                 │
+                 │ traces
+                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│  LANGFUSE                                                    │
+│  (observability platform)                                    │
+└────────────────┬─────────────────────────────────────────────┘
+                 │
+                 │ driftbase connect
+                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│  DRIFTBASE                                                   │
+│  ├─ Local SQLite DB (runs, fingerprints, epochs)            │
+│  ├─ Drift analysis engine (12 dimensions)                   │
+│  ├─ Baseline calibrator (auto-weights + thresholds)         │
+│  ├─ Anomaly detector (multivariate outliers)                │
+│  └─ Verdict engine (SHIP/MONITOR/REVIEW/BLOCK)              │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**Key principle:** Driftbase is NOT a tracing tool. It's a drift detection layer that reads existing traces from Langfuse.
 
 ---
 
-## Driftbase Pro
+## Roadmap
 
-Local SQLite is perfect for individual feature branches and CI pipelines. Driftbase Pro adds:
+- [x] Langfuse connector
+- [x] 12-dimension drift analysis
+- [x] Self-calibrating weights & thresholds
+- [x] Anomaly detection
+- [x] Behavioral epochs
+- [x] Root cause correlation
+- [ ] LangSmith connector
+- [ ] Arize connector
+- [ ] Generic OTEL ingestion
+- [ ] Slack/PagerDuty alerting
+- [ ] Web dashboard (Pro tier)
 
-- EU-hosted centralized dashboard (GDPR-compliant)
-- Team collaboration and shared baselines
-- Long-term trend analysis and alerting
-- SSO/SAML for enterprise
+---
+
+## Development
 
 ```bash
-export DRIFTBASE_API_KEY="your_pro_key"
-driftbase push   # Sync local runs — raw text stripped before upload
-```
+# Clone repo
+git clone https://github.com/driftbase-labs/driftbase-python
+cd driftbase-python
 
-[Learn more →](https://driftbase.io/pro)
+# Install in editable mode with dev dependencies
+pip install -e '.[dev]'
+
+# Run tests
+pytest tests/
+
+# Run linter
+ruff check .
+ruff format .
+```
 
 ---
 
 ## FAQ
 
-**Q: Does this slow down my agent?**
-A: No. `@track` writes to an in-memory bounded queue and returns immediately. Background thread persists to SQLite. Production overhead is <1ms per run.
+### Do I need to change my agent code?
 
-**Q: How many runs do I need before calibration activates?**
-A: 30 runs per version. Below that, Driftbase uses preset weights for your inferred use case and logs a notice. Statistical calibration (baseline variance → per-dimension thresholds) activates at 30+ runs automatically.
+No. Driftbase reads existing Langfuse traces. Your agent continues using Langfuse exactly as before.
 
-**Q: What if Driftbase infers the wrong use case?**
-A: Check `driftbase diff --verbose` to see which tool names matched and what use case was inferred. If the inference is wrong, it means your tool names don't contain strong keywords for the correct category. You can also check `driftbase config` for the resolved settings. If you consistently see wrong inference, open an issue with your tool names and we'll add keywords.
+### Where is my data stored?
 
-**Q: Can I disable telemetry in tests?**
-A: Yes. `export DRIFTBASE_DB_PATH=/tmp/driftbase-test.db` points to a throwaway file. No data is sent anywhere unless you run `driftbase push`.
+All analysis runs locally. Traces are stored in `~/.driftbase/runs.db` (SQLite). Nothing leaves your machine unless you explicitly push to a remote backend (Pro tier feature).
 
-**Q: How accurate is the cost calculation?**
-A: Very accurate. Token counts are read directly from LLM responses and multiplied by your configured rates. Default rates are OpenAI list prices.
+### What if I don't have Langfuse yet?
 
-**Q: Does this work with Azure OpenAI / Anthropic / local LLMs?**
-A: Yes. Any OpenAI-compatible client is supported.
+Set up Langfuse first: [langfuse.com/docs/get-started](https://langfuse.com/docs/get-started). It takes ~10 minutes to instrument your agent with Langfuse, then you can use Driftbase.
 
-**Q: When should I use `[semantic]`?**
-A: Only if you want semantic drift detection — detecting whether the meaning of agent outputs shifts over time. Requires ~50MB of additional model weights. Everything else works without it.
+### What if I don't have historical traces?
 
-**Q: Can I self-host the Pro dashboard?**
-A: Not yet. Enterprise self-hosted is on the roadmap. Email pro@driftbase.io for early access.
+Use `driftbase testset generate` to create synthetic baseline data, or start collecting traces now and compare future versions.
 
----
+### How often should I sync?
 
-## Development Setup
+- **Development**: After every agent change
+- **Production**: Daily or on-deploy via CI/CD
 
-```bash
-pip install -e '.[dev]'
-pre-commit install     # Runs ruff format + lint before each commit
-pytest tests/          # Run test suite
-```
+### Does this work with LangSmith?
+
+Not yet. Driftbase currently supports **Langfuse only**. LangSmith, Arize, and generic OTEL support are planned for future releases.
+
+### Is this free?
+
+Yes. The OSS SDK is free forever. We'll offer a Pro tier (hosted web dashboard, real-time alerting, team features) in the future, but the local CLI will always be free.
 
 ---
 
-## Contributing
+## Support
 
-Areas of interest:
-- Additional framework integrations
-- Additional drift dimensions (retrieval quality, safety/alignment metrics)
-- Alternative statistical tests (MMD, Wasserstein distance)
-- Visualization improvements
-
-**Before submitting a PR:** install pre-commit hooks, run tests, check types with `mypy src/`.
+- **Docs**: [driftbase.io/docs](https://driftbase.io/docs)
+- **Issues**: [github.com/driftbase-labs/driftbase-python/issues](https://github.com/driftbase-labs/driftbase-python/issues)
+- **Discord**: [driftbase.io/discord](https://driftbase.io/discord)
+- **Email**: info@driftbase.io
 
 ---
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+Apache 2.0. See [LICENSE](LICENSE).
 
 ---
 
-## Community & Support
-
-- **Documentation:** [docs.driftbase.io](https://docs.driftbase.io)
-- **GitHub Issues:** [github.com/driftbase-labs/driftbase-python/issues](https://github.com/driftbase-labs/driftbase-python/issues)
-- **Email:** support@driftbase.io
-- **Pro:** pro@driftbase.io
-
-**Built with 🇪🇺 in Europe. Data sovereignty by default.**
-# test
-test
+Built with ❤️ for AI engineers who want to ship with confidence.

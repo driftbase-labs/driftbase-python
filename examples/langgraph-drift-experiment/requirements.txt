@@ -1,5 +1,0 @@
-driftbase
-langgraph
-langchain-anthropic
-langchain-core
-langchain-community

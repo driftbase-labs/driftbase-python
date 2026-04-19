@@ -31,7 +31,7 @@ class LangFuseConnector(TraceConnector):
     def __init__(self):
         if not LANGFUSE_AVAILABLE:
             raise ImportError(
-                "langfuse extra not installed. Run: pip install driftbase[langfuse]"
+                "langfuse package not installed. Run: pip install driftbase"
             )
 
         public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
