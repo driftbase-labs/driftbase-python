@@ -125,7 +125,7 @@ def test_sync_result_with_errors():
 @patch("os.getenv")
 def test_langfuse_connector_missing_api_keys(mock_getenv):
     """LangFuse connector requires both public and secret keys."""
-    mock_getenv.side_effect = lambda key: None
+    mock_getenv.side_effect = lambda key, default=None: None
 
     with pytest.raises(ValueError, match="LANGFUSE_PUBLIC_KEY"):
         from driftbase.connectors.langfuse import LangFuseConnector
@@ -138,7 +138,7 @@ def test_langfuse_connector_missing_api_keys(mock_getenv):
 @patch("os.getenv")
 def test_langfuse_validate_credentials_success(mock_getenv, mock_langfuse_class):
     """LangFuse credential validation succeeds with valid keys."""
-    mock_getenv.side_effect = lambda key: {
+    mock_getenv.side_effect = lambda key, default=None: {
         "LANGFUSE_PUBLIC_KEY": "pk-test",
         "LANGFUSE_SECRET_KEY": "sk-test",
         "LANGFUSE_HOST": "https://cloud.langfuse.com",
@@ -159,7 +159,7 @@ def test_langfuse_validate_credentials_success(mock_getenv, mock_langfuse_class)
 @patch("os.getenv")
 def test_langfuse_map_trace_basic(mock_getenv, mock_langfuse_class):
     """LangFuse trace mapping produces valid Driftbase run."""
-    mock_getenv.side_effect = lambda key: {
+    mock_getenv.side_effect = lambda key, default=None: {
         "LANGFUSE_PUBLIC_KEY": "pk-test",
         "LANGFUSE_SECRET_KEY": "sk-test",
         "LANGFUSE_HOST": "https://cloud.langfuse.com",

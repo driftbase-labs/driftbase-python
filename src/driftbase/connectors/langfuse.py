@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -196,7 +196,7 @@ class LangFuseConnector(TraceConnector):
 
             if not end_dt and start_dt:
                 # Use current time as fallback
-                end_dt = datetime.utcnow()
+                end_dt = datetime.now(tz=timezone.utc)
 
             if start_dt and end_dt:
                 latency_ms = int((end_dt - start_dt).total_seconds() * 1000)
@@ -239,9 +239,9 @@ class LangFuseConnector(TraceConnector):
 
             # Use start time if available, otherwise current time
             if not start_dt:
-                start_dt = datetime.utcnow()
+                start_dt = datetime.now(tz=timezone.utc)
             if not end_dt:
-                end_dt = datetime.utcnow()
+                end_dt = datetime.now(tz=timezone.utc)
 
             return {
                 "id": str(uuid4()),  # Generate new UUID for Driftbase
