@@ -61,6 +61,7 @@ class RunFeatures(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     run_id: str = Field(foreign_key="runs_raw.id", index=True, unique=True)
     feature_schema_version: int = FEATURE_SCHEMA_VERSION
+    feature_source: str = "derived"  # "derived" | "migrated"
     derivation_error: str | None = None  # Reason if feature_schema_version == -1
     tool_sequence: str = "[]"  # JSON list of tool names
     tool_call_sequence: str = "[]"  # JSON list of tool calls with args

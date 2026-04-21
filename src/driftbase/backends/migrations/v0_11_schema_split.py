@@ -186,6 +186,7 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                     id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL UNIQUE,
                     feature_schema_version INTEGER NOT NULL DEFAULT 1,
+                    feature_source TEXT NOT NULL DEFAULT 'derived',
                     derivation_error TEXT,
                     tool_sequence TEXT NOT NULL DEFAULT '[]',
                     tool_call_sequence TEXT NOT NULL DEFAULT '[]',
@@ -265,7 +266,7 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                 text(
                     """
                 INSERT INTO runs_features (
-                    id, run_id, feature_schema_version, derivation_error,
+                    id, run_id, feature_schema_version, feature_source, derivation_error,
                     tool_sequence, tool_call_sequence, tool_call_count,
                     semantic_cluster, loop_count, verbosity_ratio,
                     time_to_first_tool_ms, fallback_rate, retry_count,
@@ -277,6 +278,7 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                     substr(hex(randomblob(16)), 1, 32),  -- Generate UUID-like ID
                     id,  -- run_id links to runs_raw.id
                     1,  -- feature_schema_version
+                    'migrated',  -- feature_source
                     NULL,  -- derivation_error
                     tool_sequence,
                     tool_call_sequence,
