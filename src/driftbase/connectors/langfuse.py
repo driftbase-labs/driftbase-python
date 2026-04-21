@@ -154,16 +154,34 @@ class LangFuseConnector(TraceConnector):
         """Map LangFuse trace to Driftbase schema."""
         try:
             # Extract version from trace metadata (try multiple fields)
-            version = (
-                trace.get("release")
-                or trace.get("version")
-                or trace.get("metadata", {}).get("deployment_version")
-                or trace.get("metadata", {}).get("version")
-                or trace.get("metadata", {}).get("release")
-            )
+            # Track the source for version resolution transparency
+            version_source = "none"
+            version = None
 
+            # Priority 1: release field
+            if trace.get("release"):
+                version = trace.get("release")
+                version_source = "release"
+            # Priority 2: version:X.Y.Z tag or metadata.version
+            elif trace.get("version"):
+                version = trace.get("version")
+                version_source = "tag"
+            elif trace.get("metadata", {}).get("deployment_version"):
+                version = trace.get("metadata", {}).get("deployment_version")
+                version_source = "tag"
+            elif trace.get("metadata", {}).get("version"):
+                version = trace.get("metadata", {}).get("version")
+                version_source = "tag"
+            elif trace.get("metadata", {}).get("release"):
+                version = trace.get("metadata", {}).get("release")
+                version_source = "release"
+            # Priority 3: DRIFTBASE_VERSION environment variable
+            elif os.getenv("DRIFTBASE_VERSION"):
+                version = os.getenv("DRIFTBASE_VERSION")
+                version_source = "env"
+
+            # Priority 4: Fall back to epoch label based on timestamp
             if not version:
-                # Fall back to epoch label based on timestamp
                 timestamp = trace.get("timestamp")
                 if timestamp:
                     if isinstance(timestamp, str):
@@ -172,8 +190,10 @@ class LangFuseConnector(TraceConnector):
                         dt = timestamp
                     monday = dt - timedelta(days=dt.weekday())
                     version = f"epoch-{monday.date().isoformat()}"
+                    version_source = "epoch"
                 else:
                     version = "unknown"
+                    version_source = "none"
 
             # Extract metadata early for various field extraction
             metadata = trace.get("metadata", {})
@@ -363,6 +383,7 @@ class LangFuseConnector(TraceConnector):
                 "source": "langfuse",
                 "session_id": session_id,
                 "deployment_version": version,
+                "version_source": version_source,  # Track version resolution source
                 "environment": environment,  # Extracted from metadata
                 "model": model,  # Extracted from trace or metadata
                 "started_at": start_dt,

@@ -179,6 +179,7 @@ class DriftReport:
     power_analysis_used: bool = False  # True when power analysis computed the threshold
     limiting_dimension: str = ""  # dimension needing most runs
     partial_tier3: bool = False  # True when 8+ dims reliable but not all
+    warnings: list[str] = field(default_factory=list)  # List of warning messages
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:

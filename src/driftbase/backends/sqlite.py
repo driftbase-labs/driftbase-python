@@ -28,6 +28,9 @@ class AgentRunLocal(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     session_id: str = ""
     deployment_version: str = "unknown"
+    version_source: str = (
+        "epoch"  # How version was resolved: release | tag | env | epoch | none
+    )
     environment: str = "production"
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime = Field(default_factory=datetime.utcnow)
@@ -303,6 +306,14 @@ def _migrate_schema(engine: Any) -> None:
                     text("ALTER TABLE agent_runs_local ADD COLUMN source TEXT")
                 )
                 conn.commit()
+            # Version resolution source
+            if "version_source" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN version_source TEXT DEFAULT 'epoch'"
+                    )
+                )
+                conn.commit()
 
             # Migrate learned_weights_cache table (rename metadata to weights_metadata)
             r = conn.execute(text("PRAGMA table_info(learned_weights_cache)"))
@@ -329,6 +340,7 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "id": str(r.id) if r.id else str(uuid.uuid4()),
         "session_id": r.session_id,
         "deployment_version": r.deployment_version,
+        "version_source": getattr(r, "version_source", "epoch"),
         "environment": r.environment,
         "started_at": r.started_at.isoformat()
         if isinstance(r.started_at, datetime)

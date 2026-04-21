@@ -520,10 +520,41 @@ def compute_drift(
     if partial_tier3:
         tier = "TIER3"
 
+    # Check for epoch-resolved versions and downgrade tier if needed
+    epoch_warning = None
+    epoch_downgrade = False
+    if baseline_runs and current_runs:
+        baseline_epoch_count = sum(
+            1 for r in baseline_runs if r.get("version_source") == "epoch"
+        )
+        current_epoch_count = sum(
+            1 for r in current_runs if r.get("version_source") == "epoch"
+        )
+        baseline_epoch_pct = baseline_epoch_count / len(baseline_runs)
+        current_epoch_pct = current_epoch_count / len(current_runs)
+
+        if baseline_epoch_pct > 0.5 or current_epoch_pct > 0.5:
+            epoch_warning = (
+                "Comparing time-bucketed versions. Versions were resolved from timestamps, not explicit tags. "
+                "Results may not reflect real deployment drift. Tag your deployments with Langfuse release field "
+                "or DRIFTBASE_VERSION for accurate diffs."
+            )
+            logger.warning(f"Epoch-resolved versions detected: {epoch_warning}")
+            epoch_downgrade = True
+
+            # Downgrade tier: TIER3 → TIER2, TIER2 → TIER1
+            if tier == "TIER3":
+                tier = "TIER2"
+            elif tier == "TIER2":
+                tier = "TIER1"
+
     # TIER1: Insufficient data - return minimal report with progress bars only
     if tier == "TIER1":
         tier1_min = settings.TIER1_MIN_RUNS
         runs_needed = tier1_min - min_n
+        warnings = []
+        if epoch_warning:
+            warnings.append(epoch_warning)
         return DriftReport(
             baseline_fingerprint_id=baseline.id,
             current_fingerprint_id=current.id,
@@ -538,6 +569,7 @@ def compute_drift(
             eval_version=current_version,
             min_runs_needed=min_runs_needed,
             power_analysis_used=power_analysis_used,
+            warnings=warnings,
         )
 
     # TIER2: Indicative signals only - no numeric scores, no verdict
@@ -545,6 +577,10 @@ def compute_drift(
         # Compute indicative directional signals
         indicative_signal = compute_indicative_signal(baseline, current)
         runs_needed = min_runs_needed - min_n
+
+        warnings = []
+        if epoch_warning:
+            warnings.append(epoch_warning)
 
         return DriftReport(
             baseline_fingerprint_id=baseline.id,
@@ -567,6 +603,7 @@ def compute_drift(
             significance_pct=significance_pct,
             power_analysis_used=power_analysis_used,
             limiting_dimension=limiting_dim,
+            warnings=warnings,
         )
 
     # TIER3: Full analysis (existing behavior)
@@ -837,6 +874,10 @@ def compute_drift(
         limiting_dimension=limiting_dim,
         partial_tier3=partial_tier3,
     )
+
+    # Add epoch warnings if present
+    if epoch_warning:
+        report.warnings.append(epoch_warning)
 
     # Bootstrap 95% CI when run lists are provided
     from driftbase.utils.determinism import get_rng
