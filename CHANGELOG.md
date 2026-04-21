@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0-rc.1] - 2025-04-21
+
 ### Added - Phase 1: Correctness Foundation
 
 #### Deterministic Drift Detection
@@ -232,6 +234,7 @@ No breaking changes. Bug fix release only.
 
 ---
 
+[0.10.0-rc.1]: https://github.com/driftbase-labs/driftbase-python/compare/v0.9.3...v0.10.0-rc.1
 [0.9.3]: https://github.com/driftbase-labs/driftbase-python/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/driftbase-labs/driftbase-python/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/driftbase-labs/driftbase-python/releases/tag/v0.9.1
