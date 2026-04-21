@@ -237,18 +237,18 @@ Location: ~/.driftbase/runs.db (configurable via DRIFTBASE_DB_PATH)
 Stable contract — do not alter field names without explicit instruction.
 
 12 drift dimensions:
-- decision_drift (JSD on outcome distribution: resolved/escalated/error)
-- tool_sequence (Levenshtein on tool call patterns)
-- tool_distribution (JSD on tool frequency)
-- latency (t-test on p95 latency_ms)
-- error_rate (proportion test)
-- retry_rate (proportion test)
-- loop_depth (t-test on loop_count)
-- verbosity_ratio (t-test on output_length / prompt_tokens)
-- output_length (t-test on completion_tokens)
-- time_to_first_tool (t-test on time_to_first_tool_ms)
-- semantic_drift (JSD on heuristic semantic cluster distribution: resolved/escalated/error/unknown)
-- tool_sequence_transitions (JSD on bigram transition probabilities)
+- decision_drift (JSD on tool_sequence_distribution, captures outcome patterns)
+- latency (sigmoid contribution from p95 latency_ms delta)
+- error_rate (sigmoid contribution from error_rate delta)
+- semantic_drift (JSD on semantic_cluster_distribution: resolved/escalated/error/unknown)
+- tool_distribution (uses decision_drift as proxy, no separate computation)
+- verbosity_ratio (sigmoid contribution from avg_verbosity_ratio delta)
+- loop_depth (sigmoid contribution from p95_loop_count delta)
+- output_length (sigmoid contribution from avg_output_length delta)
+- tool_sequence (uses decision_drift, already captured by tool_sequence_distribution JSD)
+- retry_rate (sigmoid contribution from avg_retry_count delta)
+- time_to_first_tool (sigmoid contribution from avg_time_to_first_tool_ms delta)
+- tool_sequence_transitions (uses decision_drift as proxy until transition matrix available)
 
 ## Development commands
 
