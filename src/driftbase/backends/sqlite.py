@@ -313,7 +313,7 @@ def _migrate_schema(engine: Any) -> None:
             if "version_source" not in columns:
                 conn.execute(
                     text(
-                        "ALTER TABLE agent_runs_local ADD COLUMN version_source TEXT DEFAULT 'epoch'"
+                        "ALTER TABLE agent_runs_local ADD COLUMN version_source TEXT DEFAULT 'unknown'"
                     )
                 )
                 conn.commit()

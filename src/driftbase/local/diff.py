@@ -520,41 +520,66 @@ def compute_drift(
     if partial_tier3:
         tier = "TIER3"
 
-    # Check for epoch-resolved versions and downgrade tier if needed
-    epoch_warning = None
-    epoch_downgrade = False
+    # Check version_source quality and apply warnings/downgrades (three-way distinction)
+    version_warning = None
+    tier_downgrade = False
     if baseline_runs and current_runs:
+        # Count version sources in each fingerprint
+        confident_sources = {"release", "tag", "env"}
+
         baseline_epoch_count = sum(
             1 for r in baseline_runs if r.get("version_source") == "epoch"
         )
+        baseline_unknown_count = sum(
+            1 for r in baseline_runs if r.get("version_source") == "unknown"
+        )
+        baseline_confident_count = sum(
+            1 for r in baseline_runs if r.get("version_source") in confident_sources
+        )
+
         current_epoch_count = sum(
             1 for r in current_runs if r.get("version_source") == "epoch"
         )
+        current_unknown_count = sum(
+            1 for r in current_runs if r.get("version_source") == "unknown"
+        )
+        current_confident_count = sum(
+            1 for r in current_runs if r.get("version_source") in confident_sources
+        )
+
         baseline_epoch_pct = baseline_epoch_count / len(baseline_runs)
         current_epoch_pct = current_epoch_count / len(current_runs)
+        baseline_unknown_pct = baseline_unknown_count / len(baseline_runs)
+        current_unknown_pct = current_unknown_count / len(current_runs)
 
+        # Strongest applicable warning wins: epoch > unknown > none
         if baseline_epoch_pct > 0.5 or current_epoch_pct > 0.5:
-            epoch_warning = (
+            # Epoch-dominant: loud warning + tier downgrade
+            version_warning = (
                 "Comparing time-bucketed versions. Versions were resolved from timestamps, not explicit tags. "
                 "Results may not reflect real deployment drift. Tag your deployments with Langfuse release field "
                 "or DRIFTBASE_VERSION for accurate diffs."
             )
-            logger.warning(f"Epoch-resolved versions detected: {epoch_warning}")
-            epoch_downgrade = True
+            logger.warning(f"Epoch-resolved versions detected: {version_warning}")
+            tier_downgrade = True
 
             # Downgrade tier: TIER3 → TIER2, TIER2 → TIER1
             if tier == "TIER3":
                 tier = "TIER2"
             elif tier == "TIER2":
                 tier = "TIER1"
+        elif baseline_unknown_pct > 0.5 or current_unknown_pct > 0.5:
+            # Unknown-dominant: soft advisory, no tier downgrade
+            version_warning = "Some runs predate version-source tracking. Re-sync from Langfuse to improve diff confidence."
+            logger.info(f"Unknown version sources detected: {version_warning}")
 
     # TIER1: Insufficient data - return minimal report with progress bars only
     if tier == "TIER1":
         tier1_min = settings.TIER1_MIN_RUNS
         runs_needed = tier1_min - min_n
         warnings = []
-        if epoch_warning:
-            warnings.append(epoch_warning)
+        if version_warning:
+            warnings.append(version_warning)
         return DriftReport(
             baseline_fingerprint_id=baseline.id,
             current_fingerprint_id=current.id,
@@ -579,8 +604,8 @@ def compute_drift(
         runs_needed = min_runs_needed - min_n
 
         warnings = []
-        if epoch_warning:
-            warnings.append(epoch_warning)
+        if version_warning:
+            warnings.append(version_warning)
 
         return DriftReport(
             baseline_fingerprint_id=baseline.id,
@@ -876,8 +901,8 @@ def compute_drift(
     )
 
     # Add epoch warnings if present
-    if epoch_warning:
-        report.warnings.append(epoch_warning)
+    if version_warning:
+        report.warnings.append(version_warning)
 
     # Bootstrap 95% CI when run lists are provided
     from driftbase.utils.determinism import get_rng

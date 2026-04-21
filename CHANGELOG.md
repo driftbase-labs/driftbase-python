@@ -26,8 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Version Resolution Transparency
 - **Version source tracking** for deployment drift accuracy
-  - New `version_source` field in AgentRunLocal: `release | tag | env | epoch | none`
+  - New `version_source` field in AgentRunLocal: `release | tag | env | epoch | unknown`
   - 4-level precedence: Langfuse release → version tag → DRIFTBASE_VERSION env → epoch fallback
+  - Three-way quality classification:
+    - Confident sources (release/tag/env): no warning
+    - Unknown sources: soft advisory, no tier downgrade (pre-existing data)
+    - Epoch sources: loud warning + tier downgrade (time-bucketed)
   - Epoch-resolved versions trigger warnings in `driftbase diff` (>50% threshold)
   - Automatic confidence tier downgrade for time-bucketed comparisons (TIER3→TIER2, TIER2→TIER1)
   - LangSmith connector now tracks version_source (matching Langfuse)
@@ -70,9 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added inline documentation for all new config options
 
 ### Migration
-- Automatic schema migration adds `version_source` column (default: `"epoch"`)
+- Automatic schema migration adds `version_source` column (default: `"unknown"`)
 - Automatic schema migration adds `ingestion_source` column (default: `"decorator"`)
 - No action required - migrations run on first startup
+- **Upgrading users**: First diff after upgrade will show soft advisory about pre-existing data
+  - Advisory: "Some runs predate version-source tracking. Re-sync from Langfuse to improve diff confidence."
+  - No tier downgrade for unknown sources
+  - Re-run `driftbase connect` to clear advisory and get proper version_source tags
 
 ## [0.9.3] - 2025-04-19
 

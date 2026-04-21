@@ -60,7 +60,41 @@ Example output:
 v1.0|release|250
 v2.0|release|300
 epoch-2024-03-11|epoch|50
+unknown||20
 ```
+
+## Version Source Quality: Three-Way Classification
+
+Driftbase classifies version sources into three quality tiers, each with different warning behavior:
+
+### 1. Confident Sources (release | tag | env)
+- **Quality**: High confidence in version identity
+- **Behavior**: No warnings, no tier downgrade
+- **When to expect**: New traces after explicit version tagging is implemented
+
+### 2. Unknown Sources (unknown)
+- **Quality**: Pre-existing data that predates version_source tracking
+- **Behavior**: Soft advisory, no tier downgrade
+- **Warning**: "Some runs predate version-source tracking. Re-sync from Langfuse to improve diff confidence."
+- **When to expect**: Existing databases after upgrading to Phase 1
+- **How to clear**: Re-run `driftbase connect` to re-import traces with proper version_source tagging
+
+### 3. Epoch Sources (epoch)
+- **Quality**: Time-bucketed fallback, not deployment-based
+- **Behavior**: Loud warning + confidence tier downgrade
+- **Warning**: "Comparing time-bucketed versions. Versions were resolved from timestamps, not explicit tags..."
+- **Tier downgrade**: TIER3 → TIER2, TIER2 → TIER1
+- **When to expect**: Traces without explicit version tags (no release, version, or DRIFTBASE_VERSION)
+
+### Mixed Version Sources
+
+When a diff window contains multiple version source types, the **strongest applicable warning wins**:
+
+1. **Epoch dominant** (>50% epoch): Loud warning + tier downgrade
+2. **Unknown dominant** (>50% unknown, <50% epoch): Soft advisory, no downgrade
+3. **Confident dominant** (>50% confident): No warning
+
+Example: A fingerprint with 31 epoch + 29 unknown runs (51.67% epoch) triggers the epoch warning and tier downgrade.
 
 ## Epoch-Resolved Versions: Warnings and Behavior
 
