@@ -1,10 +1,13 @@
 import json
+import logging
 import math
 import os
 from typing import TYPE_CHECKING, Any
 
 # Load from env, default to 50 for production safety
 MIN_SAMPLES = int(os.getenv("DRIFTBASE_PRODUCTION_MIN_SAMPLES", "50"))
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from driftbase.backends.base import StorageBackend
@@ -379,6 +382,12 @@ def compute_drift(
 
     settings = get_settings()
     effective_sensitivity = sensitivity or settings.DRIFTBASE_SENSITIVITY
+
+    # Log effective configuration
+    logger.info(
+        f"compute_drift: fingerprint_limit={settings.DRIFTBASE_FINGERPRINT_LIMIT}, "
+        f"bootstrap_iters={settings.DRIFTBASE_BOOTSTRAP_ITERS}, sensitivity={effective_sensitivity}"
+    )
 
     # Compute power analysis and minimum runs needed
     baseline_n = baseline.sample_count

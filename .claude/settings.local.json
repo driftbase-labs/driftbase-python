@@ -33,7 +33,9 @@
       "Bash(driftbase:*)",
       "Bash(timeout 3 driftbase mcp:*)",
       "Bash(chmod:*)",
-      "Bash(./scripts/verify_install.sh:*)"
+      "Bash(./scripts/verify_install.sh:*)",
+      "Bash(ruff format:*)",
+      "Bash(git restore:*)"
     ]
   }
 }

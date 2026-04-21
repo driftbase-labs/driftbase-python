@@ -1652,9 +1652,14 @@ def diff_local(
     """
     Compute drift between two run sets from the local backend.
     """
+    from driftbase.config import get_settings
+
+    settings = get_settings()
+    limit = settings.DRIFTBASE_FINGERPRINT_LIMIT
+
     if last_n is not None and against_version is not None:
         baseline_run_dicts = get_runs_for_version(
-            backend, against_version, limit=5000, environment=environment
+            backend, against_version, limit=limit, environment=environment
         )
         current_run_dicts = get_runs_for_version(
             backend, "local", limit=last_n, environment=environment
@@ -1663,8 +1668,9 @@ def diff_local(
         current_label = f"last_{last_n}_runs"
     elif current_version == "local":
         baseline_run_dicts = get_runs_for_version(
-            backend, baseline_version, limit=5000, environment=environment
+            backend, baseline_version, limit=limit, environment=environment
         )
+        # Use smaller limit for local runs (500 is reasonable for uncommitted work)
         current_run_dicts = get_runs_for_version(
             backend, "local", limit=500, environment=environment
         )
@@ -1672,10 +1678,10 @@ def diff_local(
         current_label = "local"
     else:
         baseline_run_dicts = get_runs_for_version(
-            backend, baseline_version, limit=5000, environment=environment
+            backend, baseline_version, limit=limit, environment=environment
         )
         current_run_dicts = get_runs_for_version(
-            backend, current_version, limit=5000, environment=environment
+            backend, current_version, limit=limit, environment=environment
         )
         baseline_label = baseline_version
         current_label = current_version
@@ -1865,26 +1871,31 @@ def run_diff(
     elif current_version == "local":
         current_label = "local"
 
+    from driftbase.config import get_settings
+
+    settings = get_settings()
+    limit = settings.DRIFTBASE_FINGERPRINT_LIMIT
+
     if last_n and against_version:
         current_run_dicts = get_runs_for_version(
             backend, "local", limit=last_n, environment=environment
         )
         baseline_run_dicts = get_runs_for_version(
-            backend, against_version, limit=5000, environment=environment
+            backend, against_version, limit=limit, environment=environment
         )
     elif current_version == "local":
         baseline_run_dicts = get_runs_for_version(
-            backend, baseline_version, limit=5000, environment=environment
+            backend, baseline_version, limit=limit, environment=environment
         )
         current_run_dicts = get_runs_for_version(
             backend, "local", limit=500, environment=environment
         )
     else:
         baseline_run_dicts = get_runs_for_version(
-            backend, baseline_version, limit=5000, environment=environment
+            backend, baseline_version, limit=limit, environment=environment
         )
         current_run_dicts = get_runs_for_version(
-            backend, current_version, limit=5000, environment=environment
+            backend, current_version, limit=limit, environment=environment
         )
 
     baseline_tools = tool_usage_distribution(baseline_run_dicts)
@@ -2073,6 +2084,11 @@ def run_watch(
             console.print("  Windows: pip install win10toast")
             notify = False
 
+    from driftbase.config import get_settings
+
+    settings = get_settings()
+    limit = settings.DRIFTBASE_FINGERPRINT_LIMIT
+
     iteration = 0
     last_drift_alert = None  # Track last alert to avoid spam
 
@@ -2083,7 +2099,7 @@ def run_watch(
             iteration += 1
 
             baseline_run_dicts = get_runs_for_version(
-                backend, against_version, limit=5000, environment=environment
+                backend, against_version, limit=limit, environment=environment
             )
             current_run_dicts = get_runs_for_version(
                 backend, "local", limit=last_n, environment=environment

@@ -248,22 +248,29 @@ def compute_drift(
 
     See ARCHITECTURE.md for detailed documentation.
     """
+    import logging
+
     from driftbase.backends.factory import get_backend
+    from driftbase.config import get_settings
     from driftbase.local.diff import compute_drift as _compute_drift_internal
     from driftbase.local.fingerprinter import build_fingerprint_from_runs
 
     backend = get_backend()
+    settings = get_settings()
 
     # Load runs for both versions
+    limit = settings.DRIFTBASE_FINGERPRINT_LIMIT
+    logging.info(f"Loading runs with fingerprint_limit={limit}")
+
     baseline_runs = backend.get_runs(
         deployment_version=baseline_version,
         environment=environment,
-        limit=1000,
+        limit=limit,
     )
     current_runs = backend.get_runs(
         deployment_version=current_version,
         environment=environment,
-        limit=1000,
+        limit=limit,
     )
 
     # Filter by agent_id if provided
