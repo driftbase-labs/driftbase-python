@@ -484,6 +484,27 @@ class SQLiteBackend(StorageBackend):
         ConnectorSync.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
+        # Run v0.11 schema split migration (runs_raw + runs_features)
+        from pathlib import Path
+
+        from driftbase.backends.migrations.v0_11_schema_split import (
+            MigrationError,
+            migrate,
+        )
+
+        try:
+            result = migrate(self._engine, Path(self._db_path), dry_run=False)
+            if result.migrated:
+                logger.info(
+                    f"Migrated {result.rows_copied} rows to runs_raw. "
+                    f"Backup at {result.backup_path}"
+                )
+        except MigrationError as e:
+            logger.error(f"Schema migration failed: {e}")
+            raise RuntimeError(
+                f"Database schema migration failed: {e}. See logs for details."
+            ) from e
+
         # Add UNIQUE constraints if not exists
         try:
             with self._engine.connect() as conn:
