@@ -220,11 +220,14 @@ def compute_anomaly_signal(
         # Fit isolation forest on baseline
         # contamination=0.05: assume 5% of baseline runs are slight outliers
         # n_estimators=100: standard, fast enough for typical run counts
-        # random_state=42: reproducible results
+        # random_state from DRIFTBASE_SEED for reproducibility
+        from driftbase.config import get_settings
+
+        settings = get_settings()
         model = IsolationForest(
             contamination=0.05,
             n_estimators=100,
-            random_state=42,
+            random_state=settings.DRIFTBASE_SEED,
         )
         model.fit(baseline_scaled)
 

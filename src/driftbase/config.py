@@ -396,6 +396,21 @@ class Settings:
         """Minimum runs required for Tier 3 (full analysis). Below this: Tier 2 (indicative signals). Default: 50."""
         return self._get_int("DRIFTBASE_TIER2_MIN_RUNS", 50, min_val=15)
 
+    @property
+    def DRIFTBASE_SEED(self) -> int:
+        """Random seed for reproducible drift detection (bootstrap, anomaly detection). Default: 42."""
+        return self._get_int("DRIFTBASE_SEED", 42, min_val=0)
+
+    @property
+    def DRIFTBASE_FINGERPRINT_LIMIT(self) -> int:
+        """Maximum number of runs to use when building a fingerprint. Default: 5000."""
+        return self._get_int("DRIFTBASE_FINGERPRINT_LIMIT", 5000, min_val=10)
+
+    @property
+    def DRIFTBASE_BOOTSTRAP_ITERS(self) -> int:
+        """Number of bootstrap iterations for confidence intervals. Default: 500."""
+        return self._get_int("DRIFTBASE_BOOTSTRAP_ITERS", 500, min_val=100)
+
 
 _settings: Settings | None = None
 
@@ -428,6 +443,9 @@ KNOWN_CONFIG_KEYS = {
     "DRIFTBASE_BUDGET_WINDOW": int,
     "DRIFTBASE_TIER1_MIN_RUNS": int,
     "DRIFTBASE_TIER2_MIN_RUNS": int,
+    "DRIFTBASE_SEED": int,
+    "DRIFTBASE_FINGERPRINT_LIMIT": int,
+    "DRIFTBASE_BOOTSTRAP_ITERS": int,
 }
 
 

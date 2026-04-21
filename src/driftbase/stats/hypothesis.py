@@ -239,7 +239,7 @@ def bootstrap_confidence_interval(
     Returns:
         Tuple of (mean_difference, lower_bound, upper_bound)
     """
-    import random
+    from driftbase.utils.determinism import get_rng
 
     if not baseline_values or not current_values:
         return 0.0, 0.0, 0.0
@@ -249,20 +249,21 @@ def bootstrap_confidence_interval(
     mean_current = sum(current_values) / len(current_values)
     observed_diff = mean_current - mean_baseline
 
-    # Bootstrap resampling
+    # Bootstrap resampling with deterministic RNG
+    rng = get_rng("hypothesis:bootstrap_ci")
     bootstrap_diffs = []
     for _ in range(n_bootstrap):
-        # Resample with replacement
-        baseline_sample = [
-            random.choice(baseline_values) for _ in range(len(baseline_values))
-        ]
-        current_sample = [
-            random.choice(current_values) for _ in range(len(current_values))
-        ]
+        # Resample with replacement using numpy RNG
+        baseline_sample = rng.choice(
+            baseline_values, size=len(baseline_values), replace=True
+        )
+        current_sample = rng.choice(
+            current_values, size=len(current_values), replace=True
+        )
 
         # Calculate difference in means
-        bs_mean_baseline = sum(baseline_sample) / len(baseline_sample)
-        bs_mean_current = sum(current_sample) / len(current_sample)
+        bs_mean_baseline = float(baseline_sample.mean())
+        bs_mean_current = float(current_sample.mean())
         bootstrap_diffs.append(bs_mean_current - bs_mean_baseline)
 
     # Sort and find percentiles

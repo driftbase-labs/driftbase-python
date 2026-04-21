@@ -830,7 +830,9 @@ def compute_drift(
     )
 
     # Bootstrap 95% CI when run lists are provided
-    n_bootstrap = 500
+    from driftbase.utils.determinism import get_rng
+
+    n_bootstrap = settings.DRIFTBASE_BOOTSTRAP_ITERS
     max_bootstrap_n = 200
 
     if (
@@ -847,13 +849,17 @@ def compute_drift(
         current_agents = [run_dict_to_agent_run(d) for d in current_runs]
 
         # Cap for bootstrap performance
+        # Use fingerprint IDs as salt for reproducible sampling
+        baseline_fp_id = baseline.id or "baseline"
+        current_fp_id = current.id or "current"
+
         if len(baseline_agents) > max_bootstrap_n:
-            rng = np.random.default_rng(42)
+            rng = get_rng(f"sampling:baseline:{baseline_fp_id}")
             baseline_agents = list(
                 rng.choice(baseline_agents, size=max_bootstrap_n, replace=False)
             )
         if len(current_agents) > max_bootstrap_n:
-            rng = np.random.default_rng(43)
+            rng = get_rng(f"sampling:current:{current_fp_id}")
             current_agents = list(
                 rng.choice(current_agents, size=max_bootstrap_n, replace=False)
             )
@@ -867,7 +873,9 @@ def compute_drift(
         base_env = getattr(baseline, "environment", "production") or "production"
         curr_env = getattr(current, "environment", "production") or "production"
 
-        rng = np.random.default_rng(0)
+        # Use fingerprint IDs as salt for bootstrap reproducibility
+        bootstrap_salt = f"bootstrap:{baseline_fp_id}:{current_fp_id}"
+        rng = get_rng(bootstrap_salt)
         scores: list[float] = []
         for _ in range(n_bootstrap):
             idx_b = rng.integers(0, n_b, size=n_b)
