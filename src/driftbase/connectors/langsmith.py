@@ -157,11 +157,25 @@ class LangSmithConnector(TraceConnector):
             metadata = extra.get("metadata", {})
 
             # Extract version
-            version = (
-                metadata.get("version")
-                or metadata.get("deployment_version")
-                or run.get("name", "unknown")
-            )
+            # Track version source for transparency
+            version_source = "none"
+            version = None
+
+            if metadata.get("version"):
+                version = metadata.get("version")
+                version_source = "tag"
+            elif metadata.get("deployment_version"):
+                version = metadata.get("deployment_version")
+                version_source = "tag"
+            elif os.getenv("DRIFTBASE_VERSION"):
+                version = os.getenv("DRIFTBASE_VERSION")
+                version_source = "env"
+            elif run.get("name"):
+                version = run.get("name")
+                version_source = "tag"  # LangSmith uses run name as version
+            else:
+                version = "unknown"
+                version_source = "none"
 
             # Extract environment
             environment = metadata.get("environment", "production")
@@ -275,8 +289,10 @@ class LangSmithConnector(TraceConnector):
                 "id": str(uuid4()),  # Generate new UUID for Driftbase
                 "external_id": str(run.get("id", str(uuid4()))),
                 "source": "langsmith",
+                "ingestion_source": "connector",  # Track ingestion method
                 "session_id": session_id,
                 "deployment_version": version,
+                "version_source": version_source,  # Track version resolution source
                 "environment": environment,
                 "model": model,
                 "started_at": started_at,

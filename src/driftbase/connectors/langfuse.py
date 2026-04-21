@@ -381,6 +381,7 @@ class LangFuseConnector(TraceConnector):
                 "id": str(uuid4()),  # Generate new UUID for Driftbase
                 "external_id": str(trace.get("id", str(uuid4()))),
                 "source": "langfuse",
+                "ingestion_source": "connector",  # Track ingestion method
                 "session_id": session_id,
                 "deployment_version": version,
                 "version_source": version_source,  # Track version resolution source

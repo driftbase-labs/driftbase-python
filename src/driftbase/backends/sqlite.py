@@ -56,6 +56,9 @@ class AgentRunLocal(SQLModel, table=True):
     # Connector provenance (for imported traces)
     external_id: str | None = None  # original ID from LangSmith/LangFuse
     source: str | None = None  # "langsmith", "langfuse", or None for @track()
+    ingestion_source: str = (
+        "decorator"  # How run was ingested: connector | decorator | otlp | webhook
+    )
 
 
 class CalibrationCache(SQLModel, table=True):
@@ -314,6 +317,14 @@ def _migrate_schema(engine: Any) -> None:
                     )
                 )
                 conn.commit()
+            # Ingestion source tracking
+            if "ingestion_source" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_runs_local ADD COLUMN ingestion_source TEXT DEFAULT 'decorator'"
+                    )
+                )
+                conn.commit()
 
             # Migrate learned_weights_cache table (rename metadata to weights_metadata)
             r = conn.execute(text("PRAGMA table_info(learned_weights_cache)"))
@@ -369,6 +380,7 @@ def _row_to_run_dict(r: AgentRunLocal) -> dict[str, Any]:
         "sensitivity": r.sensitivity,
         "external_id": r.external_id,
         "source": r.source,
+        "ingestion_source": getattr(r, "ingestion_source", "decorator"),
     }
 
 
@@ -516,6 +528,7 @@ class SQLiteBackend(StorageBackend):
         deployment_version: str | None = None,
         environment: str | None = None,
         limit: int = 1000,
+        include_all_sources: bool = False,
     ) -> list[dict[str, Any]]:
         with Session(self._engine) as session:
             stmt = (
@@ -529,6 +542,10 @@ class SQLiteBackend(StorageBackend):
                 )
             if environment is not None:
                 stmt = stmt.where(AgentRunLocal.environment == environment)
+            # Default: only include connector-sourced runs (imported traces)
+            # Opt-in to include decorator (@track) and other sources
+            if not include_all_sources:
+                stmt = stmt.where(AgentRunLocal.ingestion_source == "connector")
             result = session.execute(stmt)
             rows = result.scalars().all()
             return [_row_to_run_dict(r) for r in rows]

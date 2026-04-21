@@ -233,8 +233,12 @@ def _diagnose_behavioral_shift(console: Any, backend: Any) -> None:
         # Get runs for comparison
         try:
             # This is simplified - ideally we'd load runs by epoch boundaries
-            v1_runs = backend.get_runs(previous_epoch.label, limit=100)
-            v2_runs = backend.get_runs(latest_epoch.label, limit=100)
+            v1_runs = backend.get_runs(
+                previous_epoch.label, limit=100, include_all_sources=True
+            )
+            v2_runs = backend.get_runs(
+                latest_epoch.label, limit=100, include_all_sources=True
+            )
 
             if v1_runs and v2_runs:
                 v1_metrics = _calculate_metrics(v1_runs)
@@ -554,8 +558,8 @@ def cmd_diagnose(
         _diagnose_behavioral_shift(console, backend)
         return
 
-    # Get runs for current version
-    current_runs = backend.get_runs(version, limit=limit)
+    # Get runs for current version (include all sources for diagnosis)
+    current_runs = backend.get_runs(version, limit=limit, include_all_sources=True)
 
     if not current_runs:
         console.print(f"#FF6B6B]No runs found for version: {version}[/]")
@@ -606,7 +610,7 @@ def cmd_diagnose(
 
     # Compare to baseline if provided
     if compare:
-        baseline_runs = backend.get_runs(compare, limit=limit)
+        baseline_runs = backend.get_runs(compare, limit=limit, include_all_sources=True)
 
         if not baseline_runs:
             console.print(
