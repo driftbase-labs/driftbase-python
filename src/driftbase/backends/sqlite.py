@@ -611,25 +611,16 @@ class SQLiteBackend(StorageBackend):
         limit: int = 1000,
         include_all_sources: bool = False,
     ) -> list[dict[str, Any]]:
-        with Session(self._engine) as session:
-            stmt = (
-                select(AgentRunLocal)
-                .order_by(AgentRunLocal.started_at.desc())
-                .limit(limit)
-            )
-            if deployment_version is not None:
-                stmt = stmt.where(
-                    AgentRunLocal.deployment_version == deployment_version
-                )
-            if environment is not None:
-                stmt = stmt.where(AgentRunLocal.environment == environment)
-            # Default: only include connector-sourced runs (imported traces)
-            # Opt-in to include decorator (@track) and other sources
-            if not include_all_sources:
-                stmt = stmt.where(AgentRunLocal.ingestion_source == "connector")
-            result = session.execute(stmt)
-            rows = result.scalars().all()
-            return [_row_to_run_dict(r) for r in rows]
+        # Use lazy derivation reader for runs_raw + runs_features
+        from driftbase.backends.sqlite_reader import get_runs_with_features
+
+        return get_runs_with_features(
+            backend=self,
+            deployment_version=deployment_version,
+            environment=environment,
+            limit=limit,
+            include_all_sources=include_all_sources,
+        )
 
     def get_versions(self) -> list[tuple[str, int]]:
         with Session(self._engine) as session:
