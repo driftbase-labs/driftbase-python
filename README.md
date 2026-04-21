@@ -305,6 +305,11 @@ export LANGFUSE_HOST=https://your-instance.com
 # Configure cost tracking
 export DRIFTBASE_RATE_PROMPT_1M=2.50
 export DRIFTBASE_RATE_COMPLETION_1M=10.00
+
+# Reproducibility and sampling (Phase 1 correctness features)
+export DRIFTBASE_SEED=42                    # Random seed for reproducible drift reports (default: 42)
+export DRIFTBASE_FINGERPRINT_LIMIT=5000     # Max runs per fingerprint (default: 5000)
+export DRIFTBASE_BOOTSTRAP_ITERS=500        # Bootstrap iterations for confidence intervals (default: 500)
 ```
 
 See [docs/configuration.md](docs/configuration.md) for advanced settings.

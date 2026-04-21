@@ -5,6 +5,75 @@ All notable changes to Driftbase will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added - Phase 1: Correctness Foundation
+
+#### Deterministic Drift Detection
+- **Seeded randomness** for reproducible drift reports
+  - New `DRIFTBASE_SEED` environment variable (default: 42)
+  - All random operations (bootstrap, sampling, anomaly detection) use deterministic RNG
+  - Same data + same seed = byte-identical reports
+  - Salt-based random streams prevent correlation between operations
+  - New `utils/determinism.py` module with `get_rng(salt)` utility
+
+#### Unified Sample Limits
+- **Configurable sampling** via environment variables
+  - New `DRIFTBASE_FINGERPRINT_LIMIT` (default: 5000) for max runs per fingerprint
+  - New `DRIFTBASE_BOOTSTRAP_ITERS` (default: 500) for confidence interval iterations
+  - Replaced hardcoded limits (1000, 5000) throughout codebase
+  - Logging of effective limits at INFO level in engine and diff computation
+
+#### Version Resolution Transparency
+- **Version source tracking** for deployment drift accuracy
+  - New `version_source` field in AgentRunLocal: `release | tag | env | epoch | none`
+  - 4-level precedence: Langfuse release → version tag → DRIFTBASE_VERSION env → epoch fallback
+  - Epoch-resolved versions trigger warnings in `driftbase diff` (>50% threshold)
+  - Automatic confidence tier downgrade for time-bucketed comparisons (TIER3→TIER2, TIER2→TIER1)
+  - LangSmith connector now tracks version_source (matching Langfuse)
+
+#### Ingestion Source Provenance
+- **Ingestion method tracking** to separate connector vs decorator runs
+  - New `ingestion_source` field: `connector | decorator | otlp | webhook`
+  - `get_runs()` filters to `connector` by default (imported traces only)
+  - New `include_all_sources` parameter for comprehensive analysis
+  - `driftbase diagnose` uses all sources by default for complete diagnosis
+  - Migration adds column with `decorator` default for backward compatibility
+
+#### Synthetic Drift Test Fixtures
+- **Accuracy baseline test suite** for verification of drift detection
+  - 5 seeded generators in `tests/fixtures/synthetic/generators.py`:
+    - `no_drift_pair`: Identical distributions (negative control)
+    - `decision_drift_pair`: Tool sequence changes (30% shift)
+    - `latency_drift_pair`: Bimodal latency (+500ms for half)
+    - `error_rate_drift_pair`: Error rate increase (2% → 10%)
+    - `semantic_cluster_drift_pair`: Outcome distribution shift (15% → 30% escalation)
+  - 5 accuracy tests in `tests/test_synthetic_drift.py` verifying correct detection
+  - All generators use deterministic RNG for reproducible tests
+  - Baseline for validating future detection improvements
+
+### Changed
+- **get_runs() behavior**: Now filters to connector-sourced runs by default
+- **Bootstrap sampling**: Uses fingerprint IDs as salt for reproducibility per comparison
+- **Anomaly detection**: IsolationForest now uses configurable DRIFTBASE_SEED
+- **DriftReport schema**: Added `warnings` list field for epoch version warnings
+
+### Fixed
+- Unseeded bootstrap sampling in `stats/hypothesis.py` (now uses deterministic RNG)
+- Hardcoded random seeds in `local/diff.py` (42, 43, 0) replaced with salted seeds
+- Inconsistent sample limits across engine (1000) and CLI (5000) paths
+
+### Documentation
+- New `docs/determinism.md`: Reproducible drift reports guide
+- New `docs/version-resolution.md`: Version precedence and epoch fallback explanation
+- Updated README.md with Phase 1 environment variables
+- Added inline documentation for all new config options
+
+### Migration
+- Automatic schema migration adds `version_source` column (default: `"epoch"`)
+- Automatic schema migration adds `ingestion_source` column (default: `"decorator"`)
+- No action required - migrations run on first startup
+
 ## [0.9.3] - 2025-04-19
 
 ### Added
