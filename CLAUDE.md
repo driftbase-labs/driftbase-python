@@ -250,6 +250,8 @@ Stable contract — do not alter field names without explicit instruction.
 - time_to_first_tool (sigmoid contribution from avg_time_to_first_tool_ms delta)
 - tool_sequence_transitions (uses decision_drift as proxy until transition matrix available)
 
+See [docs/fingerprint-schema-debt.md](docs/fingerprint-schema-debt.md) for known implementation divergences and resolution roadmap.
+
 ## Development commands
 
 # Run all tests
