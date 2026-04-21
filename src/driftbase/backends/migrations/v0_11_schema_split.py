@@ -259,9 +259,48 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                 )
             )
 
-            # Do NOT populate runs_features - lazy derivation will handle it
+            # Copy computed features from agent_runs_local to runs_features
+            # This preserves existing feature values for migrated data
+            conn.execute(
+                text(
+                    """
+                INSERT INTO runs_features (
+                    id, run_id, feature_schema_version, derivation_error,
+                    tool_sequence, tool_call_sequence, tool_call_count,
+                    semantic_cluster, loop_count, verbosity_ratio,
+                    time_to_first_tool_ms, fallback_rate, retry_count,
+                    retry_patterns, error_classification,
+                    input_hash, output_hash, input_length, output_length,
+                    computed_at
+                )
+                SELECT
+                    substr(hex(randomblob(16)), 1, 32),  -- Generate UUID-like ID
+                    id,  -- run_id links to runs_raw.id
+                    1,  -- feature_schema_version
+                    NULL,  -- derivation_error
+                    tool_sequence,
+                    tool_call_sequence,
+                    tool_call_count,
+                    semantic_cluster,
+                    loop_count,
+                    verbosity_ratio,
+                    time_to_first_tool_ms,
+                    0.0,  -- fallback_rate not in old schema
+                    retry_count,
+                    '{}',  -- retry_patterns not in old schema
+                    CASE WHEN error_count > 0 THEN 'trace_error' ELSE 'ok' END,
+                    task_input_hash,
+                    output_structure_hash,
+                    COALESCE(LENGTH(raw_prompt), 0),
+                    output_length,
+                    datetime('now')
+                FROM agent_runs_local
+                """
+                )
+            )
 
         logger.info(f"✓ Migrated {row_count} rows to runs_raw")
+        logger.info(f"✓ Migrated {row_count} rows to runs_features")
         logger.info(
             "✓ runs_features table created (empty, will be populated on first read)"
         )
