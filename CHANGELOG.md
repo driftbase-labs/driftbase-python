@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 2b: Run Quality Score + Database Indexing
+
+#### Run Quality Scoring
+- **New `run_quality` score (0.0-1.0)** computed per run at derivation time
+  - Measures version clarity, data completeness, feature derivability, and observation richness
+  - Four equal-weighted components (0.25 each):
+    - Version clarity: release/tag = 1.0, env = 0.7, epoch = 0.3, unknown = 0.0
+    - Data completeness: input, output, latency, tokens, session_id presence
+    - Feature derivability: successful derivation = 1.0, failed = 0.0
+    - Observation richness: tools, semantic cluster, retry/loop data
+  - Stored in `runs_features.run_quality` column
+  - **Not yet used in fingerprint weighting** (Phase 2c will add optional weighting)
+  - Never raises exceptions (returns 0.0 on error)
+
+#### Database Performance Indexes
+- **Five new indexes** for primary query patterns:
+  - `idx_runs_raw_version_env_ts`: Fingerprint queries (version + environment + timestamp)
+  - `idx_runs_raw_session_ts`: Session-based filtering
+  - `idx_runs_raw_version_source`: Version source filtering (drift warnings)
+  - `idx_runs_features_run_id`: FK join performance
+  - `idx_runs_features_schema_version`: Migration status and lazy derivation queries
+  - All indexes created with `CREATE INDEX IF NOT EXISTS` (idempotent)
+  - Improves query performance for large databases (>10K runs)
+
+#### CLI Enhancements
+- **`driftbase migrate --status`** now shows run quality distribution:
+  - "Runs with quality score > 0.0: N / Total (X.X%)"
+  - "Quality distribution: min=X.XX, median=X.XX, max=X.XX"
+  - Only displays for runs where quality has been computed
+
+### Documentation
+- New `docs/run-quality.md`: Quality scoring rubric, components, future weighting plans
+- Updated `.claude/claude.md`: Database tables section updated with run_quality reference
+
+### Technical Details
+- Quality computation in `src/driftbase/local/run_quality.py`
+- Wired into `feature_deriver.py:derive_features()`
+- Migrated rows have `run_quality=0.0` until backfill (intentional)
+- Column migration added to backend initialization (v0.11.1)
+
 ## [0.11.0-rc.1] - 2026-04-22
 
 ### Added - Phase 2a: Schema Split

@@ -203,3 +203,48 @@ def test_semantic_cluster_drift_detected():
     assert report.current_error_rate >= report.baseline_error_rate * 0.8, (
         "Expected outcome distribution shift"
     )
+
+
+def test_synthetic_runs_have_quality_scores():
+    """
+    Synthetic fixture runs should have run_quality > 0.0 after feature derivation.
+
+    This verifies that quality scoring is properly wired into the feature derivation
+    pipeline for all synthetically generated test runs.
+    """
+    from driftbase.backends.sqlite import RunRaw
+    from driftbase.local.feature_deriver import derive_features
+
+    # Generate synthetic fixtures
+    baseline_dicts, current_dicts = no_drift_pair(n=10, seed=42)
+
+    # Convert to RunRaw and derive features
+    for run_dict in baseline_dicts + current_dicts:
+        # Create RunRaw instance from dict
+        raw = RunRaw(
+            id=run_dict.get("id", "test-id"),
+            version_source=run_dict.get("version_source", "tag"),
+            deployment_version=run_dict.get("deployment_version", "v1.0"),
+            environment=run_dict.get("environment", "production"),
+            session_id=run_dict.get("session_id", "sess-test"),
+            timestamp=run_dict.get("started_at", datetime.utcnow()),
+            input=run_dict.get("raw_prompt", ""),
+            output=run_dict.get("raw_output", ""),
+            latency_ms=run_dict.get("latency_ms", 0),
+            tokens_prompt=run_dict.get("prompt_tokens"),
+            tokens_completion=run_dict.get("completion_tokens"),
+        )
+
+        # Derive features (includes quality scoring)
+        features = derive_features(raw)
+
+        # Verify quality score is populated and reasonable
+        assert hasattr(features, "run_quality"), (
+            "Features should have run_quality field"
+        )
+        assert features.run_quality > 0.0, (
+            f"Synthetic run should have quality > 0.0, got {features.run_quality}"
+        )
+        assert features.run_quality <= 1.0, (
+            f"Quality score should be <= 1.0, got {features.run_quality}"
+        )

@@ -78,6 +78,7 @@ class RunFeatures(SQLModel, table=True):
     output_hash: str = ""
     input_length: int = 0
     output_length: int = 0
+    run_quality: float = 0.0  # Quality score (0.0-1.0) from run_quality.py
     computed_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -506,6 +507,34 @@ class SQLiteBackend(StorageBackend):
                 f"Database schema migration failed: {e}. See logs for details."
             ) from e
 
+        # Create runs_raw and runs_features tables if they don't exist (fresh databases)
+        RunRaw.__table__.create(self._engine, checkfirst=True)
+        RunFeatures.__table__.create(self._engine, checkfirst=True)
+
+        # Add run_quality column to runs_features if missing (v0.11.1)
+        try:
+            with self._engine.connect() as conn:
+                # Check if runs_features table exists and if run_quality column exists
+                result = conn.execute(
+                    text(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='runs_features'"
+                    )
+                )
+                if result.fetchone() is not None:
+                    # Table exists, check for run_quality column
+                    result = conn.execute(text("PRAGMA table_info(runs_features)"))
+                    columns = {row[1] for row in result.fetchall()}
+                    if "run_quality" not in columns:
+                        conn.execute(
+                            text(
+                                "ALTER TABLE runs_features ADD COLUMN run_quality REAL NOT NULL DEFAULT 0.0"
+                            )
+                        )
+                        conn.commit()
+                        logger.info("✓ Added run_quality column to runs_features table")
+        except Exception as e:
+            logger.debug(f"run_quality column migration skip: {e}")
+
         # Add UNIQUE constraints if not exists
         try:
             with self._engine.connect() as conn:
@@ -536,6 +565,49 @@ class SQLiteBackend(StorageBackend):
                 conn.commit()
         except Exception:
             pass
+
+        # Add performance indexes for query patterns
+        try:
+            with self._engine.connect() as conn:
+                # Primary fingerprint query pattern: version + environment + timestamp
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_runs_raw_version_env_ts "
+                        "ON runs_raw(deployment_version, environment, timestamp)"
+                    )
+                )
+                # Session-based filtering
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_runs_raw_session_ts "
+                        "ON runs_raw(session_id, timestamp)"
+                    )
+                )
+                # Version source filtering (for drift warnings)
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_runs_raw_version_source "
+                        "ON runs_raw(version_source)"
+                    )
+                )
+                # FK join performance (may already exist from migration)
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_runs_features_run_id "
+                        "ON runs_features(run_id)"
+                    )
+                )
+                # Schema version queries (migration --status, lazy derivation)
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_runs_features_schema_version "
+                        "ON runs_features(feature_schema_version)"
+                    )
+                )
+                conn.commit()
+                logger.debug("✓ Performance indexes created/verified")
+        except Exception as e:
+            logger.debug(f"Index creation skip: {e}")
 
     def prune_if_needed(self) -> None:
         """

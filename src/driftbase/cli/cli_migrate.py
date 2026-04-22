@@ -172,6 +172,39 @@ def _show_status(console, db_path: Path) -> None:
         # Count missing features
         missing_count = total_runs - total_features
 
+        # Count runs with quality scores and get distribution
+        result = session.execute(
+            text("SELECT COUNT(*) FROM runs_features WHERE run_quality > 0.0")
+        )
+        quality_scored_count = result.fetchone()[0]
+
+        quality_min = quality_median = quality_max = None
+        if quality_scored_count > 0:
+            # Get min, max
+            result = session.execute(
+                text(
+                    "SELECT MIN(run_quality), MAX(run_quality) FROM runs_features WHERE run_quality > 0.0"
+                )
+            )
+            row = result.fetchone()
+            quality_min, quality_max = row[0], row[1]
+
+            # Get median (use PERCENTILE_CONT if supported, otherwise approximation)
+            result = session.execute(
+                text(
+                    """
+                    SELECT run_quality FROM runs_features
+                    WHERE run_quality > 0.0
+                    ORDER BY run_quality
+                    LIMIT 1 OFFSET (
+                        SELECT COUNT(*) / 2 FROM runs_features WHERE run_quality > 0.0
+                    )
+                """
+                )
+            )
+            median_row = result.fetchone()
+            quality_median = median_row[0] if median_row else None
+
     # Display status table
     if Table:
         table = Table(show_header=True, header_style="bold", title="Migration Status")
@@ -209,6 +242,24 @@ def _show_status(console, db_path: Path) -> None:
                 "feature_schema_version=-1",
             )
 
+        # Add quality score stats
+        if total_features > 0:
+            table.add_row(
+                "Quality scored runs",
+                f"{quality_scored_count} / {total_features}",
+                f"{100.0 * quality_scored_count / total_features:.1f}%",
+            )
+            if (
+                quality_min is not None
+                and quality_median is not None
+                and quality_max is not None
+            ):
+                table.add_row(
+                    "Quality distribution",
+                    "",
+                    f"min={quality_min:.2f}, median={quality_median:.2f}, max={quality_max:.2f}",
+                )
+
         console.print()
         console.print(table)
         console.print()
@@ -226,6 +277,18 @@ def _show_status(console, db_path: Path) -> None:
             print(f"  Stale features: {stale_count}")
         if failed_count > 0:
             print(f"  Failed derivations: {failed_count}")
+        if total_features > 0:
+            print(
+                f"  Quality scored runs: {quality_scored_count} / {total_features} ({100.0 * quality_scored_count / total_features:.1f}%)"
+            )
+            if (
+                quality_min is not None
+                and quality_median is not None
+                and quality_max is not None
+            ):
+                print(
+                    f"  Quality distribution: min={quality_min:.2f}, median={quality_median:.2f}, max={quality_max:.2f}"
+                )
         print()
 
     # Recommendations
@@ -338,6 +401,7 @@ def _backfill_features(console, db_path: Path, dry_run: bool) -> None:
                                     output_hash = :output_hash,
                                     input_length = :input_len,
                                     output_length = :output_len,
+                                    run_quality = :quality,
                                     computed_at = :computed_at
                                 WHERE run_id = :run_id
                             """
@@ -361,6 +425,7 @@ def _backfill_features(console, db_path: Path, dry_run: bool) -> None:
                                 "output_hash": features.output_hash,
                                 "input_len": features.input_length,
                                 "output_len": features.output_length,
+                                "quality": features.run_quality,
                                 "computed_at": features.computed_at,
                                 "run_id": raw.id,
                             },
