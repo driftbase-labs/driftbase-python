@@ -277,6 +277,23 @@ class ConnectorSync(SQLModel, table=True):
     status: str = "success"  # success|error
 
 
+class VerdictRecord(SQLModel, table=True):
+    """Stores completed drift verdicts for explain and history."""
+
+    __tablename__ = "verdict_history"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    baseline_version: str = ""
+    current_version: str = ""
+    environment: str = "production"
+    composite_score: float = 0.0
+    verdict: str | None = None  # SHIP/MONITOR/REVIEW/BLOCK or None
+    severity: str | None = None
+    confidence_tier: str = "TIER3"
+    report_json: str = "{}"  # Full DriftReport serialized as JSON
+
+
 def _ensure_dir(path: str) -> None:
     """
     Ensure the parent directory of the database file exists.
@@ -484,6 +501,7 @@ class SQLiteBackend(StorageBackend):
         SignificanceThreshold.__table__.create(self._engine, checkfirst=True)
         DetectedEpoch.__table__.create(self._engine, checkfirst=True)
         ConnectorSync.__table__.create(self._engine, checkfirst=True)
+        VerdictRecord.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
         # Run v0.11 schema split migration (runs_raw + runs_features)
@@ -1771,3 +1789,118 @@ class SQLiteBackend(StorageBackend):
                 session.commit()
         except Exception as e:
             logger.debug(f"SQLite write_connector_sync failed: {e}")
+
+    def save_verdict(
+        self,
+        report_json: str,
+        baseline_version: str,
+        current_version: str,
+        environment: str,
+        composite_score: float,
+        verdict: str | None,
+        severity: str | None,
+        confidence_tier: str,
+    ) -> str:
+        """
+        Save a verdict to the verdict_history table.
+
+        Args:
+            report_json: Serialized DriftReport as JSON string
+            baseline_version: Baseline deployment version
+            current_version: Current deployment version
+            environment: Environment (e.g. production)
+            composite_score: Composite drift score
+            verdict: SHIP/MONITOR/REVIEW/BLOCK or None
+            severity: none/low/moderate/significant/critical or None
+            confidence_tier: TIER1/TIER2/TIER3
+
+        Returns:
+            Verdict ID (UUID string)
+        """
+        try:
+            with Session(self._engine) as session:
+                record = VerdictRecord(
+                    baseline_version=baseline_version,
+                    current_version=current_version,
+                    environment=environment,
+                    composite_score=composite_score,
+                    verdict=verdict,
+                    severity=severity,
+                    confidence_tier=confidence_tier,
+                    report_json=report_json,
+                )
+                session.add(record)
+                session.commit()
+                session.refresh(record)
+                return record.id
+        except Exception as e:
+            logger.warning(f"Failed to save verdict: {e}")
+            return str(uuid4())  # Return dummy ID on failure
+
+    def get_verdict(self, verdict_id: str) -> dict[str, Any] | None:
+        """
+        Retrieve a verdict by ID.
+
+        Args:
+            verdict_id: Verdict ID (UUID)
+
+        Returns:
+            Dict with verdict fields or None if not found
+        """
+        try:
+            with Session(self._engine) as session:
+                record = session.get(VerdictRecord, verdict_id)
+                if record is None:
+                    return None
+                return {
+                    "id": record.id,
+                    "created_at": record.created_at,
+                    "baseline_version": record.baseline_version,
+                    "current_version": record.current_version,
+                    "environment": record.environment,
+                    "composite_score": record.composite_score,
+                    "verdict": record.verdict,
+                    "severity": record.severity,
+                    "confidence_tier": record.confidence_tier,
+                    "report_json": record.report_json,
+                }
+        except Exception as e:
+            logger.debug(f"Failed to get verdict {verdict_id}: {e}")
+            return None
+
+    def list_verdicts(self, limit: int = 20) -> list[dict[str, Any]]:
+        """
+        List recent verdicts in reverse chronological order.
+
+        Args:
+            limit: Maximum number of verdicts to return (default 20)
+
+        Returns:
+            List of verdict dicts (most recent first)
+        """
+        try:
+            with Session(self._engine) as session:
+                statement = (
+                    select(VerdictRecord)
+                    .order_by(VerdictRecord.created_at.desc())
+                    .limit(limit)
+                )
+                records = session.exec(statement).all()
+                return [
+                    {
+                        "id": r.id,
+                        "created_at": r.created_at,
+                        "baseline_version": r.baseline_version,
+                        "current_version": r.current_version,
+                        "environment": r.environment,
+                        "composite_score": r.composite_score,
+                        "verdict": r.verdict,
+                        "severity": r.severity,
+                        "confidence_tier": r.confidence_tier,
+                        "report_json": r.report_json,
+                    }
+                    for r in records
+                ]
+        except Exception as e:
+            logger.debug(f"Failed to list verdicts: {e}")
+            return []
