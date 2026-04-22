@@ -34,6 +34,9 @@ class VerdictResult:
     explanation: str  # Plain-English reason
     next_steps: list[str]  # Actionable checklist
     exit_code: int  # 0 for SHIP/MONITOR, 1 for REVIEW/BLOCK
+    root_cause: str | None = (
+        None  # Evidence string for top contributor (REVIEW/BLOCK only)
+    )
 
     @property
     def style(self) -> str:
@@ -180,8 +183,44 @@ def compute_verdict(
     review_threshold = thresholds.get("REVIEW", 0.28)
     block_threshold = thresholds.get("BLOCK", 0.42)
 
+    # Extract top contributor for root cause (REVIEW/BLOCK only)
+    def _get_root_cause() -> str | None:
+        """Get evidence string for top contributor from attribution."""
+        attribution = getattr(report, "dimension_attribution", {})
+        if not attribution:
+            return None
+
+        # Find top contributor by absolute attribution
+        top_dim, top_attr = max(attribution.items(), key=lambda x: abs(x[1]))
+
+        # Get dimension scores
+        dimension_scores = {
+            "decision_drift": report.decision_drift,
+            "semantic_drift": getattr(report, "semantic_drift", 0.0),
+            "latency": getattr(report, "latency_drift", 0.0),
+            "error_rate": getattr(report, "error_drift", 0.0),
+            "tool_distribution": report.decision_drift,
+            "verbosity_ratio": getattr(report, "verbosity_drift", 0.0),
+            "loop_depth": getattr(report, "loop_depth_drift", 0.0),
+            "output_length": getattr(report, "output_length_drift", 0.0),
+            "tool_sequence": getattr(report, "tool_sequence_drift", 0.0),
+            "retry_rate": getattr(report, "retry_drift", 0.0),
+            "time_to_first_tool": getattr(report, "planning_latency_drift", 0.0),
+            "tool_sequence_transitions": getattr(
+                report, "tool_sequence_transitions_drift", 0.0
+            ),
+        }
+
+        observed = dimension_scores.get(top_dim, 0.0)
+        contrib_pct = (abs(top_attr) / sum(abs(v) for v in attribution.values())) * 100
+
+        return f"{top_dim}: {observed:.3f} ({contrib_pct:.1f}% of drift)"
+
+    root_cause = None
+
     # BLOCK - major divergence
     if score > block_threshold or report.decision_drift > 0.40:
+        root_cause = _get_root_cause()
         return VerdictResult(
             verdict=Verdict.BLOCK,
             title="DO NOT SHIP",
@@ -199,10 +238,12 @@ def compute_verdict(
                 current_tools,
             ),
             exit_code=1,
+            root_cause=root_cause,
         )
 
     # REVIEW - moderate drift requiring review
     if score > review_threshold or report.decision_drift > 0.25:
+        root_cause = _get_root_cause()
         dimension_context = ""
         if report.decision_drift > 0.25:
             if report.escalation_rate_delta > 0.08:
@@ -240,6 +281,7 @@ def compute_verdict(
                 current_tools,
             ),
             exit_code=1,
+            root_cause=root_cause,
         )
 
     # MONITOR - minor drift, ship with awareness
