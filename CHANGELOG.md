@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1-rc.1] - 2026-04-22
+
 ### Added - Phase 2b: Run Quality Score + Database Indexing
 
 #### Run Quality Scoring
