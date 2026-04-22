@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 3a: Statistical Foundation
+
+#### Per-dimension Confidence Intervals
+- **Bootstrap 95% CIs for all 12 drift dimensions** computed via `stats.compute_dimension_cis()`
+  - Resamples runs ONCE per bootstrap iteration, computes all dimensions from same resample
+  - Captures cross-dimension correlation in uncertainty estimates
+  - Uses deterministic RNG (`get_rng(salt)`) for reproducible CIs
+  - Returns `DimensionCI` dataclass with `{observed, ci_lower, ci_upper, significant}` fields
+  - `significant=True` if CI excludes 0 (drift reliably detected)
+
+#### Minimum Detectable Effect (MDE)
+- **Per-dimension MDE computation** via `stats.compute_mde()`
+  - Estimates smallest drift effect detectable with current sample sizes
+  - Formula: `MDE = (z_alpha/2 + z_power) * sigma_pooled * sqrt(1/n_baseline + 1/n_current)`
+  - Uses bootstrap to estimate pooled standard deviation per dimension
+  - Smaller MDE = better detection sensitivity
+  - Helps users understand when they have sufficient data
+
+#### Power Forecasts for TIER2
+- **Runs-needed forecasting** via `stats.forecast_runs_needed()`
+  - Estimates additional runs needed to detect a target effect size (default 0.10)
+  - Inverts MDE formula to solve for required sample size
+  - Returns runs needed per dimension to reach statistical power
+  - Useful for TIER2 analysis ("collect 42 more runs to detect 0.10 drift")
+
+#### Counterfactual Attribution
+- **Dimension attribution analysis** via `stats.compute_dimension_attribution()`
+  - Leave-one-out (LOO) analysis: removes each dimension and recomputes composite
+  - Attribution = original_composite - composite_without_dim
+  - Positive attribution = dimension drove drift upward
+  - Negative attribution = dimension dampened drift (mitigating factor)
+  - Helps answer "which dimensions mattered most?"
+- **Marginal contribution** via `stats.compute_marginal_contribution()`
+  - Simpler alternative: marginal = weight × score
+  - Sum of marginal contributions = composite score (by construction)
+
+#### Integration with DriftReport
+- **New optional fields in `DriftReport`** (Phase 3a):
+  - `dimension_cis: dict[str, DimensionCI] | None`
+  - `dimension_mdes: dict[str, float] | None`
+  - `runs_needed_forecast: dict[str, int] | None`
+  - `dimension_attribution: dict[str, float] | None`
+- **New `compute_statistics` flag in `compute_drift()`**:
+  - Default: `compute_statistics=True` (computes all statistics)
+  - Set `compute_statistics=False` to skip (faster, for high-throughput scenarios)
+  - Detection behavior UNCHANGED: composite scores identical with or without statistics
+
+### Documentation
+- New `src/driftbase/stats/` module structure:
+  - `dimension_ci.py` - Bootstrap confidence intervals
+  - `mde.py` - Minimum detectable effect computation
+  - `power_forecast.py` - TIER2 power analysis
+  - `attribution.py` - Counterfactual attribution
+
+### Technical Details
+- All statistical functions use deterministic RNG via `get_rng(salt)`
+- Bootstrap optimization: single resample per iteration for all 12 dimensions
+- Performance: <3 seconds for n=50 (well under <10 second target for n=200)
+- Graceful degradation: returns NaN/-1 on errors, logs warnings, never raises
+
+### Tests
+- **19 new tests** in `tests/test_statistical_foundation.py`:
+  - 5 tests for dimension_ci (basic, all dimensions, empty runs, deterministic, significance)
+  - 4 tests for mde (basic, sample size dependency, empty runs, all dimensions)
+  - 4 tests for power_forecast (basic, sufficient sample, empty runs, multiple dimensions)
+  - 3 tests for attribution (basic, marginal contribution, empty)
+  - 3 integration tests with diff.py (flag behavior, field population, detection unchanged)
+- **All 337 tests pass** (318 existing + 19 new)
+- **Synthetic drift MD5 unchanged**: 81c8c216b17c79b121fdfcd86a4b468d
+
 ## [0.11.1-rc.1] - 2026-04-22
 
 ### Added - Phase 2b: Run Quality Score + Database Indexing

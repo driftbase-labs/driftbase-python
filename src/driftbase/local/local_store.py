@@ -180,6 +180,11 @@ class DriftReport:
     limiting_dimension: str = ""  # dimension needing most runs
     partial_tier3: bool = False  # True when 8+ dims reliable but not all
     warnings: list[str] = field(default_factory=list)  # List of warning messages
+    # Phase 3a: Statistical foundation
+    dimension_cis: dict[str, Any] | None = None  # dict[str, DimensionCI]
+    dimension_mdes: dict[str, float] | None = None
+    runs_needed_forecast: dict[str, int] | None = None
+    dimension_attribution: dict[str, float] | None = None
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:
