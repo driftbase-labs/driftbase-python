@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 2a: Schema Split
+
+#### Two-Table Storage Architecture
+- **Separation of raw trace data and derived features**
+  - New `runs_raw` table: immutable trace data from ingestion
+  - New `runs_features` table: computed features with lazy derivation
+  - `feature_source` audit column: tracks "derived" vs "migrated" features
+  - Enables schema evolution without reingestion
+  - Supports feature backfilling for historical data
+
+#### Automatic Migration (v0.10 → v0.11)
+- **Safe, atomic migration from `agent_runs_local` to two-table design**
+  - Automatic backup creation (`.pre-v0.11.backup` files)
+  - Idempotent migration (safe to re-run)
+  - Transaction-based (all-or-nothing)
+  - Preserves all data and computed features
+  - Keeps legacy table as read-only safety net
+  - Migration runs on backend initialization
+
+#### Lazy Feature Derivation
+- **On-demand feature computation** for missing or stale features
+  - LEFT JOIN pattern: `runs_raw` + `runs_features`
+  - Automatic derivation on first read
+  - Stale feature detection via `feature_schema_version`
+  - Failed derivations marked with sentinel value (-1)
+  - No impact on existing workflows
+
+#### CLI Migration Commands
+- **`driftbase migrate` command** for schema management
+  - `--status`: Show migration status and feature breakdown (derived vs migrated)
+  - `--backfill`: Derive missing or stale features with progress bar
+  - `--rebuild --confirm`: Drop all features and re-derive from scratch
+  - `--dry-run`: Preview changes without modifying database
+  - Feature source tracking in status output
+
+#### Comprehensive Test Coverage
+- **16 new migration tests** in `tests/test_schema_migration.py`
+  - Migration detection and table creation
+  - Data copying and preservation
+  - Idempotency and backup creation
+  - feature_source tracking (migrated vs derived)
+  - Lazy derivation and error handling
+  - Field mappings and index creation
+  - All tests pass
+
+### Changed
+- **Database schema**: Split `agent_runs_local` into `runs_raw` + `runs_features`
+- **SQLiteBackend.get_runs()**: Now uses lazy derivation reader
+- **Feature computation**: Centralized in `local/feature_deriver.py` module
+
+### Documentation
+- New `docs/schema-v2.md`: Two-table design, feature_source, migration details
+- New `docs/migration-guide.md`: Upgrade process, rollback procedure, troubleshooting
+- Updated `CLAUDE.md`: Replaced agent_runs_local with two-table storage references
+- Migration docstrings in `backends/migrations/v0_11_schema_split.py`
+
+### Migration Notes
+- **Automatic migration on first v0.11 startup**
+  - Backup created at `~/.driftbase/runs.db.pre-v0.11.backup`
+  - Migration takes <1 second for databases up to 100K runs
+  - No user action required
+- **Rollback**: Restore backup and downgrade to v0.10.3
+- **Phase 2a limitation**: observation_tree_json not yet populated (Phase 4)
+  - Tool features (tool_sequence, loop_count) cannot be re-derived for migrated data
+  - Migration copies these features to preserve values
+  - Do not run `--rebuild` on migrated databases until Phase 4
+
 ## [0.10.0-rc.2] - 2026-04-22
 
 ### Fixed

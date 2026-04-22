@@ -19,6 +19,67 @@ from driftbase.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Schema version constants
+RAW_SCHEMA_VERSION = 1
+FEATURE_SCHEMA_VERSION = 1
+
+
+class RunRaw(SQLModel, table=True):
+    """Immutable facts from trace source (re-ingestion reproduces them)."""
+
+    __tablename__ = "runs_raw"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    external_id: str | None = None  # Original ID from Langfuse/LangSmith
+    source: str | None = None  # "langfuse" | "langsmith" | null for @track()
+    ingestion_source: str = (
+        "decorator"  # "connector" | "decorator" | "otlp" | "webhook"
+    )
+    session_id: str = ""
+    deployment_version: str = "unknown"
+    version_source: str = "epoch"  # "release" | "tag" | "env" | "epoch" | "unknown"
+    environment: str = "production"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)  # Primary timestamp
+    input: str = ""  # Truncated inline (Phase 4 will externalize)
+    output: str = ""  # Truncated inline
+    latency_ms: int = 0
+    tokens_prompt: int | None = None
+    tokens_completion: int | None = None
+    tokens_total: int | None = None
+    raw_status: str | None = None  # "success" | "error" | null
+    raw_error_message: str | None = None  # Verbatim from trace
+    observation_tree_json: str | None = None  # Phase 4 will populate
+    ingested_at: datetime = Field(default_factory=datetime.utcnow)
+    raw_schema_version: int = RAW_SCHEMA_VERSION
+
+
+class RunFeatures(SQLModel, table=True):
+    """Driftbase-computed features (re-derivable from RunRaw)."""
+
+    __tablename__ = "runs_features"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="runs_raw.id", index=True, unique=True)
+    feature_schema_version: int = FEATURE_SCHEMA_VERSION
+    feature_source: str = "derived"  # "derived" | "migrated"
+    derivation_error: str | None = None  # Reason if feature_schema_version == -1
+    tool_sequence: str = "[]"  # JSON list of tool names
+    tool_call_sequence: str = "[]"  # JSON list of tool calls with args
+    tool_call_count: int = 0
+    semantic_cluster: str = "cluster_none"
+    loop_count: int = 0
+    verbosity_ratio: float = 0.0
+    time_to_first_tool_ms: int = 0
+    fallback_rate: float = 0.0
+    retry_count: int = 0
+    retry_patterns: str = "{}"  # JSON dict
+    error_classification: str = "ok"  # "trace_error" | "inferred_error" | "ok"
+    input_hash: str = ""
+    output_hash: str = ""
+    input_length: int = 0
+    output_length: int = 0
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 class AgentRunLocal(SQLModel, table=True):
     """Local copy of AgentRun schema for SQLite (same columns as store.AgentRun)."""
@@ -424,6 +485,27 @@ class SQLiteBackend(StorageBackend):
         ConnectorSync.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
+        # Run v0.11 schema split migration (runs_raw + runs_features)
+        from pathlib import Path
+
+        from driftbase.backends.migrations.v0_11_schema_split import (
+            MigrationError,
+            migrate,
+        )
+
+        try:
+            result = migrate(self._engine, Path(self._db_path), dry_run=False)
+            if result.migrated:
+                logger.info(
+                    f"Migrated {result.rows_copied} rows to runs_raw. "
+                    f"Backup at {result.backup_path}"
+                )
+        except MigrationError as e:
+            logger.error(f"Schema migration failed: {e}")
+            raise RuntimeError(
+                f"Database schema migration failed: {e}. See logs for details."
+            ) from e
+
         # Add UNIQUE constraints if not exists
         try:
             with self._engine.connect() as conn:
@@ -530,25 +612,16 @@ class SQLiteBackend(StorageBackend):
         limit: int = 1000,
         include_all_sources: bool = False,
     ) -> list[dict[str, Any]]:
-        with Session(self._engine) as session:
-            stmt = (
-                select(AgentRunLocal)
-                .order_by(AgentRunLocal.started_at.desc())
-                .limit(limit)
-            )
-            if deployment_version is not None:
-                stmt = stmt.where(
-                    AgentRunLocal.deployment_version == deployment_version
-                )
-            if environment is not None:
-                stmt = stmt.where(AgentRunLocal.environment == environment)
-            # Default: only include connector-sourced runs (imported traces)
-            # Opt-in to include decorator (@track) and other sources
-            if not include_all_sources:
-                stmt = stmt.where(AgentRunLocal.ingestion_source == "connector")
-            result = session.execute(stmt)
-            rows = result.scalars().all()
-            return [_row_to_run_dict(r) for r in rows]
+        # Use lazy derivation reader for runs_raw + runs_features
+        from driftbase.backends.sqlite_reader import get_runs_with_features
+
+        return get_runs_with_features(
+            backend=self,
+            deployment_version=deployment_version,
+            environment=environment,
+            limit=limit,
+            include_all_sources=include_all_sources,
+        )
 
     def get_versions(self) -> list[tuple[str, int]]:
         with Session(self._engine) as session:
