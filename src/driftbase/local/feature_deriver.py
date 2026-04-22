@@ -24,6 +24,7 @@ from driftbase.connectors.mapper import (
     compute_verbosity_ratio,
     infer_semantic_cluster,
 )
+from driftbase.local.run_quality import compute_run_quality
 
 if TYPE_CHECKING:
     from driftbase.backends.sqlite import RunRaw
@@ -103,7 +104,8 @@ def derive_features(raw: RunRaw) -> RunFeatures:
                 f"Observation tree available for run {raw.id}, but parsing not yet implemented"
             )
 
-        return RunFeatures(
+        # Create features instance
+        features = RunFeatures(
             id=str(uuid4()),
             run_id=raw.id,
             feature_schema_version=FEATURE_SCHEMA_VERSION,
@@ -124,8 +126,14 @@ def derive_features(raw: RunRaw) -> RunFeatures:
             output_hash=output_hash,
             input_length=input_length,
             output_length=output_length,
+            run_quality=0.0,  # Computed below
             computed_at=datetime.utcnow(),
         )
+
+        # Compute run quality score
+        features.run_quality = compute_run_quality(raw, features)
+
+        return features
 
     except Exception as e:
         # Degrade gracefully - return sentinel with error
@@ -154,5 +162,6 @@ def derive_features(raw: RunRaw) -> RunFeatures:
             output_hash="",
             input_length=0,
             output_length=0,
+            run_quality=0.0,  # Failed derivation = 0.0 quality
             computed_at=datetime.utcnow(),
         )

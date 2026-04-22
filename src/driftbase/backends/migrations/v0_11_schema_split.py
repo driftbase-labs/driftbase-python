@@ -203,6 +203,7 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                     output_hash TEXT NOT NULL DEFAULT '',
                     input_length INTEGER NOT NULL DEFAULT 0,
                     output_length INTEGER NOT NULL DEFAULT 0,
+                    run_quality REAL NOT NULL DEFAULT 0.0,
                     computed_at TIMESTAMP NOT NULL,
                     FOREIGN KEY (run_id) REFERENCES runs_raw (id)
                 )
@@ -272,7 +273,7 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                     time_to_first_tool_ms, fallback_rate, retry_count,
                     retry_patterns, error_classification,
                     input_hash, output_hash, input_length, output_length,
-                    computed_at
+                    run_quality, computed_at
                 )
                 SELECT
                     substr(hex(randomblob(16)), 1, 32),  -- Generate UUID-like ID
@@ -295,6 +296,7 @@ def migrate(engine: Engine, db_path: Path, dry_run: bool = False) -> MigrationRe
                     output_structure_hash,
                     COALESCE(LENGTH(raw_prompt), 0),
                     output_length,
+                    0.0,  -- run_quality not computed for migrated rows
                     datetime('now')
                 FROM agent_runs_local
                 """

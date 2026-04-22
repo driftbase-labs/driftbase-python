@@ -220,7 +220,13 @@ Do not bypass this pipeline. Do not reintroduce hardcoded values anywhere.
 - min_runs_needed computed via power analysis from baseline variance × use case effect size. Default 50 when insufficient baseline data.
 
 ## Database tables
-- agent_runs_local — raw run records (primary table)
+### Run storage (v0.11+ two-table design)
+- runs_raw — immutable trace data from ingestion (replaces agent_runs_local)
+- runs_features — derived features computed from trace data (lazy derivation on read)
+  - Includes run_quality score (0.0-1.0) - see docs/run-quality.md
+- agent_runs_local — legacy table (kept as read-only safety net after migration)
+
+### Analysis and state
 - calibration_cache — calibrated weights + thresholds per agent+version
 - budget_configs — persisted budget definitions per agent+version
 - budget_breaches — breach events with rolling average values
@@ -232,6 +238,8 @@ Do not bypass this pipeline. Do not reintroduce hardcoded values anywhere.
 - deploy_events — schema-only, deferred UX
 
 Location: ~/.driftbase/runs.db (configurable via DRIFTBASE_DB_PATH)
+
+See: docs/schema-v2.md for two-table design details
 
 ## Fingerprint schema
 Stable contract — do not alter field names without explicit instruction.

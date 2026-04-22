@@ -35,7 +35,9 @@
       "Bash(chmod:*)",
       "Bash(./scripts/verify_install.sh:*)",
       "Bash(ruff format:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
