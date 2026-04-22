@@ -2,14 +2,21 @@
 Tests for deterministic drift detection.
 
 Ensures that running the same drift analysis twice on identical data
-produces byte-identical results.
+produces byte-identical results, both within-process and across subprocesses.
+
+Cross-process tests are critical because Python's built-in hash() is randomized
+per-process for security. Our determinism implementation must use stable hashing
+(SHA-256) to ensure reproducibility across separate Python invocations.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +24,7 @@ import pytest
 from driftbase.local.diff import compute_drift
 from driftbase.local.fingerprinter import build_fingerprint_from_runs
 from driftbase.local.local_store import AgentRun
+from driftbase.utils.determinism import get_rng
 
 
 def _create_test_run(
@@ -256,3 +264,97 @@ def test_different_seed_produces_different_ci():
     # In practice, with deterministic seed, the same seed always gives same result
     assert report_seed42.bootstrap_iterations == report_seed99.bootstrap_iterations
     # CIs may differ slightly due to bootstrap randomness
+
+
+def test_determinism_of_get_rng_salt():
+    """
+    get_rng() with the same salt must produce identical random sequences
+    across separate Python processes.
+
+    This test catches the Python hash() randomization bug where hash(x) returns
+    different values in different process invocations.
+    """
+    # Helper script that calls get_rng with a salt and draws 10 values
+    script = """
+import sys
+sys.path.insert(0, "src")
+from driftbase.utils.determinism import get_rng
+rng = get_rng("test_salt")
+values = [rng.random() for _ in range(10)]
+print(",".join(f"{v:.15f}" for v in values))
+"""
+
+    # Run in subprocess A
+    result_a = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "DRIFTBASE_SEED": "42"},
+    )
+    values_a = result_a.stdout.strip()
+
+    # Run in subprocess B
+    result_b = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "DRIFTBASE_SEED": "42"},
+    )
+    values_b = result_b.stdout.strip()
+
+    # Must be identical
+    assert values_a == values_b, (
+        f"get_rng with same salt produced different sequences across processes:\nA: {values_a}\nB: {values_b}"
+    )
+
+
+def test_determinism_across_subprocesses():
+    """
+    Synthetic drift fixtures must produce identical drift scores when
+    regenerated and computed in separate Python processes.
+
+    This is the ultimate determinism test: fresh process → new fixture generation
+    → new fingerprints → drift computation → must be bit-identical.
+    """
+    helper_script = Path(__file__).parent / "helpers" / "run_synthetic_drift.py"
+    assert helper_script.exists(), f"Helper script not found: {helper_script}"
+
+    fixtures_to_test = [
+        "no_drift",
+        "decision_drift",
+        "latency_drift",
+        "error_rate_drift",
+        "semantic_cluster_drift",
+    ]
+
+    for fixture_name in fixtures_to_test:
+        # Run subprocess A
+        result_a = subprocess.run(
+            [sys.executable, str(helper_script), fixture_name, "42"],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "DRIFTBASE_SEED": "42"},
+            cwd=Path(__file__).parent.parent,  # Run from repo root
+        )
+        output_a = json.loads(result_a.stdout)
+
+        # Run subprocess B
+        result_b = subprocess.run(
+            [sys.executable, str(helper_script), fixture_name, "42"],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "DRIFTBASE_SEED": "42"},
+            cwd=Path(__file__).parent.parent,
+        )
+        output_b = json.loads(result_b.stdout)
+
+        # Must be identical
+        assert output_a == output_b, (
+            f"Cross-process determinism failed for {fixture_name}:\n"
+            f"Process A: {json.dumps(output_a, indent=2)}\n"
+            f"Process B: {json.dumps(output_b, indent=2)}"
+        )

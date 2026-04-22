@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0-rc.2] - 2026-04-22
+
+### Fixed
+- **Determinism across processes.** `get_rng()` now uses a SHA-256-based
+  stable hash for salt derivation instead of Python's built-in `hash()`,
+  which is randomized per-process for security. Drift reports are now
+  genuinely reproducible across separate Python invocations, not just
+  within a single process. Users who ran identical `driftbase diff`
+  commands previously and got slightly different scores should see
+  consistent results after upgrading.
+
+### Added
+- Cross-process determinism tests (`test_determinism_across_subprocesses`,
+  `test_determinism_of_get_rng_salt`) using subprocess invocation to
+  verify reproducibility at the boundary that matters.
+- `scripts/verify_synthetic_numeric.py` utility for reproducing drift
+  scores across versions and environments.
+
+### Notes
+- No schema changes. No action required from users beyond upgrading.
+- Upgrading from v0.10.0-rc.1 to rc.2 is safe. Existing DBs continue
+  to work without migration.
+
 ## [0.10.0-rc.1] - 2025-04-21
 
 ### Added - Phase 1: Correctness Foundation

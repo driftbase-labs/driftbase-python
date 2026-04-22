@@ -7,9 +7,31 @@ get_rng() to ensure reproducible results across runs.
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 from driftbase.config import get_settings
+
+
+def _stable_hash(s: str) -> int:
+    """
+    Compute a stable hash of a string that is consistent across Python processes.
+
+    Python's built-in hash() is randomized per-process for security, making it
+    unsuitable for reproducible seeding. This function uses SHA-256 which is
+    deterministic across all invocations.
+
+    Args:
+        s: String to hash
+
+    Returns:
+        Integer hash value (first 8 bytes of SHA-256 digest as big-endian int)
+    """
+    return int.from_bytes(
+        hashlib.sha256(s.encode("utf-8")).digest()[:8],
+        "big",
+    )
 
 
 def get_rng(salt: str | None = None) -> np.random.Generator:
@@ -38,8 +60,9 @@ def get_rng(salt: str | None = None) -> np.random.Generator:
     if salt is None:
         return np.random.default_rng(base_seed)
 
-    # Hash the salt to derive a new seed
-    # Use Python's hash() for simplicity (deterministic within a process)
-    # For cross-process determinism, combine base_seed and salt hash
-    salted_seed = hash((base_seed, salt)) % (2**32)
-    return np.random.default_rng(salted_seed)
+    # Combine base_seed with stable hash of salt for cross-process determinism
+    # Use Knuth's hash-combining constant to ensure base_seed changes aren't
+    # trivially overridden by salt values
+    salt_hash = _stable_hash(salt)
+    combined_seed = (base_seed * 2654435761 + salt_hash) & 0xFFFFFFFF
+    return np.random.default_rng(combined_seed)
