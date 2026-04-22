@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0-rc.1] - 2026-04-22
+
 ### Added - Phase 2a: Schema Split
 
 #### Two-Table Storage Architecture
