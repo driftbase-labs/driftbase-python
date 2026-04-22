@@ -237,3 +237,6 @@ Thumbs.db
 .vscode/
 .idea/
 test_limit.py
+
+# Claude context (use .claude/claude.md only)
+/CLAUDE.md
