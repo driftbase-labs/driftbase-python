@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 3b: Trust Surface
+
+#### Verdict History Storage
+- **`verdict_history` table** added to SQLite backend
+  - Stores completed drift verdicts with baseline/current versions, composite scores, severity, confidence tier
+  - Full DriftReport serialized as JSON for complete context
+  - Indexed by timestamp for fast chronological retrieval
+- **Backend methods**: `save_verdict()`, `get_verdict()`, `list_verdicts()`
+  - Automatic verdict saving on `driftbase diff` completion
+  - Enables audit trail and rollback target discovery
+
+#### Structured Verdict Payload
+- **`output.verdict_payload.build_verdict_payload()`** converts DriftReport to clean JSON for CI/CD
+  - Version 1.0 schema with: verdict, composite_score, confidence (CIs), confidence_tier
+  - **Top 3 contributors** with observed scores, CIs, significance flags, contribution %, and evidence
+  - **Rollback target**: Most recent SHIP verdict from history (for REVIEW/BLOCK verdicts)
+  - **Power forecast**: Runs needed for sufficient power (TIER1/TIER2 only)
+  - **MDEs and thresholds**: Full statistical context
+  - Graceful degradation on errors—minimal fallback payload always returned
+
+#### Evidence Generation
+- **`output.evidence.generate_evidence()`** produces human-readable explanations for all 12 dimensions
+  - **Decision drift**: "Tool path ['search', 'write'] went from 3% to 27%" or "New tool path appeared in 15.3%"
+  - **Latency**: "P95 latency increased from 1,240ms to 2,890ms (+133%)"
+  - **Error rate**: "Error rate increased from 2.1% to 8.4% (+6.3pp)"
+  - **Semantic drift**: "Semantic cluster 'error' grew from 5% to 18% of outcomes"
+  - Similar patterns for verbosity, loop depth, output length, retry rate, planning latency
+  - Fallback: "Drift observed in {dimension}" when fingerprint data is missing
+
+#### driftbase explain Command
+- **`driftbase explain [VERDICT_ID]`** shows detailed verdict breakdown
+  - Loads latest verdict if no ID provided
+  - Rich-formatted output with panels and tables
+  - Displays: top contributors with evidence, CIs, contribution %, significance markers
+  - Full MDE table with detectability status (✓ Detectable / ⚠ Below MDE)
+  - Helpful error if no verdict history exists
+
+#### driftbase diff --format Flag
+- **`--format` option** with choices: `rich` (default), `json`, `markdown`
+  - **`--format=json`**: Outputs structured verdict_payload for programmatic consumption
+  - **`--format=markdown`**: GitHub-flavored markdown table for PR comments
+    - Renders top contributors with evidence in table format
+    - Shows MDEs, rollback target, verdict
+    - Ready to paste into GitHub PRs or Slack
+  - Deprecated `--json` flag (hidden for backward compatibility)
+  - `--ci` flag now implies `--format=json --fail-on-drift`
+
+#### Root Cause Attribution
+- **`VerdictResult.root_cause`** field added (optional)
+  - Populated for REVIEW and BLOCK verdicts only
+  - Format: "dimension: score (X% of drift)"
+  - Extracted from top contributor in dimension_attribution
+  - Provides one-line summary of primary drift cause
+
+#### Documentation
+- **`docs/explain.md`**: Complete guide to reading `driftbase explain` output
+  - How to interpret CIs, significance markers, MDEs
+  - Evidence string examples for all dimensions
+  - Statistical interpretation tips
+- **`docs/ci-integration.md`**: CI/CD integration patterns
+  - GitHub Actions, GitLab CI, CircleCI examples
+  - JSON and markdown output usage
+  - Exit code handling, rollback strategies
+  - Troubleshooting guide
+
+### Changed
+- **`driftbase diff`** now saves verdict to history automatically
+- JSON output structure changed to use `verdict_payload` schema (version 1.0)
+- Markdown output now renders as GFM table instead of plain text
+
+### Tests
+- **21 new tests** in `tests/test_trust_surface.py`:
+  - Verdict history: save, retrieve, ordering
+  - Verdict payload: structure, top contributors, rollback target, JSON serialization
+  - Evidence generation: all dimensions, fallback handling
+  - CLI formats: JSON validation, markdown structure
+  - Explain command: no history, latest, by ID
+  - Root cause: present for REVIEW/BLOCK, absent for SHIP
+  - Integration: composite scores unchanged (detection behavior stable)
+
 ## [0.12.0-rc.1] - 2026-04-22
 
 ### Added - Phase 3a: Statistical Foundation
