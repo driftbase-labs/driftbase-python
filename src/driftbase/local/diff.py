@@ -338,6 +338,7 @@ def compute_drift(
     current_runs: list[dict[str, Any]] | None = None,
     sensitivity: str | None = None,
     backend: "StorageBackend | None" = None,
+    compute_statistics: bool = True,
 ) -> "DriftReport":
     """Compute a drift report between two behavioral fingerprints.
 
@@ -984,5 +985,99 @@ def compute_drift(
         report.sample_size_warning = sample_size < 30
         report.confidence_interval_pct = 95
         report.bootstrap_iterations = 0
+
+    # Phase 3a: Statistical foundation
+    if (
+        compute_statistics
+        and baseline_runs is not None
+        and current_runs is not None
+        and len(baseline_runs) > 0
+        and len(current_runs) > 0
+    ):
+        from driftbase.stats.attribution import (
+            compute_dimension_attribution,
+            compute_marginal_contribution,
+        )
+        from driftbase.stats.dimension_ci import compute_dimension_cis
+        from driftbase.stats.mde import compute_mde
+        from driftbase.stats.power_forecast import forecast_runs_needed
+
+        # All 12 drift dimensions
+        all_dimensions = [
+            "decision_drift",
+            "semantic_drift",
+            "latency",
+            "error_rate",
+            "tool_distribution",
+            "verbosity_ratio",
+            "loop_depth",
+            "output_length",
+            "tool_sequence",
+            "retry_rate",
+            "time_to_first_tool",
+            "tool_sequence_transitions",
+        ]
+
+        # Collect dimension scores from report
+        dimension_scores = {
+            "decision_drift": report.decision_drift,
+            "semantic_drift": report.semantic_drift,
+            "latency": report.latency_drift,
+            "error_rate": report.error_drift,
+            "tool_distribution": report.decision_drift,  # proxy
+            "verbosity_ratio": report.verbosity_drift,
+            "loop_depth": report.loop_depth_drift,
+            "output_length": report.output_length_drift,
+            "tool_sequence": report.tool_sequence_drift,
+            "retry_rate": report.retry_drift,
+            "time_to_first_tool": report.planning_latency_drift,
+            "tool_sequence_transitions": report.tool_sequence_transitions_drift,
+        }
+
+        # 1. Per-dimension confidence intervals
+        dimension_cis = compute_dimension_cis(
+            baseline_runs=baseline_runs,
+            current_runs=current_runs,
+            dimensions=all_dimensions,
+            n_bootstrap=n_bootstrap,
+            confidence_level=0.95,
+            salt="dimension_ci",
+        )
+        report.dimension_cis = dimension_cis
+
+        # 2. Minimum Detectable Effects
+        dimension_mdes = compute_mde(
+            baseline_runs=baseline_runs,
+            current_runs=current_runs,
+            dimensions=all_dimensions,
+            alpha=0.05,
+            power=0.80,
+            n_bootstrap=n_bootstrap,
+            salt="mde_estimation",
+        )
+        report.dimension_mdes = dimension_mdes
+
+        # 3. Power forecast (runs needed for target MDE)
+        runs_needed_forecast = forecast_runs_needed(
+            baseline_runs=baseline_runs,
+            current_runs=current_runs,
+            dimensions=all_dimensions,
+            target_mde=0.10,
+            alpha=0.05,
+            power=0.80,
+            n_bootstrap=n_bootstrap,
+            salt="power_forecast",
+        )
+        report.runs_needed_forecast = runs_needed_forecast
+
+        # 4. Counterfactual attribution
+        dimension_attribution = compute_dimension_attribution(
+            baseline=baseline,
+            current=current,
+            calibrated_weights=calibrated_weights,
+            original_composite=report.drift_score,
+            dimension_scores=dimension_scores,
+        )
+        report.dimension_attribution = dimension_attribution
 
     return report
