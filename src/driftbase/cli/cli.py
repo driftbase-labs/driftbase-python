@@ -39,7 +39,7 @@ def _console_no_color(no_color_flag: bool) -> bool:
 
 
 COMMAND_GROUPS = {
-    "Primary": ["diagnose", "history", "diff"],
+    "Primary": ["diagnose", "history", "diff", "explain"],
     "Integrations": ["connect", "mcp"],
     "Data": ["runs", "versions", "inspect", "prune", "export", "import"],
     "Deploy": ["budgets", "changes", "deploy"],
@@ -102,6 +102,7 @@ from driftbase.cli.cli_deploy import cmd_deploy
 from driftbase.cli.cli_diagnose import cmd_diagnose
 from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
+from driftbase.cli.cli_explain import cmd_explain
 from driftbase.cli.cli_export import export_command, import_command
 from driftbase.cli.cli_history import cmd_history
 from driftbase.cli.cli_init import cmd_init
@@ -117,6 +118,7 @@ cli.add_command(cmd_inspect)
 cli.add_command(cmd_demo)
 cli.add_command(cmd_diagnose)
 cli.add_command(cmd_history)
+cli.add_command(cmd_explain)
 cli.add_command(export_command)
 cli.add_command(import_command)
 cli.add_command(cmd_doctor)

@@ -15,6 +15,7 @@ from driftbase.connectors.mapper import (
     compute_verbosity_ratio,
     detect_retry_patterns,
     extract_tool_sequence,
+    extract_tools_from_tree,
     infer_semantic_cluster,
 )
 
@@ -26,6 +27,96 @@ try:
     LANGFUSE_AVAILABLE = True
 except ImportError:
     LANGFUSE_AVAILABLE = False
+
+
+def _build_observation_tree(observations: list[dict]) -> dict | None:
+    """
+    Build hierarchical observation tree from flat Langfuse observations.
+
+    Args:
+        observations: List of observation dicts from Langfuse
+
+    Returns:
+        Tree structure with each node containing:
+        - id, type, name, input, output, metadata
+        - children: list of child nodes
+
+    Note:
+        Returns None if observations is empty or tree build fails.
+        Preserves ALL observation types (generation, span, event).
+    """
+    if not observations:
+        return None
+
+    try:
+        # Index observations by ID for fast lookup
+        obs_by_id = {obs.get("id"): obs for obs in observations if obs.get("id")}
+
+        # Build parent->children mapping
+        children_map: dict[str | None, list[dict]] = {}
+        for obs in observations:
+            parent_id = obs.get("parent_observation_id") or obs.get(
+                "parentObservationId"
+            )
+            if parent_id not in children_map:
+                children_map[parent_id] = []
+            children_map[parent_id].append(obs)
+
+        def build_node(obs: dict) -> dict:
+            """Recursively build tree node with children."""
+            node = {
+                "id": obs.get("id"),
+                "type": obs.get("type"),
+                "name": obs.get("name"),
+                "input": obs.get("input"),
+                "output": obs.get("output"),
+                "metadata": obs.get("metadata", {}),
+                "start_time": obs.get("startTime") or obs.get("start_time"),
+                "end_time": obs.get("endTime") or obs.get("end_time"),
+                "level": obs.get("level"),
+                "status_message": obs.get("statusMessage") or obs.get("status_message"),
+            }
+
+            # Add children recursively
+            obs_id = obs.get("id")
+            if obs_id and obs_id in children_map:
+                node["children"] = [build_node(child) for child in children_map[obs_id]]
+            else:
+                node["children"] = []
+
+            return node
+
+        # Find root observations (those with no parent or parent not in set)
+        roots = children_map.get(None, [])
+
+        # If no explicit None-parent roots, find orphans (parent_id not in obs_by_id)
+        if not roots:
+            for obs in observations:
+                parent_id = obs.get("parent_observation_id") or obs.get(
+                    "parentObservationId"
+                )
+                if parent_id and parent_id not in obs_by_id:
+                    roots.append(obs)
+
+        # If still no roots, use first observation
+        if not roots and observations:
+            roots = [observations[0]]
+
+        # Build tree structure
+        if len(roots) == 1:
+            return build_node(roots[0])
+        else:
+            # Multiple roots - wrap in container
+            return {
+                "id": "root",
+                "type": "trace",
+                "name": "trace_root",
+                "children": [build_node(root) for root in roots],
+            }
+
+    except Exception as e:
+        logger.warning(f"Failed to build observation tree: {e}")
+        return None
 
 
 class LangFuseConnector(TraceConnector):
@@ -265,13 +356,33 @@ class LangFuseConnector(TraceConnector):
                 # Use current time as fallback
                 end_dt = datetime.now(tz=timezone.utc)
 
-            # Extract tool sequence from observations
+            # Build observation tree first (Phase 4 - needed for enhanced tool extraction)
+            observation_tree = _build_observation_tree(observations)
+
+            # Extract tool sequence - use tree-based extraction if available (additive)
             tool_observations = [
                 obs for obs in observations if obs.get("type") == "generation"
             ]  # LangFuse uses "generation" for tool calls
-            tool_sequence_json, tool_call_count = extract_tool_sequence(
+
+            # Legacy extraction (baseline)
+            legacy_tools_json, legacy_tool_count = extract_tool_sequence(
                 tool_observations
             )
+
+            # Tree-based extraction (Phase 4 additive enhancement)
+            tree_tools = extract_tools_from_tree(observation_tree)
+
+            # Merge: start with legacy, then add any new tools from tree
+            legacy_tools = json.loads(legacy_tools_json) if legacy_tools_json else []
+            all_tools = legacy_tools.copy()
+
+            # Add tree tools that aren't already in legacy (preserves order)
+            for tool in tree_tools:
+                if tool not in all_tools:
+                    all_tools.append(tool)
+
+            tool_sequence_json = json.dumps(all_tools)
+            tool_call_count = len(all_tools)
 
             # Detect retry patterns from tool observations
             retry_count = detect_retry_patterns(tool_observations)
@@ -327,6 +438,10 @@ class LangFuseConnector(TraceConnector):
             raw_prompt = json.dumps(input_data) if input_data else ""
             output_str = json.dumps(output_data) if output_data else ""
 
+            # Store full versions for blob storage (Phase 4)
+            raw_prompt_full = raw_prompt
+            raw_output_full = output_str
+
             # Compute hashes for fingerprinting
             task_input_hash = compute_hash(raw_prompt)
             output_structure_hash = compute_hash(output_str)
@@ -377,6 +492,11 @@ class LangFuseConnector(TraceConnector):
             if not end_dt:
                 end_dt = datetime.now(tz=timezone.utc)
 
+            # Serialize observation tree (already built above for tool extraction)
+            observation_tree_json = (
+                json.dumps(observation_tree) if observation_tree else None
+            )
+
             return {
                 "id": str(uuid4()),  # Generate new UUID for Driftbase
                 "external_id": str(trace.get("id", str(uuid4()))),
@@ -409,8 +529,11 @@ class LangFuseConnector(TraceConnector):
                 "output_structure_hash": output_structure_hash,  # SHA256 hash of output
                 "raw_output": output_str[:5000],  # Truncate to 5000 chars
                 "raw_prompt": raw_prompt[:5000],  # Truncate to 5000 chars
+                "raw_prompt_full": raw_prompt_full,  # Phase 4: full text for blob storage
+                "raw_output_full": raw_output_full,  # Phase 4: full text for blob storage
                 "retry_count": retry_count,
                 "sensitivity": None,
+                "observation_tree_json": observation_tree_json,  # Phase 4: full tree
             }
         except Exception as e:
             logger.error(f"Failed to map LangFuse trace {trace.get('id')}: {e}")

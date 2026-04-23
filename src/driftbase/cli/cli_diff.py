@@ -150,12 +150,23 @@ def _apply_filters_to_runs(
     help="Drift threshold (default 0.20).",
 )
 @click.option(
-    "--json", "json_output", is_flag=True, help="Machine-readable output for CI."
+    "--format",
+    "-f",
+    type=click.Choice(["rich", "json", "markdown"]),
+    default="rich",
+    help="Output format: rich (default), json, or markdown.",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    hidden=True,
+    help="Deprecated: use --format=json",
 )
 @click.option(
     "--ci",
     is_flag=True,
-    help="CI mode: JSON output + fail on drift (equivalent to --json --fail-on-drift).",
+    help="CI mode: JSON output + fail on drift (equivalent to --format=json --fail-on-drift).",
 )
 @click.option(
     "--remote", is_flag=True, help="Compute diff using the Driftbase Pro cloud engine."
@@ -213,7 +224,8 @@ def cmd_diff(
     against: str | None,
     environment: str | None,
     threshold: float,
-    json_output: bool,
+    format: str,
+    json_flag: bool,
     ci: bool,
     remote: bool,
     since: str | None,
@@ -251,9 +263,13 @@ def cmd_diff(
     console: Console = ctx.obj["console"]
     use_color = not console.no_color
 
+    # Handle backward compatibility: --json flag (deprecated)
+    if json_flag:
+        format = "json"
+
     # Handle --ci flag: automatically enable JSON output and fail-on-drift
     if ci:
-        json_output = True
+        format = "json"
         fail_on_drift = True
 
     # Handle Cloud Diff
@@ -347,7 +363,7 @@ def cmd_diff(
             against_version=against,
             environment=environment,
             threshold=threshold,
-            json_output=json_output,
+            output_format=format,
             use_color=use_color,
             backend=None,
             console=console,
@@ -376,7 +392,7 @@ def cmd_diff(
             "local",
             environment=environment,
             threshold=threshold,
-            json_output=json_output,
+            output_format=format,
             use_color=use_color,
             backend=backend,
             console=console,
@@ -400,7 +416,7 @@ def cmd_diff(
         current,
         environment=environment,
         threshold=threshold,
-        json_output=json_output,
+        output_format=format,
         use_color=use_color,
         backend=None,
         console=console,
@@ -478,6 +494,66 @@ def _dimension_status(score: float) -> str:
     if score >= 0.1:
         return "LOW"
     return "STABLE"
+
+
+def _render_markdown(
+    console: Console,
+    payload: dict[str, Any],
+    baseline_label: str,
+    current_label: str,
+) -> None:
+    """Render verdict payload as GitHub-flavored markdown for PR comments."""
+    verdict = payload.get("verdict") or "NONE"
+    composite_score = payload.get("composite_score", 0.0)
+    confidence = payload.get("confidence", {})
+    ci_lower = confidence.get("ci_lower", composite_score)
+    ci_upper = confidence.get("ci_upper", composite_score)
+    confidence_tier = payload.get("confidence_tier", "TIER3")
+    top_contributors = payload.get("top_contributors", [])
+    mdes = payload.get("mdes", {})
+    rollback_target = payload.get("rollback_target")
+
+    # Header
+    console.print(f"## Drift Report: {baseline_label} → {current_label}\n")
+    console.print(f"**Verdict:** {verdict}")
+    console.print(
+        f"**Composite Score:** {composite_score:.3f} (CI: {ci_lower:.3f}–{ci_upper:.3f})"
+    )
+    console.print(f"**Confidence:** {confidence_tier}\n")
+
+    # Top Contributors Table
+    if top_contributors:
+        console.print("### Top Contributors\n")
+        console.print(
+            "| Dimension | Observed | CI Lower | CI Upper | Significant | Contribution % | Evidence |"
+        )
+        console.print(
+            "|-----------|----------|----------|----------|-------------|----------------|----------|"
+        )
+
+        for contributor in top_contributors:
+            dim = contributor.get("dimension", "")
+            observed = contributor.get("observed", 0.0)
+            ci_l = contributor.get("ci_lower", 0.0)
+            ci_u = contributor.get("ci_upper", 0.0)
+            sig = "✓" if contributor.get("significant", False) else "—"
+            contrib_pct = contributor.get("contribution_pct", 0.0)
+            evidence = contributor.get("evidence", "")
+
+            console.print(
+                f"| {dim} | {observed:.3f} | {ci_l:.3f} | {ci_u:.3f} | {sig} | {contrib_pct:.1f}% | {evidence} |"
+            )
+
+        console.print()
+
+    # MDEs
+    if mdes:
+        mde_list = [f"{dim}={val:.3f}" for dim, val in sorted(mdes.items())[:5]]
+        console.print(f"**MDEs:** {', '.join(mde_list)}\n")
+
+    # Rollback suggestion
+    if rollback_target:
+        console.print(f"**Rollback Suggested:** {rollback_target} (last SHIP)\n")
 
 
 def render_tier1(
@@ -1808,14 +1884,21 @@ def run_diff(
     against_version: str | None = None,
     environment: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
-    json_output: bool = False,
+    output_format: str = "rich",
     use_color: bool = True,
     backend: StorageBackend | None = None,
     console: Console | None = None,
     fail_on_drift: bool = False,
     exit_nonzero_above: float | None = None,
 ) -> int:
-    """Run diff and print via rich. Returns 0 on success, 1 on error or above threshold (for CI)."""
+    """
+    Run diff and output in specified format.
+
+    Args:
+        output_format: "rich" (default), "json", or "markdown"
+
+    Returns 0 on success, 1 on error or above threshold (for CI).
+    """
     if backend is None:
         from driftbase.backends.factory import get_backend
 
@@ -1909,28 +1992,39 @@ def run_diff(
         report, baseline_fp, current_fp, tool_frequency_diffs, threshold
     )
 
-    if json_output:
+    # Handle JSON and Markdown outputs
+    if output_format in ("json", "markdown"):
         confidence_tier = getattr(report, "confidence_tier", "TIER3")
 
-        # For TIER1 and TIER2, return minimal JSON
+        # For TIER1 and TIER2, return minimal output
         if confidence_tier in ("TIER1", "TIER2"):
-            out = {
-                "schema_version": "1.0",
-                "baseline_version": baseline_label,
-                "current_version": current_label,
-                "baseline_n": baseline_n,
-                "current_n": current_n,
-                "confidence_tier": confidence_tier,
-                "runs_needed": getattr(report, "runs_needed", 0),
-                "limiting_version": getattr(report, "limiting_version", ""),
-                "verdict": None,
-                "above_threshold": False,
-                "threshold": threshold,
-                "computed_ms": round(elapsed_ms, 1),
-            }
-            if confidence_tier == "TIER2":
-                out["indicative_signal"] = getattr(report, "indicative_signal", {})
-            console.print(json.dumps(out, indent=2))
+            if output_format == "json":
+                out = {
+                    "schema_version": "1.0",
+                    "baseline_version": baseline_label,
+                    "current_version": current_label,
+                    "baseline_n": baseline_n,
+                    "current_n": current_n,
+                    "confidence_tier": confidence_tier,
+                    "runs_needed": getattr(report, "runs_needed", 0),
+                    "limiting_version": getattr(report, "limiting_version", ""),
+                    "verdict": None,
+                    "above_threshold": False,
+                    "threshold": threshold,
+                    "computed_ms": round(elapsed_ms, 1),
+                }
+                if confidence_tier == "TIER2":
+                    out["indicative_signal"] = getattr(report, "indicative_signal", {})
+                console.print(json.dumps(out, indent=2))
+            else:  # markdown
+                console.print(f"## Drift Report: {baseline_label} → {current_label}\n")
+                console.print(f"**Confidence:** {confidence_tier}")
+                console.print(
+                    f"**Sample Sizes:** Baseline n={baseline_n}, Current n={current_n}\n"
+                )
+                console.print(
+                    f"⚠ Insufficient data for full analysis. Need {getattr(report, 'runs_needed', 0)} more runs."
+                )
             return 0  # Never fail on insufficient data
 
         # TIER3: Full analysis
@@ -1945,63 +2039,38 @@ def run_diff(
             baseline_label=baseline_label,
             current_label=current_label,
         )
-        out = {
-            "schema_version": "1.0",
-            "baseline_version": baseline_label,
-            "current_version": current_label,
-            "baseline_n": baseline_n,
-            "current_n": current_n,
-            "confidence_tier": "TIER3",
-            "drift_score": report.drift_score,
-            "severity": report.severity,
-            "verdict": verdict_result.verdict.value if verdict_result else None,
-            "verdict_title": verdict_result.title if verdict_result else None,
-            "verdict_explanation": verdict_result.explanation
-            if verdict_result
-            else None,
-            "next_steps": verdict_result.next_steps if verdict_result else [],
-            "above_threshold": report.drift_score >= threshold,
-            "threshold": threshold,
-            "decision_drift": report.decision_drift,
-            "latency_drift": report.latency_drift,
-            "error_drift": report.error_drift,
-            "verbosity_drift": getattr(report, "verbosity_drift", 0.0),
-            "loop_depth_drift": getattr(report, "loop_depth_drift", 0.0),
-            "tool_sequence_drift": getattr(report, "tool_sequence_drift", 0.0),
-            "retry_drift": getattr(report, "retry_drift", 0.0),
-            "planning_latency_drift": getattr(report, "planning_latency_drift", 0.0),
-            "output_length_drift": getattr(report, "output_length_drift", 0.0),
-            "tool_frequency_diffs": tool_frequency_diffs,
-            "top_sequence_shifts": top_sequence_shifts_list,
-            "tool_changes": {
-                t: {
-                    "baseline_pct": baseline_tools.get(t, 0) * 100,
-                    "current_pct": current_tools.get(t, 0) * 100,
-                }
-                for t in sorted(set(baseline_tools.keys()) | set(current_tools.keys()))
-            },
-            "computed_ms": round(elapsed_ms, 1),
-        }
-        # Add cost per 10k when token data is available
-        baseline_cost_10k = calculate_cost_per_10k(baseline_run_dicts)
-        current_cost_10k = calculate_cost_per_10k(current_run_dicts)
-        out["cost_per_10k_baseline_eur"] = round(baseline_cost_10k, 2)
-        out["cost_per_10k_current_eur"] = round(current_cost_10k, 2)
-        out["cost_per_10k_delta_eur"] = round(current_cost_10k - baseline_cost_10k, 2)
-        rate_p, rate_c = get_rates_for_display()
-        out["rate_prompt_eur_per_1m"] = rate_p
-        out["rate_completion_eur_per_1m"] = rate_c
-        if report.drift_score >= threshold and explanation:
-            out["explanation"] = explanation
-        console.print(json.dumps(out, indent=2))
 
-        # CI exit code logic
-        if (fail_on_drift and report.drift_score > 0) or (
-            exit_nonzero_above is not None and report.drift_score > exit_nonzero_above
-        ):
-            return 1
-        else:
-            return verdict_result.exit_code if verdict_result else 0
+        if output_format == "json":
+            # Use verdict payload for JSON output
+            from driftbase.output.verdict_payload import build_verdict_payload
+
+            payload = build_verdict_payload(report, backend)
+            console.print(json.dumps(payload, indent=2))
+
+            # CI exit code logic
+            if (fail_on_drift and report.drift_score > 0) or (
+                exit_nonzero_above is not None
+                and report.drift_score > exit_nonzero_above
+            ):
+                return 1
+            else:
+                return verdict_result.exit_code if verdict_result else 0
+
+        elif output_format == "markdown":
+            # Render markdown output
+            from driftbase.output.verdict_payload import build_verdict_payload
+
+            payload = build_verdict_payload(report, backend)
+            _render_markdown(console, payload, baseline_label, current_label)
+
+            # CI exit code logic
+            if (fail_on_drift and report.drift_score > 0) or (
+                exit_nonzero_above is not None
+                and report.drift_score > exit_nonzero_above
+            ):
+                return 1
+            else:
+                return verdict_result.exit_code if verdict_result else 0
 
     # Route based on confidence tier
     confidence_tier = getattr(report, "confidence_tier", "TIER3")

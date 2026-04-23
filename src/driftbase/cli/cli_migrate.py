@@ -260,6 +260,57 @@ def _show_status(console, db_path: Path) -> None:
                     f"min={quality_min:.2f}, median={quality_median:.2f}, max={quality_max:.2f}",
                 )
 
+        # Add blob storage stats (Phase 4)
+        result = session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='runs_blobs'"
+            )
+        )
+        has_blobs_table = result.fetchone() is not None
+
+        if has_blobs_table:
+            # Total blobs
+            result = session.execute(text("SELECT COUNT(*) FROM runs_blobs"))
+            total_blobs = result.fetchone()[0]
+
+            # Total size
+            result = session.execute(text("SELECT SUM(content_length) FROM runs_blobs"))
+            total_size_bytes = result.fetchone()[0] or 0
+            total_size_mb = total_size_bytes / (1024 * 1024)
+
+            # Breakdown by field
+            result = session.execute(
+                text("SELECT field_name, COUNT(*) FROM runs_blobs GROUP BY field_name")
+            )
+            field_counts = dict(result.fetchall())
+
+            # Truncated count
+            result = session.execute(
+                text("SELECT COUNT(*) FROM runs_blobs WHERE truncated = 1")
+            )
+            truncated_count = result.fetchone()[0]
+
+            table.add_row("", "", "")  # Spacer
+            table.add_row(
+                "Blob storage (Phase 4)", str(total_blobs), f"{total_size_mb:.2f} MB"
+            )
+            table.add_row(
+                "  ├─ Input blobs",
+                str(field_counts.get("input", 0)),
+                "",
+            )
+            table.add_row(
+                "  ├─ Output blobs",
+                str(field_counts.get("output", 0)),
+                "",
+            )
+            if truncated_count > 0:
+                table.add_row(
+                    "  └─ Truncated",
+                    f"[#FFA94D]{truncated_count}[/]",
+                    "Exceeded size cap",
+                )
+
         console.print()
         console.print(table)
         console.print()
@@ -289,6 +340,41 @@ def _show_status(console, db_path: Path) -> None:
                 print(
                     f"  Quality distribution: min={quality_min:.2f}, median={quality_median:.2f}, max={quality_max:.2f}"
                 )
+
+        # Blob storage stats (Phase 4)
+        result = session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='runs_blobs'"
+            )
+        )
+        has_blobs_table = result.fetchone() is not None
+
+        if has_blobs_table:
+            result = session.execute(text("SELECT COUNT(*) FROM runs_blobs"))
+            total_blobs = result.fetchone()[0]
+
+            result = session.execute(text("SELECT SUM(content_length) FROM runs_blobs"))
+            total_size_bytes = result.fetchone()[0] or 0
+            total_size_mb = total_size_bytes / (1024 * 1024)
+
+            result = session.execute(
+                text("SELECT field_name, COUNT(*) FROM runs_blobs GROUP BY field_name")
+            )
+            field_counts = dict(result.fetchall())
+
+            result = session.execute(
+                text("SELECT COUNT(*) FROM runs_blobs WHERE truncated = 1")
+            )
+            truncated_count = result.fetchone()[0]
+
+            print(
+                f"  Blob storage (Phase 4): {total_blobs} blobs, {total_size_mb:.2f} MB"
+            )
+            print(f"    - Input blobs: {field_counts.get('input', 0)}")
+            print(f"    - Output blobs: {field_counts.get('output', 0)}")
+            if truncated_count > 0:
+                print(f"    - Truncated: {truncated_count}")
+
         print()
 
     # Recommendations

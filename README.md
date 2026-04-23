@@ -224,6 +224,115 @@ driftbase doctor
 
 ---
 
+## CI/CD Integration
+
+Driftbase integrates seamlessly into deployment pipelines to catch behavioral regressions before production.
+
+### Output Formats
+
+```bash
+# Rich terminal output (default)
+driftbase diff v1.0 v2.0
+
+# JSON for programmatic consumption
+driftbase diff v1.0 v2.0 --format=json
+
+# Markdown for PR comments
+driftbase diff v1.0 v2.0 --format=markdown
+```
+
+### Exit Codes
+
+- **Exit 0**: SHIP or MONITOR verdicts (safe to deploy)
+- **Exit 1**: REVIEW or BLOCK verdicts (manual review required)
+
+### Quick Start: GitHub Actions
+
+```yaml
+# .github/workflows/drift-check.yml
+name: Drift Check
+
+on: [pull_request]
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install driftbase
+      - run: driftbase diff v1.2.3 v1.3.0 --ci
+        env:
+          DRIFTBASE_DB_PATH: ./runs.db
+```
+
+The `--ci` flag enables:
+- JSON output
+- Non-zero exit on drift
+- Compact formatting
+
+### Detailed Verdict Analysis
+
+After a diff completes, use `driftbase explain` to see the full breakdown:
+
+```bash
+# Explain most recent verdict
+driftbase explain
+
+# Explain specific verdict by ID
+driftbase explain abc-123-def
+```
+
+Shows:
+- Top 3 contributing dimensions with evidence
+- Confidence intervals and significance markers
+- Minimum Detectable Effects (MDEs)
+- Rollback target (for REVIEW/BLOCK verdicts)
+
+### PR Comment Integration
+
+Post drift reports directly to pull requests:
+
+```yaml
+- name: Generate drift report
+  run: |
+    OUTPUT=$(driftbase diff v1 v2 --format=markdown)
+    echo "report<<EOF" >> $GITHUB_OUTPUT
+    echo "$OUTPUT" >> $GITHUB_OUTPUT
+    echo "EOF" >> $GITHUB_OUTPUT
+
+- uses: actions/github-script@v7
+  with:
+    script: |
+      github.rest.issues.createComment({
+        issue_number: context.issue.number,
+        owner: context.repo.owner,
+        repo: context.repo.name,
+        body: `${{ steps.drift.outputs.report }}`
+      })
+```
+
+Result: GitHub-flavored markdown table with top contributors, MDEs, and rollback targets.
+
+### Rollback on Regression
+
+```bash
+VERDICT=$(driftbase diff v1 v2 --format=json | jq -r .verdict)
+ROLLBACK=$(driftbase diff v1 v2 --format=json | jq -r .rollback_target)
+
+if [ "$VERDICT" = "BLOCK" ]; then
+  echo "Behavioral regression detected. Rolling back to $ROLLBACK"
+  kubectl set image deployment/agent agent=$ROLLBACK
+  exit 1
+fi
+```
+
+See [docs/ci-integration.md](docs/ci-integration.md) for GitLab CI, CircleCI, and advanced patterns.
+
+---
+
 ## Use Cases
 
 ### 1. Pre-Deploy Drift Gate (GitHub Action)
