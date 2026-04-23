@@ -178,7 +178,9 @@ class TestFeedbackCLI:
         os.environ["DRIFTBASE_DB_PATH"] = db_path
 
         try:
-            backend = SQLiteBackend(db_path)
+            from driftbase.backends.factory import get_backend
+
+            backend = get_backend()
 
             verdict_id = backend.save_verdict(
                 report_json='{"baseline_session_id": "test-agent"}',

@@ -149,9 +149,11 @@ Key modules:
 - local/budget.py — BudgetConfig, BudgetBreach, rolling window breach detection
 - local/rootcause.py — RootCauseReport, RollbackSuggestion, change event correlation
 - local/hypothesis_engine.py — YAML rules → observations + recommendations
+- local/feedback_weights.py — exponential weight decay from user dismissals, per-agent isolation (Phase 6)
 - verdict.py — DriftReport → SHIP / MONITOR / REVIEW / BLOCK + exit codes
+- output/otlp_emitter.py — OTLP metrics emission to local JSON file for Prometheus/Grafana (Phase 6)
 - backends/ — abstract StorageBackend + SQLite implementation, factory pattern
-- cli/ — Click commands. Primary: connect, diagnose, history. Secondary: diff, init, inspect, doctor, budgets, changes, export, prune, testset, mcp
+- cli/ — Click commands. Primary: connect, diagnose, history. Secondary: diff, init, inspect, doctor, budgets, changes, export, prune, testset, mcp, feedback
 
 ## Never do
 - Don't use async DB calls — all storage in this repo is synchronous SQLite
@@ -236,6 +238,10 @@ Do not bypass this pipeline. Do not reintroduce hardcoded values anywhere.
 - significance_thresholds — power analysis results per agent+version
 - detected_epochs — cached epoch detection results, 1-hour TTL
 - deploy_events — schema-only, deferred UX
+- feedback — user feedback on drift verdicts (Phase 6)
+  - FK to verdict_history, stores dismissed_dimensions (JSON)
+  - Per-agent isolation via agent_id field
+  - Actions: dismiss, acknowledge, investigate
 
 Location: ~/.driftbase/runs.db (configurable via DRIFTBASE_DB_PATH)
 
