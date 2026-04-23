@@ -677,6 +677,14 @@ def compute_drift(
 
     calibrated_weights = calibration.calibrated_weights
 
+    # Apply feedback-driven weight adjustments (Phase 6)
+    if backend is not None and agent_id:
+        from driftbase.local.feedback_weights import apply_feedback_weights
+
+        calibrated_weights = apply_feedback_weights(
+            calibrated_weights, agent_id, backend
+        )
+
     base_dist = json.loads(baseline.tool_sequence_distribution)
     curr_dist = json.loads(current.tool_sequence_distribution)
     decision_drift = _jensen_shannon_divergence(base_dist, curr_dist)
