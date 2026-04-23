@@ -4,6 +4,10 @@ import math
 import os
 from typing import TYPE_CHECKING, Any
 
+from driftbase.local.task_clustering import compute_per_cluster_drift
+from driftbase.stats.emd import compute_latency_emd_signal
+from driftbase.stats.ngrams import compute_bigram_jsd
+
 # Load from env, default to 50 for production safety
 MIN_SAMPLES = int(os.getenv("DRIFTBASE_PRODUCTION_MIN_SAMPLES", "50"))
 
@@ -701,7 +705,17 @@ def compute_drift(
     )
     output_drift = min(1.0, output_delta_raw)
 
-    sigma_latency = _sigmoid_contribution(latency_delta_raw, k=2.0, c=1.0)
+    # Latency drift: blend p95 delta sigmoid with EMD distribution signal (50/50)
+    sigma_latency_p95 = _sigmoid_contribution(latency_delta_raw, k=2.0, c=1.0)
+    emd_signal = None
+    if baseline_runs is not None and current_runs is not None:
+        emd_signal = compute_latency_emd_signal(baseline_runs, current_runs)
+
+    # When EMD unavailable, use full p95 signal; when available, blend 50/50
+    if emd_signal is None:
+        sigma_latency = sigma_latency_p95
+    else:
+        sigma_latency = 0.5 * sigma_latency_p95 + 0.5 * emd_signal
     sigma_errors = _sigmoid_contribution(error_drift, k=4.0, c=0.3)
     sigma_output = _sigmoid_contribution(output_drift, k=3.0, c=0.3)
     sigma_semantic = _sigmoid_contribution(semantic_drift, k=4.0, c=0.3)
@@ -752,10 +766,24 @@ def compute_drift(
     planning_latency_drift = min(1.0, planning_delta)
     sigma_planning = _sigmoid_contribution(planning_delta, k=2.0, c=0.5)
 
-    # Tool sequence transitions drift: transitions between different tool pairs
-    # TODO: Compute from transition matrix when available
-    # For now, use decision_drift as proxy (similar to tool_sequence_drift)
-    tool_sequence_transitions_drift = decision_drift
+    # Tool sequence transitions drift: bigram-based transition detection
+    baseline_bigram_dist = {}
+    current_bigram_dist = {}
+    baseline_bigram_json = getattr(baseline, "bigram_distribution", None)
+    current_bigram_json = getattr(current, "bigram_distribution", None)
+    if baseline_bigram_json:
+        try:
+            baseline_bigram_dist = json.loads(baseline_bigram_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if current_bigram_json:
+        try:
+            current_bigram_dist = json.loads(current_bigram_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    tool_sequence_transitions_drift = compute_bigram_jsd(
+        baseline_bigram_dist, current_bigram_dist
+    )
 
     # Use calibrated weights (fallback to defaults if missing)
     w_jsd = calibrated_weights.get("decision_drift", 0.38)
@@ -803,6 +831,14 @@ def compute_drift(
             baseline_runs=baseline_runs,
             eval_runs=current_runs,
         )
+
+    # Compute per-cluster drift analysis
+    cluster_analysis = None
+    if baseline_runs is not None and current_runs is not None:
+        cluster_results = compute_per_cluster_drift(
+            baseline_runs=baseline_runs, current_runs=current_runs, max_clusters=5
+        )
+        cluster_analysis = cluster_results if cluster_results else None
 
     # Apply verdict override if anomaly is CRITICAL
     anomaly_override = False
@@ -889,6 +925,8 @@ def compute_drift(
         anomaly_signal=anomaly_signal,
         anomaly_override=anomaly_override,
         anomaly_override_reason=anomaly_override_reason,
+        # Task clustering
+        cluster_analysis=cluster_analysis,
         # Adaptive power analysis fields
         min_runs_needed=min_runs_needed,
         min_runs_per_dimension=min_runs_per_dimension,

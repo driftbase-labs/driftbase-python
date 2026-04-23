@@ -79,6 +79,7 @@ class BehavioralFingerprint:
     avg_verbosity_ratio: float = 0.0
     avg_time_to_first_tool_ms: float = 0.0
     fallback_rate: float = 0.0
+    bigram_distribution: str | None = None
 
 
 @dataclass
@@ -185,6 +186,8 @@ class DriftReport:
     dimension_mdes: dict[str, float] | None = None
     runs_needed_forecast: dict[str, int] | None = None
     dimension_attribution: dict[str, float] | None = None
+    # Phase 5: Task clustering
+    cluster_analysis: list[Any] | None = None  # list[ClusterDriftResult]
 
 
 def _parse_datetime_for_run(v: Any) -> datetime:

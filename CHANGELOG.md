@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 5: Real Signal Gains
+
+#### Bigram Tool Sequence Detection
+- **`bigram_distribution` field** added to `BehavioralFingerprint`
+  - Stores JSON-encoded frequency distribution of consecutive tool pairs (bigrams)
+  - Example: `{"('search', 'read')": 0.4, "('read', 'write')": 0.6}`
+  - Computed from all tool sequences in fingerprint window
+- **`tool_sequence_transitions_drift` real implementation**
+  - Previously aliased to `decision_drift` (placeholder since Phase 1)
+  - Now computed via Jensen-Shannon divergence on bigram distributions
+  - Detects tool order changes that full-sequence comparison misses
+  - Example: `[A, B, C]` vs `[A, C, B]` — same tools, different transitions
+- **New module**: `src/driftbase/stats/ngrams.py`
+  - `compute_bigrams()` — extract consecutive pairs from tool sequence
+  - `compute_bigram_distribution()` — aggregate bigrams across runs
+  - `compute_bigram_jsd()` — Jensen-Shannon divergence on bigram distributions
+- **Preset weights**: 0.02-0.08 depending on use case (higher for code/multimodal where order matters)
+
+#### EMD Latency Distribution Detection
+- **Earth Mover's Distance (Wasserstein)** for latency distributions
+  - Catches bimodal shifts that p95 averages out (half the runs get 2x slower)
+  - Detects distribution shape changes (increased variance, long tail development)
+  - Example: 50% runs stay fast, 50% regress → EMD detects split, p95 shows moderate increase
+- **New module**: `src/driftbase/stats/emd.py`
+  - `compute_latency_emd()` — raw EMD in milliseconds using scipy.stats.wasserstein_distance
+  - `compute_latency_emd_signal()` — normalized signal in [0, 1] via sigmoid (k=0.002, c=500ms)
+- **Blended latency scoring** (Option B: 50/50 blend)
+  - `sigma_latency = 0.5 * sigma_p95 + 0.5 * emd_signal`
+  - Preserves existing p95 sensitivity while adding distribution shape detection
+  - Requires `baseline_runs` and `current_runs` for computation (gracefully degrades to p95 alone if unavailable)
+
+#### Per-Cluster Drift Analysis
+- **Task clustering** by `(first_tool, input_length_bucket)`
+  - Groups runs into task types for targeted drift analysis
+  - Input length buckets: 0-100, 100-500, 500-2000, 2000+ chars
+  - Max 5 clusters by size, requires >= 10 runs per cluster per version
+  - Example clusters: `search:0-100` (short queries), `write:500-2000` (long-form tasks)
+- **`cluster_analysis` field** added to `DriftReport`
+  - List of `ClusterDriftResult` with per-cluster drift scores
+  - Top 3 contributing dimensions per cluster (latency_p95, error_rate, tool_variance)
+  - Sorted by drift score descending (most-drifted clusters first)
+- **New module**: `src/driftbase/local/task_clustering.py`
+  - `cluster_runs_by_task()` — O(n) string-based clustering (no ML models)
+  - `compute_per_cluster_drift()` — simplified 3-dimension scoring per cluster
+  - `ClusterDriftResult` dataclass with cluster ID, label, sample sizes, drift score, top contributors
+- **Use case**: Detect task-specific regressions that global score misses
+  - Example: global drift 0.15 (MONITOR), but `write:500-2000` cluster shows 0.68 (BLOCK)
+
+### Changed
+- **`tool_sequence_transitions_drift`** now computed from real bigram distributions (was placeholder aliased to `decision_drift`)
+- **Latency drift scoring** now blends p95-based signal with EMD distribution signal (50/50)
+- **Fingerprint computation** now includes bigram distribution extraction
+- **Drift computation** now includes per-cluster analysis when run-level data available
+
+### Documentation
+- **`docs/bigrams.md`**: Bigram tool sequence detection guide
+  - Why bigrams catch reorderings, implementation, preset weights, testing
+- **`docs/latency-emd.md`**: EMD latency distribution detection guide
+  - When EMD catches what p95 misses, sigmoid normalization, blending strategy, calibration
+- **`docs/task-clustering.md`**: Per-cluster drift analysis guide
+  - Clustering key, cheap O(n) implementation, detection scenarios, limitations
+- **`docs/fingerprint-schema-debt.md`**: Updated to mark `tool_sequence_transitions_drift` as RESOLVED
+
+### Tests
+- **17 new tests** in `tests/test_signal_gains.py`:
+  - Bigram tests (5): extraction, distribution, JSD, integration
+  - EMD tests (4): identical, shifted, signal normalization, bimodal detection
+  - Clustering tests (5): basic clustering, max clusters, insufficient data, single-cluster drift
+  - Integration tests (3): tool order drift, bimodal latency, no-drift invariant
+- **3 new synthetic fixtures** in `tests/fixtures/synthetic/generators.py`:
+  - `tool_order_drift_pair()` — same tools, different order (bigram shift)
+  - `bimodal_latency_drift_pair()` — half the runs get 2x slower (EMD catches, p95 averages out)
+  - `single_cluster_drift_pair()` — drift in one task type only (clustering pinpoints)
+
+### Migration Notes
+- **Backward compatible**: Runs without `bigram_distribution` gracefully degrade (JSD returns 0.0)
+- **No schema migration needed**: New fingerprint field is optional (`str | None`)
+- **Behavior change intentional**: This phase changes detection behavior to improve signal quality
+- **no_drift invariant maintained**: `no_drift` fixture stays < 0.05 (verified in integration tests)
+
 ## [0.13.0-rc.1] - 2026-04-23
 
 ### Added - Phase 4: Ingestion Quality
