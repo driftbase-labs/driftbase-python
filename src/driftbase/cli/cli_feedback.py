@@ -35,13 +35,10 @@ Console, Panel, Table = safe_import_rich()
 @click.option(
     "--limit", type=int, default=20, help="Limit feedback records (with --list)"
 )
+@click.option("--impact", is_flag=True, help="Show weight adjustment impact")
+@click.option("--reset", is_flag=True, help="Reset feedback for agent")
 @click.option(
-    "--impact", is_flag=True, help="Show weight adjustment impact (Task 6.6 - deferred)"
-)
-@click.option(
-    "--reset",
-    is_flag=True,
-    help="Reset feedback for this verdict (Task 6.6 - deferred)",
+    "--confirm", is_flag=True, help="Confirm reset operation (required with --reset)"
 )
 @click.pass_context
 def cmd_feedback(
@@ -57,6 +54,7 @@ def cmd_feedback(
     limit: int,
     impact: bool,
     reset: bool,
+    confirm: bool,
 ) -> None:
     """Record feedback on drift verdicts to improve future detection."""
     console: Any = ctx.obj.get("console") or Console()
@@ -67,12 +65,20 @@ def cmd_feedback(
         _list_feedback(console, backend, agent, limit)
         return
 
-    # Handle --impact and --reset (Task 6.6 - deferred)
+    # Handle --impact mode
     if impact:
-        console.print("[yellow]--impact flag is deferred to Task 6.6[/yellow]")
+        if not verdict_id:
+            console.print("[red]Error: agent_id required with --impact[/red]")
+            raise click.UsageError("agent_id is required for --impact")
+        _show_impact(console, backend, verdict_id)
         return
+
+    # Handle --reset mode
     if reset:
-        console.print("[yellow]--reset flag is deferred to Task 6.6[/yellow]")
+        if not verdict_id:
+            console.print("[red]Error: agent_id required with --reset[/red]")
+            raise click.UsageError("agent_id is required for --reset")
+        _reset_feedback(console, backend, verdict_id, confirm)
         return
 
     # Require verdict_id for non-list operations
@@ -188,3 +194,100 @@ def _list_feedback(console: Any, backend: Any, agent: str | None, limit: int) ->
         )
 
     console.print(table)
+
+
+def _show_impact(console: Any, backend: Any, agent_id: str) -> None:
+    """Show weight adjustment impact for an agent."""
+    from driftbase.local.feedback_weights import get_feedback_impact
+
+    # Get base weights from use case inference (use GENERAL defaults)
+    from driftbase.local.use_case_inference import USE_CASE_WEIGHTS
+
+    base_weights = USE_CASE_WEIGHTS.get("GENERAL", {})
+
+    # Compute impact
+    impact = get_feedback_impact(base_weights, agent_id, backend)
+
+    if impact["total_dismissals"] == 0:
+        console.print(f"[yellow]No feedback recorded for agent {agent_id}[/yellow]")
+        return
+
+    # Display impact table
+    table = Table(title=f"Feedback Impact for Agent: {agent_id}")
+    table.add_column("Dimension", style="cyan")
+    table.add_column("Base Weight", justify="right", style="white")
+    table.add_column("Adjusted Weight", justify="right", style="yellow")
+    table.add_column("Dismiss Count", justify="right", style="magenta")
+    table.add_column("Effective %", justify="right", style="green")
+
+    # Show all dimensions that have been adjusted
+    for change in impact["changes"]:
+        dim = change["dimension"]
+        base = change["base_weight"]
+        adjusted = change["adjusted_weight"]
+        count = change["dismiss_count"]
+        reduction = change["reduction_pct"]
+
+        # Calculate effective percentage (what % of original remains)
+        effective_pct = 100 - reduction
+
+        table.add_row(
+            dim,
+            f"{base:.3f}",
+            f"{adjusted:.3f}",
+            str(count),
+            f"{effective_pct:.0f}%",
+        )
+
+    console.print(table)
+    console.print(
+        f"\n[dim]Total dismissals: {impact['total_dismissals']} across {len(impact['changes'])} dimensions[/]"
+    )
+
+
+def _reset_feedback(console: Any, backend: Any, agent_id: str, confirm: bool) -> None:
+    """Reset (delete) all feedback for an agent."""
+    # Get feedback count for this agent
+    feedback_list = backend.get_feedback_for_agent(agent_id)
+    count = len(feedback_list)
+
+    if count == 0:
+        console.print(f"[yellow]No feedback found for agent {agent_id}[/yellow]")
+        return
+
+    if not confirm:
+        console.print(
+            f"[yellow]This will delete {count} feedback record{'s' if count != 1 else ''} "
+            f"for agent {agent_id}.[/yellow]\n"
+            f"Re-run with --confirm to proceed."
+        )
+        return
+
+    # Delete all feedback by deleting each record
+    # (We don't have a bulk delete method yet, so we'll need to add one)
+    # For now, let's add a method to the backend
+    try:
+        # We need to add a delete_feedback_for_agent method to the backend
+        # For now, we'll use SQL directly
+        from sqlalchemy import text
+        from sqlmodel import Session
+
+        with Session(backend._engine) as session:
+            result = session.execute(
+                text("DELETE FROM feedback WHERE agent_id = :agent_id"),
+                {"agent_id": agent_id},
+            )
+            session.commit()
+            deleted_count = result.rowcount
+
+        console.print(
+            Panel(
+                f"[green]Reset {deleted_count} feedback record{'s' if deleted_count != 1 else ''} "
+                f"for agent {agent_id}.[/green]\n\n"
+                f"Weights restored to defaults.",
+                title="Feedback Reset",
+                border_style="green",
+            )
+        )
+    except Exception as e:
+        console.print(f"[red]Error resetting feedback: {e}[/red]")
