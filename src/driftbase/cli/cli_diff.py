@@ -215,6 +215,16 @@ def _apply_filters_to_runs(
     is_flag=True,
     help="Show statistical significance tests (chi-squared, t-test, etc.).",
 )
+@click.option(
+    "--emit-metrics/--no-emit-metrics",
+    default=True,
+    help="Emit drift metrics to OTLP-compatible file (default: enabled).",
+)
+@click.option(
+    "--metrics-endpoint",
+    metavar="URL",
+    help="Optional OTLP endpoint for metrics (for future use).",
+)
 @click.pass_context
 def cmd_diff(
     ctx: click.Context,
@@ -236,6 +246,8 @@ def cmd_diff(
     exit_nonzero_above: float | None,
     significance_level: float,
     show_stats: bool,
+    emit_metrics: bool,
+    metrics_endpoint: str | None,
 ) -> None:
     """
     Compare two versions explicitly.
@@ -369,6 +381,8 @@ def cmd_diff(
             console=console,
             fail_on_drift=fail_on_drift,
             exit_nonzero_above=exit_nonzero_above,
+            emit_metrics=emit_metrics,
+            metrics_endpoint=metrics_endpoint,
         )
         ctx.exit(code)
 
@@ -398,6 +412,8 @@ def cmd_diff(
             console=console,
             fail_on_drift=fail_on_drift,
             exit_nonzero_above=exit_nonzero_above,
+            emit_metrics=emit_metrics,
+            metrics_endpoint=metrics_endpoint,
         )
         ctx.exit(code)
 
@@ -422,6 +438,8 @@ def cmd_diff(
         console=console,
         fail_on_drift=fail_on_drift,
         exit_nonzero_above=exit_nonzero_above,
+        emit_metrics=emit_metrics,
+        metrics_endpoint=metrics_endpoint,
     )
     ctx.exit(code)
 
@@ -1719,6 +1737,8 @@ def diff_local(
     environment: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     min_samples_warning: int = MIN_SAMPLES_WARNING,
+    emit_metrics: bool = True,
+    metrics_endpoint: str | None = None,
 ) -> tuple[
     DriftReport | None,
     BehavioralFingerprint | None,
@@ -1873,6 +1893,21 @@ def diff_local(
         # Never crash on rollback suggestion failure
         pass
 
+    # Emit OTLP metrics (Task 6.5)
+    if emit_metrics:
+        try:
+            from driftbase.output.otlp_emitter import emit_drift_metrics
+
+            emit_drift_metrics(
+                report=report,
+                baseline_version=baseline_label,
+                current_version=current_label,
+                endpoint=metrics_endpoint,
+            )
+        except Exception:
+            # Fire-and-forget: never block diff output on metrics failure
+            pass
+
     return report, baseline_fp, current_fp, None
 
 
@@ -1890,6 +1925,8 @@ def run_diff(
     console: Console | None = None,
     fail_on_drift: bool = False,
     exit_nonzero_above: float | None = None,
+    emit_metrics: bool = True,
+    metrics_endpoint: str | None = None,
 ) -> int:
     """
     Run diff and output in specified format.
@@ -1916,6 +1953,8 @@ def run_diff(
         against_version=against_version,
         environment=environment,
         threshold=threshold,
+        emit_metrics=emit_metrics,
+        metrics_endpoint=metrics_endpoint,
     )
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
@@ -2127,6 +2166,8 @@ def run_watch(
     console: Console | None = None,
     max_iterations: int | None = None,
     notify: bool = False,
+    emit_metrics: bool = True,
+    metrics_endpoint: str | None = None,
 ) -> None:
     """Poll backend and print live diff via rich; exit on Ctrl+C."""
     if backend is None:
@@ -2193,6 +2234,8 @@ def run_watch(
                 against_version=against_version,
                 environment=environment,
                 threshold=threshold,
+                emit_metrics=emit_metrics,
+                metrics_endpoint=metrics_endpoint,
             )
             console.clear()
             now = datetime.utcnow().strftime("%H:%M:%S")
