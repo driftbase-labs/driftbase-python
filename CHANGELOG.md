@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 6: Feedback Loop + OTLP Metrics Emission
+
+#### Feedback Loop
+
+- **User feedback on drift verdicts** with automatic weight learning
+  - New `driftbase feedback` CLI command
+  - Actions: `--dismiss`, `--acknowledge`, `--investigate`
+  - Specify dimensions to downweight: `--dimensions "latency_drift,error_rate"`
+  - Per-agent isolation (Agent A feedback doesn't affect Agent B)
+- **Exponential weight decay** formula: `adjusted_weight = base_weight × (0.7 ** dismiss_count)`
+  - 1 dismiss → 70% of original weight
+  - 2 dismisses → 49% (0.7²)
+  - 3 dismisses → 34% (0.7³)
+  - Weight floor: never below 10% of original (prevents complete suppression)
+- **Feedback storage** in SQLite `feedback` table
+  - Fields: `id`, `verdict_id` (FK), `action`, `agent_id`, `reason`, `dismissed_dimensions` (JSON), `created_at`
+  - Backend methods: `save_feedback()`, `get_feedback_for_verdict()`, `get_feedback_for_agent()`, `list_feedback()`
+- **Weight learning integration** in `diff.py`
+  - Calls `apply_feedback_weights()` after calibration, before composite calculation
+  - Requires `backend` parameter in `compute_drift()` to apply feedback
+  - Graceful degradation: returns base weights on any error
+- **Feedback impact diagnostics**
+  - `driftbase feedback <agent_id> --impact` - show weight adjustments
+  - Rich table with dimension, base weight, adjusted weight, dismiss count, effective %
+  - `driftbase feedback <agent_id> --reset --confirm` - delete all feedback for agent
+- **New module**: `src/driftbase/local/feedback_weights.py`
+  - `apply_feedback_weights()` - exponential decay with floor
+  - `get_feedback_impact()` - compute and display weight adjustments
+
+#### OTLP Metrics Emission
+
+- **OpenTelemetry Protocol (OTLP) metrics** for drift scores
+  - Automatic emission on every `driftbase diff`
+  - Local JSON file for scraping (no external dependencies)
+  - Default location: `~/.driftbase/metrics.json`
+  - Override via `$DRIFTBASE_METRICS_PATH`
+- **Metrics emitted** (15+ metrics per diff):
+  - `driftbase.drift.composite` - overall drift score
+  - `driftbase.drift.{dimension}` - per-dimension scores (12 dimensions)
+  - `driftbase.verdict` - numeric (0=SHIP, 1=MONITOR, 2=REVIEW, 3=BLOCK)
+  - `driftbase.confidence_tier` - numeric (1/2/3 for TIER1/2/3)
+- **Attributes** (labels):
+  - `baseline_version`, `current_version`, `environment`, `verdict`
+- **CLI flags**:
+  - `--emit-metrics` / `--no-emit-metrics` (default: enabled)
+  - `--metrics-endpoint` (reserved for future OTLP push)
+- **New module**: `src/driftbase/output/otlp_emitter.py`
+  - `emit_drift_metrics()` - write metrics to JSON file
+  - Fire-and-forget: never blocks diff output on emission failure
+- **Integration guides**:
+  - Prometheus + Node Exporter textfile collector
+  - Grafana dashboard templates
+  - Datadog custom check
+  - Alerting examples
+
+#### Documentation
+
+- **New docs**:
+  - `docs/feedback.md` - feedback loop guide (commands, decay formula, workflow)
+  - `docs/otlp-metrics.md` - OTLP integration guide (Prometheus, Grafana, Datadog)
+- **Updated CLAUDE.md** with Phase 6 context
+
+#### Tests
+
+- **20 new tests** in `tests/test_feedback_otlp.py`:
+  - Feedback storage (3 tests)
+  - Feedback CLI (4 tests)
+  - Weight learning (6 tests)
+  - OTLP emission (3 tests)
+  - Impact/reset (2 tests)
+  - Verification (2 tests)
+- **Verification**:
+  - no_drift invariant maintained < 0.05 with and without feedback
+  - Feedback demonstrably lowers composite score (test_feedback_changes_composite)
+
+#### Key Design Decisions
+
+- **Per-agent isolation**: Feedback for Agent A doesn't affect Agent B
+- **Exponential decay with floor**: Progressive downweighting, minimum 10%
+- **Fire-and-forget OTLP**: Metrics emission failure never blocks diff output
+- **Local JSON file**: No external dependencies, easy scraping by collectors
+- **Optional future**: `--metrics-endpoint` reserved for direct OTLP push
+
 ## [0.14.0-rc.1] - 2026-04-23
 
 ### Added - Phase 5: Real Signal Gains

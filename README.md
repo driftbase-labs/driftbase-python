@@ -182,6 +182,58 @@ Each dimension is weighted based on your agent's inferred use case (e.g., custom
 
 ---
 
+## Feedback Loop
+
+Driftbase learns from your drift verdicts. When you dismiss a drift alert as expected behavior, the system automatically downweights that dimension for future comparisons on that agent.
+
+```bash
+# Dismiss a verdict (downweight dimensions)
+driftbase feedback <verdict_id> --dismiss \
+  --reason "Tool sequence change is intentional" \
+  --dimensions "decision_drift,tool_sequence"
+
+# View weight adjustments for an agent
+driftbase feedback <agent_id> --impact
+```
+
+**Weight decay formula**: Each dismissal reduces a dimension's weight by 30%:
+- 1 dismiss → 70% of original weight
+- 2 dismisses → 49%
+- 3 dismisses → 34%
+- Floor: never below 10% (prevents complete suppression)
+
+**Per-agent isolation**: Feedback for Agent A doesn't affect Agent B. Each agent learns independently.
+
+See [docs/feedback.md](docs/feedback.md) for full guide.
+
+---
+
+## Observability
+
+Driftbase emits drift scores as OTLP-compatible metrics for integration with Prometheus, Grafana, Datadog, etc.
+
+```bash
+# Metrics are emitted automatically on every diff
+driftbase diff v1 v2
+
+# Metrics written to ~/.driftbase/metrics.json
+cat ~/.driftbase/metrics.json
+```
+
+**Metrics emitted**:
+- `driftbase.drift.composite` - overall drift score
+- `driftbase.drift.{dimension}` - per-dimension scores (12 dimensions)
+- `driftbase.verdict` - numeric (0=SHIP, 1=MONITOR, 2=REVIEW, 3=BLOCK)
+- `driftbase.confidence_tier` - statistical confidence (1/2/3)
+
+**Prometheus integration**: Use Node Exporter textfile collector to scrape metrics.
+
+**Grafana dashboard**: PromQL queries for drift over time, verdict distribution, high-drift dimensions.
+
+See [docs/otlp-metrics.md](docs/otlp-metrics.md) for Prometheus, Grafana, and Datadog integration guides.
+
+---
+
 ## CLI Commands
 
 ### Core Commands
