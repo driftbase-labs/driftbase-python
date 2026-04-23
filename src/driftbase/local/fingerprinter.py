@@ -8,7 +8,6 @@ from typing import Optional
 
 from driftbase.config import get_settings
 from driftbase.local.local_store import AgentRun, BehavioralFingerprint
-from driftbase.stats.ngrams import compute_bigram_distribution
 
 try:
     from driftbase.store import DriftbaseStore, get_store
@@ -136,6 +135,8 @@ def build_fingerprint_from_runs(
     )
 
     # Compute bigram distribution from tool sequences
+    from driftbase.stats.ngrams import compute_bigram_distribution
+
     bigram_dist = compute_bigram_distribution(tool_sequences)
     bigram_dist_json = json.dumps(bigram_dist) if bigram_dist else None
 

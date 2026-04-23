@@ -13,8 +13,6 @@ from datetime import datetime
 
 import numpy as np
 
-from driftbase.local.fingerprinter import build_fingerprint_from_runs
-from driftbase.local.local_store import run_dict_to_agent_run
 from driftbase.utils.determinism import get_rng
 
 logger = logging.getLogger(__name__)
@@ -187,6 +185,9 @@ def compute_dimension_cis(
 
         # Compute observed dimension scores
         # Build fingerprints from full run lists
+        from driftbase.local.fingerprinter import build_fingerprint_from_runs
+        from driftbase.local.local_store import run_dict_to_agent_run
+
         baseline_agent_runs = [run_dict_to_agent_run(r) for r in baseline_runs]
         current_agent_runs = [run_dict_to_agent_run(r) for r in current_runs]
 
