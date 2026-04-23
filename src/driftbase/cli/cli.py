@@ -42,7 +42,7 @@ COMMAND_GROUPS = {
     "Primary": ["diagnose", "history", "diff", "explain"],
     "Integrations": ["connect", "mcp"],
     "Data": ["runs", "versions", "inspect", "prune", "export", "import"],
-    "Deploy": ["budgets", "changes", "deploy"],
+    "Deploy": ["budgets", "changes", "deploy", "feedback"],
     "Setup": ["init", "config", "doctor", "migrate", "demo", "testset"],
 }
 
@@ -104,6 +104,7 @@ from driftbase.cli.cli_diff import cmd_diff
 from driftbase.cli.cli_doctor import cmd_doctor
 from driftbase.cli.cli_explain import cmd_explain
 from driftbase.cli.cli_export import export_command, import_command
+from driftbase.cli.cli_feedback import cmd_feedback
 from driftbase.cli.cli_history import cmd_history
 from driftbase.cli.cli_init import cmd_init
 from driftbase.cli.cli_inspect import cmd_inspect
@@ -127,6 +128,7 @@ cli.add_command(cmd_prune)
 cli.add_command(cmd_budgets)
 cli.add_command(cmd_changes)
 cli.add_command(cmd_deploy)
+cli.add_command(cmd_feedback)
 cli.add_command(cmd_testset)
 cli.add_command(cmd_connect)
 cli.add_command(cmd_mcp)

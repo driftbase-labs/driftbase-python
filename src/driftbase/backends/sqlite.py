@@ -310,6 +310,20 @@ class VerdictRecord(SQLModel, table=True):
     report_json: str = "{}"  # Full DriftReport serialized as JSON
 
 
+class DriftFeedback(SQLModel, table=True):
+    """Stores user feedback on drift verdicts for weight learning."""
+
+    __tablename__ = "feedback"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    verdict_id: str = Field(foreign_key="verdict_history.id", index=True)
+    action: str = ""  # "dismiss" | "acknowledge" | "investigate"
+    reason: str | None = None
+    dismissed_dimensions: str | None = None  # JSON list of dimension names
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    agent_id: str | None = None
+
+
 def _ensure_dir(path: str) -> None:
     """
     Ensure the parent directory of the database file exists.
@@ -518,6 +532,7 @@ class SQLiteBackend(StorageBackend):
         DetectedEpoch.__table__.create(self._engine, checkfirst=True)
         ConnectorSync.__table__.create(self._engine, checkfirst=True)
         VerdictRecord.__table__.create(self._engine, checkfirst=True)
+        DriftFeedback.__table__.create(self._engine, checkfirst=True)
         _migrate_schema(self._engine)
 
         # Run v0.11 schema split migration (runs_raw + runs_features)
@@ -2067,4 +2082,166 @@ class SQLiteBackend(StorageBackend):
                 return list(session.exec(statement).all())
         except Exception as e:
             logger.debug(f"Failed to get blobs for run {run_id}: {e}")
+            return []
+
+    def save_feedback(
+        self,
+        verdict_id: str,
+        action: str,
+        agent_id: str | None = None,
+        reason: str | None = None,
+        dismissed_dimensions: list[str] | None = None,
+    ) -> str:
+        """
+        Save user feedback on a drift verdict.
+
+        Args:
+            verdict_id: Verdict ID (FK to verdict_history)
+            action: "dismiss" | "acknowledge" | "investigate"
+            agent_id: Agent identifier for per-agent learning
+            reason: Free text explanation from user
+            dismissed_dimensions: List of dimension names to downweight
+
+        Returns:
+            Feedback ID (UUID)
+        """
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                feedback = DriftFeedback(
+                    verdict_id=verdict_id,
+                    action=action,
+                    agent_id=agent_id,
+                    reason=reason,
+                    dismissed_dimensions=json.dumps(dismissed_dimensions)
+                    if dismissed_dimensions
+                    else None,
+                )
+                session.add(feedback)
+                session.commit()
+                session.refresh(feedback)
+                return feedback.id
+        except Exception as e:
+            logger.warning(f"Failed to save feedback: {e}")
+            return str(uuid4())  # Return dummy ID on failure
+
+    def get_feedback_for_verdict(self, verdict_id: str) -> list[dict[str, Any]]:
+        """
+        Get all feedback for a specific verdict.
+
+        Args:
+            verdict_id: Verdict ID
+
+        Returns:
+            List of feedback dicts
+        """
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                statement = (
+                    select(DriftFeedback)
+                    .where(DriftFeedback.verdict_id == verdict_id)
+                    .order_by(DriftFeedback.created_at.desc())
+                )
+                records = session.exec(statement).all()
+                return [
+                    {
+                        "id": r.id,
+                        "verdict_id": r.verdict_id,
+                        "action": r.action,
+                        "agent_id": r.agent_id,
+                        "reason": r.reason,
+                        "dismissed_dimensions": json.loads(r.dismissed_dimensions)
+                        if r.dismissed_dimensions
+                        else None,
+                        "created_at": r.created_at.isoformat()
+                        if isinstance(r.created_at, datetime)
+                        else r.created_at,
+                    }
+                    for r in records
+                ]
+        except Exception as e:
+            logger.debug(f"Failed to get feedback for verdict {verdict_id}: {e}")
+            return []
+
+    def get_feedback_for_agent(self, agent_id: str) -> list[dict[str, Any]]:
+        """
+        Get all feedback for a specific agent (for weight learning).
+
+        Args:
+            agent_id: Agent identifier
+
+        Returns:
+            List of feedback dicts
+        """
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                statement = (
+                    select(DriftFeedback)
+                    .where(DriftFeedback.agent_id == agent_id)
+                    .order_by(DriftFeedback.created_at.desc())
+                )
+                records = session.exec(statement).all()
+                return [
+                    {
+                        "id": r.id,
+                        "verdict_id": r.verdict_id,
+                        "action": r.action,
+                        "agent_id": r.agent_id,
+                        "reason": r.reason,
+                        "dismissed_dimensions": json.loads(r.dismissed_dimensions)
+                        if r.dismissed_dimensions
+                        else None,
+                        "created_at": r.created_at.isoformat()
+                        if isinstance(r.created_at, datetime)
+                        else r.created_at,
+                    }
+                    for r in records
+                ]
+        except Exception as e:
+            logger.debug(f"Failed to get feedback for agent {agent_id}: {e}")
+            return []
+
+    def list_feedback(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        List recent feedback in reverse chronological order.
+
+        Args:
+            limit: Maximum number of feedback records to return
+
+        Returns:
+            List of feedback dicts (most recent first)
+        """
+        try:
+            import json
+
+            with Session(self._engine) as session:
+                statement = (
+                    select(DriftFeedback)
+                    .order_by(DriftFeedback.created_at.desc())
+                    .limit(limit)
+                )
+                records = session.exec(statement).all()
+                return [
+                    {
+                        "id": r.id,
+                        "verdict_id": r.verdict_id,
+                        "action": r.action,
+                        "agent_id": r.agent_id,
+                        "reason": r.reason,
+                        "dismissed_dimensions": json.loads(r.dismissed_dimensions)
+                        if r.dismissed_dimensions
+                        else None,
+                        "created_at": r.created_at.isoformat()
+                        if isinstance(r.created_at, datetime)
+                        else r.created_at,
+                    }
+                    for r in records
+                ]
+        except Exception as e:
+            logger.debug(f"Failed to list feedback: {e}")
             return []
