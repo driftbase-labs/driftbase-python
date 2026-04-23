@@ -59,33 +59,6 @@ This file documents where current behavior differs from what field names suggest
 
 ---
 
-## 3. `tool_sequence_transitions_drift` (Aliased to `decision_drift`)
-
-### Current Behavior
-- Field exists in `DriftReport`
-- Aliased to `decision_drift` (same value)
-- Comment in `diff.py`: "TODO: Compute from transition matrix when available"
-- Weight `w_tool_transitions` defaults to 0.0 (not contributing to composite)
-
-### What Should Happen
-- Bigram transition matrix computed from tool sequences
-- Example: baseline transitions `search→write:60%` vs current `search→read:40%`
-- JSD on bigram probability distributions captures reordering patterns
-
-### Why This Exists
-- Transition matrix computation requires n-gram extraction
-- Memory and storage overhead not justified until data volume increases
-- Current `tool_sequence_drift` (via Levenshtein/JSD) captures most sequencing changes
-
-### Resolution Target
-- **Phase**: Phase 5 (n-gram distributions)
-- **Action**: Add transition matrix computation to `fingerprinter.py`
-- **Action**: Store bigram distributions in `BehavioralFingerprint`
-- **Action**: Compute real JSD on transition probabilities in `diff.py`
-- **Migration**: Activate weight (e.g., 0.04) once real computation is available
-
----
-
 ## Process for Adding New Debt
 
 When adding a new divergence to this file:
@@ -103,6 +76,25 @@ When closing out a debt item:
 2. Add migration notes to CHANGELOG
 3. Update this file to mark the item as **RESOLVED** with version number
 4. Move resolved items to a "Historical Debt (Resolved)" section at bottom of file
+
+---
+
+## Historical Debt (Resolved)
+
+### ✅ `tool_sequence_transitions_drift` (Aliased to `decision_drift`) — RESOLVED in Phase 5
+
+**Resolution**: Implemented bigram-based transition detection in Phase 5.
+- Added `bigram_distribution` field to `BehavioralFingerprint` (stores JSON-encoded bigram frequency distribution)
+- Added `compute_bigram_jsd()` to `stats/ngrams.py` (computes Jensen-Shannon divergence on bigram distributions)
+- Updated `diff.py` to compute real bigram JSD instead of aliasing to `decision_drift`
+- Preset weights in `use_case_inference.py` already defined (0.02-0.08 depending on use case)
+
+**What Changed**:
+- Baseline behavior: `tool_sequence_transitions_drift = decision_drift` (proxy)
+- New behavior: `tool_sequence_transitions_drift = compute_bigram_jsd(baseline_bigram_dist, current_bigram_dist)` (real computation)
+- Detects tool order changes that full-sequence comparison misses (e.g., `[A,B,C]` vs `[A,C,B]` — same tools, different transitions)
+
+**Migration**: Existing fingerprints without `bigram_distribution` return empty dict → JSD returns 0.0 (graceful degradation). New fingerprints gain real signal.
 
 ---
 

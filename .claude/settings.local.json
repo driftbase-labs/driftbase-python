@@ -42,7 +42,13 @@
       "Bash(git pull:*)",
       "Bash(for:*)",
       "Bash(do echo \"=== Run $i ===\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(PYTHONPATH=src python3:*)",
+      "Bash(tee:*)",
+      "Bash(git stash:*)",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(python3:*)"
     ]
   }
 }
