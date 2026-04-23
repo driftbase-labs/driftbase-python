@@ -411,6 +411,16 @@ class Settings:
         """Number of bootstrap iterations for confidence intervals. Default: 500."""
         return self._get_int("DRIFTBASE_BOOTSTRAP_ITERS", 500, min_val=100)
 
+    @property
+    def DRIFTBASE_BLOB_STORAGE(self) -> bool:
+        """Enable blob storage for full input/output text. Default: True."""
+        return self._get_bool("DRIFTBASE_BLOB_STORAGE", True)
+
+    @property
+    def DRIFTBASE_BLOB_SIZE_LIMIT(self) -> int:
+        """Maximum size per blob in bytes. Default: 100KB (102400 bytes)."""
+        return self._get_int("DRIFTBASE_BLOB_SIZE_LIMIT", 102400, min_val=1024)
+
 
 _settings: Settings | None = None
 
@@ -446,6 +456,8 @@ KNOWN_CONFIG_KEYS = {
     "DRIFTBASE_SEED": int,
     "DRIFTBASE_FINGERPRINT_LIMIT": int,
     "DRIFTBASE_BOOTSTRAP_ITERS": int,
+    "DRIFTBASE_BLOB_STORAGE": bool,
+    "DRIFTBASE_BLOB_SIZE_LIMIT": int,
 }
 
 

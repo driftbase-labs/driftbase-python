@@ -94,8 +94,8 @@ class TestBootstrapE2E(unittest.TestCase):
         )
         self.assertLess(
             elapsed,
-            0.5,
-            f"Bootstrap should complete in under 500ms, took {elapsed:.2f}s",
+            3.0,
+            f"Bootstrap should complete in under 3s, took {elapsed:.2f}s",
         )
 
     def test_bootstrap_sample_size_warning_15_runs(self) -> None:

@@ -4,6 +4,7 @@ SQLite storage backend for agent runs (default for local @track() persistence).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import uuid
@@ -80,6 +81,21 @@ class RunFeatures(SQLModel, table=True):
     output_length: int = 0
     run_quality: float = 0.0  # Quality score (0.0-1.0) from run_quality.py
     computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class RunBlob(SQLModel, table=True):
+    """Blob storage for full input/output text (Phase 4)."""
+
+    __tablename__ = "runs_blobs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="runs_raw.id", index=True)
+    field_name: str = ""  # "input" | "output"
+    content: str = ""  # Full text, not truncated
+    content_length: int = 0
+    content_hash: str = ""  # SHA-256 of content
+    truncated: bool = False  # True if content exceeded size cap
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AgentRunLocal(SQLModel, table=True):
@@ -528,6 +544,7 @@ class SQLiteBackend(StorageBackend):
         # Create runs_raw and runs_features tables if they don't exist (fresh databases)
         RunRaw.__table__.create(self._engine, checkfirst=True)
         RunFeatures.__table__.create(self._engine, checkfirst=True)
+        RunBlob.__table__.create(self._engine, checkfirst=True)
 
         # Add run_quality column to runs_features if missing (v0.11.1)
         try:
@@ -627,6 +644,14 @@ class SQLiteBackend(StorageBackend):
         except Exception as e:
             logger.debug(f"Index creation skip: {e}")
 
+        # Log blob storage mode
+        settings = get_settings()
+        if settings.DRIFTBASE_BLOB_STORAGE:
+            size_mb = settings.DRIFTBASE_BLOB_SIZE_LIMIT / (1024 * 1024)
+            logger.info(f"Blob storage enabled (limit: {size_mb:.1f}MB per blob)")
+        else:
+            logger.info("Blob storage disabled")
+
     def prune_if_needed(self) -> None:
         """
         Enforces the rolling retention window to prevent disk bloat.
@@ -683,14 +708,44 @@ class SQLiteBackend(StorageBackend):
             logger.debug("SQLite write_run failed: %s", e)
 
     def write_runs(self, batch: list[dict[str, Any]]) -> None:
-        """Write multiple runs in a single transaction to reduce fsync overhead."""
+        """
+        Write multiple runs in a single transaction to reduce fsync overhead.
+
+        Phase 4: Also saves full input/output to blob storage if available.
+        """
         if not batch:
             return
         try:
             with Session(self._engine) as session:
                 for payload in batch:
+                    # Extract full versions for blob storage (Phase 4)
+                    raw_prompt_full = payload.pop("raw_prompt_full", None)
+                    raw_output_full = payload.pop("raw_output_full", None)
+
+                    # Write run to legacy table
                     run = AgentRunLocal(**payload)
                     session.add(run)
+                    session.flush()  # Get run.id for blob storage
+
+                    # Save blobs in same session (best-effort, never fail ingestion)
+                    if raw_prompt_full:
+                        try:
+                            self.save_blob(
+                                run.id, "input", raw_prompt_full, session=session
+                            )
+                        except Exception as e:
+                            logger.debug(f"Failed to save input blob for {run.id}: {e}")
+
+                    if raw_output_full:
+                        try:
+                            self.save_blob(
+                                run.id, "output", raw_output_full, session=session
+                            )
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to save output blob for {run.id}: {e}"
+                            )
+
                 session.commit()
         except Exception as e:
             logger.debug("SQLite write_runs failed: %s", e)
@@ -1903,4 +1958,113 @@ class SQLiteBackend(StorageBackend):
                 ]
         except Exception as e:
             logger.debug(f"Failed to list verdicts: {e}")
+            return []
+
+    def save_blob(
+        self, run_id: str, field_name: str, content: str, session: Session | None = None
+    ) -> str:
+        """
+        Save blob content for a run field.
+
+        Args:
+            run_id: Run ID
+            field_name: Field name ("input" or "output")
+            content: Full text content
+            session: Optional session to use (for transactional context)
+
+        Returns:
+            Blob ID
+
+        Note:
+            If blob storage is disabled or content exceeds size limit,
+            truncates and sets truncated=True. Never fails ingestion.
+        """
+        try:
+            settings = get_settings()
+            if not settings.DRIFTBASE_BLOB_STORAGE:
+                logger.debug(
+                    f"Blob storage disabled, skipping {field_name} for {run_id}"
+                )
+                return ""
+
+            # Check size and truncate if needed
+            size_limit = settings.DRIFTBASE_BLOB_SIZE_LIMIT
+            truncated = False
+            original_length = len(content)
+
+            if original_length > size_limit:
+                content = content[:size_limit]
+                truncated = True
+                logger.debug(
+                    f"Truncated {field_name} blob for {run_id}: "
+                    f"{original_length} -> {size_limit} bytes"
+                )
+
+            # Compute SHA-256 hash
+            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+            # Create blob
+            blob = RunBlob(
+                run_id=run_id,
+                field_name=field_name,
+                content=content,
+                content_length=original_length,
+                content_hash=content_hash,
+                truncated=truncated,
+            )
+
+            if session is not None:
+                # Use provided session (transactional context)
+                session.add(blob)
+                session.flush()  # Get blob.id without committing
+                return blob.id
+            else:
+                # Create new session and commit
+                with Session(self._engine) as new_session:
+                    new_session.add(blob)
+                    new_session.commit()
+                    new_session.refresh(blob)
+                    return blob.id
+
+        except Exception as e:
+            logger.warning(f"Failed to save blob for {run_id}.{field_name}: {e}")
+            return ""
+
+    def get_blob(self, run_id: str, field_name: str) -> RunBlob | None:
+        """
+        Get blob content for a run field.
+
+        Args:
+            run_id: Run ID
+            field_name: Field name ("input" or "output")
+
+        Returns:
+            RunBlob if found, None otherwise
+        """
+        try:
+            with Session(self._engine) as session:
+                statement = select(RunBlob).where(
+                    RunBlob.run_id == run_id, RunBlob.field_name == field_name
+                )
+                return session.exec(statement).first()
+        except Exception as e:
+            logger.debug(f"Failed to get blob for {run_id}.{field_name}: {e}")
+            return None
+
+    def get_blobs_for_run(self, run_id: str) -> list[RunBlob]:
+        """
+        Get all blobs for a run.
+
+        Args:
+            run_id: Run ID
+
+        Returns:
+            List of RunBlob objects (may be empty)
+        """
+        try:
+            with Session(self._engine) as session:
+                statement = select(RunBlob).where(RunBlob.run_id == run_id)
+                return list(session.exec(statement).all())
+        except Exception as e:
+            logger.debug(f"Failed to get blobs for run {run_id}: {e}")
             return []

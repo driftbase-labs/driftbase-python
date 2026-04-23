@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 4: Ingestion Quality
+
+#### Observation Tree Capture
+- **`observation_tree_json` field** added to `runs_raw` table
+  - Stores full hierarchical trace structure from Langfuse and LangSmith
+  - Preserves ALL observation types (generations, spans, events), not just tool calls
+  - JSON format with recursive children: `{id, type, name, input, output, metadata, children}`
+  - Enables richer debugging context and future per-node analysis
+- **Tree building functions**: `_build_observation_tree()` in Langfuse and LangSmith connectors
+  - Uses `parent_observation_id` (Langfuse) or `parent_run_id` (LangSmith) relationships
+  - Handles orphaned nodes and multiple roots gracefully
+  - Logs warnings on failures, never blocks ingestion
+
+#### Blob Storage for Full Input/Output
+- **`runs_blobs` table** added for untruncated text storage
+  - Fields: `id, run_id, field_name, content, content_length, content_hash, truncated, created_at`
+  - SHA-256 hash of content for integrity verification
+  - Size-capped (default 100KB, configurable via `DRIFTBASE_BLOB_SIZE_LIMIT`)
+  - Truncated flag when content exceeds cap
+- **Backend methods**: `save_blob()`, `get_blob()`, `get_blobs_for_run()`
+  - Best-effort saves—never fail ingestion if blob save fails
+  - Configurable via `DRIFTBASE_BLOB_STORAGE=true|false`
+- **Connector integration**: Full `raw_prompt_full` and `raw_output_full` saved before 5000-char truncation
+  - Legacy `raw_prompt` and `raw_output` still truncated for backward compatibility
+  - Blobs saved during `write_runs()` after run insert
+
+#### Enhanced Tool Extraction
+- **Tree-based tool extraction** via `extract_tools_from_tree()`
+  - Walks full observation tree to find tools in ALL node types (spans, events, generations)
+  - Skips non-tool names like "llm", "chain", "agent", "trace"
+  - **Additive behavior**: Merges with legacy extraction, finds MORE tools, never fewer
+  - No `FEATURE_SCHEMA_VERSION` bump—detection behavior unchanged
+- **Improved tool coverage**: Captures tools embedded in spans/events missed by legacy extraction
+
+#### Storage Management Commands
+- **`driftbase migrate --status`** now shows blob storage stats
+  - Total blob count and storage size (MB)
+  - Breakdown by field_name (input vs output)
+  - Truncated blob count
+- **`driftbase prune --blobs`**: Delete all blobs to reclaim disk space
+  - Includes dry-run preview and confirmation prompt
+- **`driftbase prune --orphan-blobs`**: Delete blobs for non-existent runs
+  - Queries both `runs_raw` and `agent_runs_local` to avoid false positives
+
+#### driftbase inspect Enhancements
+- **Observation tree display**: Hierarchical ASCII tree with color-coded node types
+  - generation=cyan, tool=green, span=blue, event=yellow, trace=magenta
+  - Shows node IDs (first 8 chars) for cross-reference
+- **Blob content display**: Shows full input/output from blob storage if available
+  - Falls back to legacy `raw_prompt`/`raw_output` for runs without blobs
+  - Size indicator (KB) and truncation flag displayed
+- **Helper function**: `_format_tree()` for recursive tree rendering
+
+#### Documentation
+- **`docs/observation-trees.md`**: Complete guide to observation tree capture
+  - Why trees matter, storage format, tool extraction (additive), backward compatibility
+  - How to view trees with `driftbase inspect`
+- **`docs/blob-storage.md`**: Blob storage reference
+  - Schema, size limits, configuration, storage management
+  - Performance impact, best practices, backward compatibility
+
+### Changed
+- **Langfuse and LangSmith connectors** now build observation trees and populate `observation_tree_json`
+- **Tool extraction** uses additive tree-based approach (legacy + tree merge)
+- **`write_runs()`** saves blobs before committing run records
+
+### Tests
+- **19 new tests** in `tests/test_ingestion_quality.py`:
+  - Blob storage: save, retrieve, size limits, truncation, disabled mode, hash computation
+  - Observation trees: Langfuse (single, parent-child, empty), LangSmith (children, empty)
+  - Tree tool extraction: simple, additive, skip non-tools, empty
+  - Backward compatibility: runs without trees/blobs continue to work
+  - Full ingestion pipeline: write_runs with blobs, blob failure doesn't block ingestion
+
 ### Added - Phase 3b: Trust Surface
 
 #### Verdict History Storage

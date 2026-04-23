@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Keywords that indicate escalation in agent output
 ESCALATION_KEYWORDS = [
@@ -110,6 +113,77 @@ def extract_tool_sequence(tool_observations: list[dict[str, Any]]) -> tuple[str,
             tool_names.append(str(name))
 
     return json.dumps(tool_names), len(tool_names)
+
+
+def extract_tools_from_tree(tree: dict | None) -> list[str]:
+    """
+    Extract all tool names from observation tree (Phase 4 additive extraction).
+
+    Recursively walks the tree and extracts tool names from ALL node types
+    (generation, span, event, etc.), not just generations.
+
+    Args:
+        tree: Observation tree dict with structure:
+            {"id": str, "type": str, "name": str, "children": [...]}
+
+    Returns:
+        List of tool names in execution order
+
+    Note:
+        This is ADDITIVE - finds MORE tools than legacy extraction.
+        If tree is None or extraction fails, returns empty list (fallback to legacy).
+    """
+    if not tree:
+        return []
+
+    tools = []
+
+    def walk(node: dict) -> None:
+        """Recursively walk tree and extract tools."""
+        if not isinstance(node, dict):
+            return
+
+        # Extract tool name from node
+        # Check multiple possible fields for tool identification
+        node_type = node.get("type", "")
+        node_name = node.get("name", "")
+
+        # Tool indicators:
+        # 1. type == "tool" (explicit tool calls)
+        # 2. type == "generation" with tool-like name
+        # 3. type == "span" with tool-like name (e.g., "search", "write", "bash")
+        is_tool = False
+        tool_name = None
+
+        if node_type == "tool":
+            # Explicit tool
+            is_tool = True
+            tool_name = node_name
+        elif node_type in ("generation", "span") and node_name:
+            # Check if name looks like a tool (not "llm", "chain", etc.)
+            lower_name = node_name.lower()
+            # Common non-tool names to skip
+            skip_names = {"llm", "chain", "agent", "root", "trace", "trace_root"}
+            if lower_name not in skip_names and not lower_name.startswith("llm"):
+                is_tool = True
+                tool_name = node_name
+
+        if is_tool and tool_name:
+            tools.append(str(tool_name))
+
+        # Recursively process children
+        children = node.get("children", [])
+        if isinstance(children, list):
+            for child in children:
+                walk(child)
+
+    try:
+        walk(tree)
+    except Exception as e:
+        logger.debug(f"Failed to extract tools from tree: {e}")
+        return []
+
+    return tools
 
 
 def detect_retry_patterns(tool_observations: list[dict[str, Any]]) -> int:

@@ -15,6 +15,7 @@ from driftbase.connectors.mapper import (
     compute_verbosity_ratio,
     detect_retry_patterns,
     extract_tool_sequence,
+    extract_tools_from_tree,
     infer_semantic_cluster,
 )
 
@@ -26,6 +27,75 @@ try:
     HTTPX_AVAILABLE = True
 except ImportError:
     HTTPX_AVAILABLE = False
+
+
+def _build_observation_tree(run: dict, child_runs: list[dict]) -> dict | None:
+    """
+    Build hierarchical observation tree from LangSmith run and child runs.
+
+    Args:
+        run: Root run dict from LangSmith
+        child_runs: List of child run dicts
+
+    Returns:
+        Tree structure with each node containing:
+        - id, type, name, inputs, outputs, metadata
+        - children: list of child nodes
+
+    Note:
+        Returns None if tree build fails.
+        Preserves ALL run types (llm, chain, tool, etc).
+    """
+    try:
+        # Index child runs by ID for fast lookup
+        runs_by_id = {child.get("id"): child for child in child_runs if child.get("id")}
+
+        # Build parent->children mapping
+        children_map: dict[str | None, list[dict]] = {}
+        for child in child_runs:
+            parent_id = child.get("parent_run_id")
+            if parent_id not in children_map:
+                children_map[parent_id] = []
+            children_map[parent_id].append(child)
+
+        def build_node(run_obj: dict) -> dict:
+            """Recursively build tree node with children."""
+            node = {
+                "id": run_obj.get("id"),
+                "type": run_obj.get("run_type"),
+                "name": run_obj.get("name"),
+                "inputs": run_obj.get("inputs"),
+                "outputs": run_obj.get("outputs"),
+                "metadata": run_obj.get("extra", {}).get("metadata", {}),
+                "start_time": run_obj.get("start_time"),
+                "end_time": run_obj.get("end_time"),
+                "error": run_obj.get("error"),
+            }
+
+            # Add children recursively
+            run_id = run_obj.get("id")
+            if run_id and run_id in children_map:
+                node["children"] = [build_node(child) for child in children_map[run_id]]
+            else:
+                node["children"] = []
+
+            return node
+
+        # Build tree from root run
+        root_node = build_node(run)
+
+        # Add children to root
+        root_id = run.get("id")
+        if root_id and root_id in children_map:
+            root_node["children"] = [
+                build_node(child) for child in children_map[root_id]
+            ]
+
+        return root_node
+
+    except Exception as e:
+        logger.warning(f"Failed to build observation tree: {e}")
+        return None
 
 
 class LangSmithConnector(TraceConnector):
@@ -228,6 +298,10 @@ class LangSmithConnector(TraceConnector):
             raw_prompt = json.dumps(inputs) if inputs else ""
             output_str = json.dumps(outputs) if outputs else ""
 
+            # Store full versions for blob storage (Phase 4)
+            raw_prompt_full = raw_prompt
+            raw_output_full = output_str
+
             # Compute hashes
             task_input_hash = compute_hash(raw_prompt)
             output_structure_hash = compute_hash(output_str)
@@ -237,18 +311,33 @@ class LangSmithConnector(TraceConnector):
 
             # Extract tool calls from child_runs
             child_runs = run.get("child_runs", [])
+
+            # Build observation tree first (Phase 4 - needed for enhanced tool extraction)
+            observation_tree = _build_observation_tree(run, child_runs)
+
             tool_observations = [
                 child for child in child_runs if child.get("run_type") == "tool"
             ]
 
-            # Build tool sequence
-            tool_names = []
+            # Legacy extraction (baseline)
+            legacy_tool_names = []
             for child in tool_observations:
                 tool_name = child.get("name", "unknown_tool")
-                tool_names.append(tool_name)
+                legacy_tool_names.append(tool_name)
 
-            tool_sequence_json = json.dumps(tool_names)
-            tool_call_count = len(tool_names)
+            # Tree-based extraction (Phase 4 additive enhancement)
+            tree_tools = extract_tools_from_tree(observation_tree)
+
+            # Merge: start with legacy, then add any new tools from tree
+            all_tools = legacy_tool_names.copy()
+
+            # Add tree tools that aren't already in legacy (preserves order)
+            for tool in tree_tools:
+                if tool not in all_tools:
+                    all_tools.append(tool)
+
+            tool_sequence_json = json.dumps(all_tools)
+            tool_call_count = len(all_tools)
 
             # Detect retry patterns
             retry_count = detect_retry_patterns(tool_observations)
@@ -285,6 +374,11 @@ class LangSmithConnector(TraceConnector):
             if config.agent_id:
                 session_id = config.agent_id
 
+            # Serialize observation tree (already built above for tool extraction)
+            observation_tree_json = (
+                json.dumps(observation_tree) if observation_tree else None
+            )
+
             return {
                 "id": str(uuid4()),  # Generate new UUID for Driftbase
                 "external_id": str(run.get("id", str(uuid4()))),
@@ -315,8 +409,11 @@ class LangSmithConnector(TraceConnector):
                 "output_structure_hash": output_structure_hash,
                 "raw_output": output_str[:5000],  # Truncate to 5000 chars
                 "raw_prompt": raw_prompt[:5000],  # Truncate to 5000 chars
+                "raw_prompt_full": raw_prompt_full,  # Phase 4: full text for blob storage
+                "raw_output_full": raw_output_full,  # Phase 4: full text for blob storage
                 "retry_count": retry_count,
                 "sensitivity": None,
+                "observation_tree_json": observation_tree_json,  # Phase 4: full tree
             }
         except Exception as e:
             logger.error(f"Failed to map LangSmith run {run.get('id')}: {e}")

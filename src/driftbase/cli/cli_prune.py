@@ -33,6 +33,116 @@ def _parse_duration(duration_str: str) -> int | None:
     return None
 
 
+def _prune_blobs(
+    console, backend, delete_all: bool, delete_orphans: bool, dry_run: bool, yes: bool
+) -> None:
+    """
+    Prune blob storage (Phase 4).
+
+    Args:
+        console: Rich console for output
+        backend: Storage backend
+        delete_all: If True, delete ALL blobs
+        delete_orphans: If True, delete orphaned blobs (blobs for non-existent runs)
+        dry_run: If True, preview only
+        yes: Skip confirmation
+    """
+    from sqlalchemy import text
+    from sqlmodel import Session
+
+    engine = backend._engine
+
+    with Session(engine) as session:
+        # Check if blobs table exists
+        result = session.execute(
+            text(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='runs_blobs'"
+            )
+        )
+        if not result.fetchone():
+            console.print("#FFA94D]No blobs table found (blob storage not enabled)[/]")
+            return
+
+        if delete_all:
+            # Count all blobs
+            result = session.execute(
+                text("SELECT COUNT(*), SUM(content_length) FROM runs_blobs")
+            )
+            count, total_size = result.fetchone()
+            total_size = total_size or 0
+            size_mb = total_size / (1024 * 1024)
+
+            console.print(
+                f"#FFA94D]Would delete ALL {count:,} blobs ({size_mb:.2f} MB)[/]"
+            )
+
+            if dry_run:
+                console.print("[dim]Dry-run mode: no changes made[/]")
+                return
+
+            if not yes:
+                console.print(
+                    "\n#FFA94D]This will permanently delete all blob data.[/]"
+                )
+                confirm = click.confirm("Do you want to continue?", default=False)
+                if not confirm:
+                    console.print("[dim]Cancelled[/]")
+                    return
+
+            # Delete all blobs
+            session.execute(text("DELETE FROM runs_blobs"))
+            session.commit()
+            console.print(f"#4ADE80]✓[/] Deleted {count:,} blobs ({size_mb:.2f} MB)")
+
+        elif delete_orphans:
+            # Find orphaned blobs (blobs for runs that don't exist in either table)
+            result = session.execute(
+                text("""
+                    SELECT COUNT(*), SUM(content_length)
+                    FROM runs_blobs
+                    WHERE run_id NOT IN (SELECT id FROM runs_raw)
+                      AND run_id NOT IN (SELECT id FROM agent_runs_local)
+                """)
+            )
+            count, total_size = result.fetchone()
+            total_size = total_size or 0
+            size_mb = total_size / (1024 * 1024)
+
+            if count == 0:
+                console.print("#4ADE80]✓[/] No orphaned blobs found")
+                return
+
+            console.print(
+                f"#FFA94D]Would delete {count:,} orphaned blobs ({size_mb:.2f} MB)[/]"
+            )
+
+            if dry_run:
+                console.print("[dim]Dry-run mode: no changes made[/]")
+                return
+
+            if not yes:
+                console.print(
+                    "\n#FFA94D]This will permanently delete orphaned blob data.[/]"
+                )
+                confirm = click.confirm("Do you want to continue?", default=False)
+                if not confirm:
+                    console.print("[dim]Cancelled[/]")
+                    return
+
+            # Delete orphaned blobs
+            session.execute(
+                text("""
+                    DELETE FROM runs_blobs
+                    WHERE run_id NOT IN (SELECT id FROM runs_raw)
+                      AND run_id NOT IN (SELECT id FROM agent_runs_local)
+                """)
+            )
+            session.commit()
+            console.print(
+                f"#4ADE80]✓[/] Deleted {count:,} orphaned blobs ({size_mb:.2f} MB)"
+            )
+
+
 @click.command(name="prune")
 @click.option("--version", "-v", help="Prune specific version only.")
 @click.option("--environment", "-e", help="Prune specific environment only.")
@@ -41,6 +151,16 @@ def _parse_duration(duration_str: str) -> int | None:
     "--older-than",
     metavar="DURATION",
     help="Delete runs older than duration (e.g., 30d, 7d).",
+)
+@click.option(
+    "--blobs",
+    is_flag=True,
+    help="Delete all blobs (Phase 4). Reclaims disk space from full input/output storage.",
+)
+@click.option(
+    "--orphan-blobs",
+    is_flag=True,
+    help="Delete blobs for runs that no longer exist (Phase 4).",
 )
 @click.option(
     "--dry-run", is_flag=True, help="Show what would be deleted without deleting."
@@ -53,6 +173,8 @@ def cmd_prune(
     environment: str | None,
     keep_last: int | None,
     older_than: str | None,
+    blobs: bool,
+    orphan_blobs: bool,
     dry_run: bool,
     yes: bool,
 ):
@@ -66,13 +188,27 @@ def cmd_prune(
         driftbase prune --older-than 30d           # Delete runs older than 30 days
         driftbase prune --version v1.0 --older-than 7d  # Delete old v1.0 runs
         driftbase prune --dry-run --keep-last 1000 # Preview deletion
+        driftbase prune --blobs --yes              # Delete all blobs (Phase 4)
+        driftbase prune --orphan-blobs             # Delete orphaned blobs (Phase 4)
     """
     console = ctx.obj.get("console")
 
-    # Validate: at least one criteria
+    # Get backend
+    try:
+        backend = get_backend()
+    except Exception as e:
+        console.print(f"#FF6B6B]Error:[/] Failed to connect to database: {e}")
+        ctx.exit(1)
+
+    # Handle blob deletion (Phase 4)
+    if blobs or orphan_blobs:
+        _prune_blobs(console, backend, blobs, orphan_blobs, dry_run, yes)
+        ctx.exit(0)
+
+    # Validate: at least one criteria for run pruning
     if keep_last is None and older_than is None:
         console.print(
-            "#FF6B6B]Error:[/] Must specify at least one criteria: --keep-last or --older-than"
+            "#FF6B6B]Error:[/] Must specify at least one criteria: --keep-last, --older-than, --blobs, or --orphan-blobs"
         )
         ctx.exit(1)
 
@@ -84,13 +220,6 @@ def cmd_prune(
             console.print(f"#FF6B6B]Error:[/] Invalid duration format: {older_than}")
             console.print("  Expected format: 30d (days) or 24h (hours)")
             ctx.exit(1)
-
-    # Get backend
-    try:
-        backend = get_backend()
-    except Exception as e:
-        console.print(f"#FF6B6B]Error:[/] Failed to connect to database: {e}")
-        ctx.exit(1)
 
     # Determine what will be deleted
     try:
